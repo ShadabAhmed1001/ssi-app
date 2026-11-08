@@ -183,6 +183,9 @@ main.solo .detail { display: none; }
 .er.tx { grid-template-columns: 120px minmax(0, 1fr) 54px 28px 28px; }
 .er.cr { grid-template-columns: 52px minmax(0, 1fr) 52px 50px 26px 26px; }
 .er.cr.tx { grid-template-columns: 96px minmax(0, 1fr) 52px 50px 26px 26px; }
+.er .erate { grid-column: 2 / -1; font-size: 11.5px; color: var(--muted); margin: -2px 0 2px; font-variant-numeric: tabular-nums; min-height: 0; }
+.er .erate:empty { display: none; }
+.er .erate.bad { color: var(--bad, #b3261e); }
 .er .ewt { font-size: 13px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .er.m2 { grid-template-columns: minmax(0, 1fr) 70px; }
 .er.fn { grid-template-columns: 54px minmax(0, 1fr) 70px 26px 26px; }
@@ -1479,13 +1482,13 @@ main.solo .detail.open { display: block; }
       <label>Animal (for machinery rates)<select id="eh-animal" data-h="animal"><option value="">None</option>${["Cow", "Calf", "Buff", "Goat"].map((x) => `<option${String(h.animal).toUpperCase() === x.toUpperCase() ? " selected" : ""}>${x}</option>`).join("")}</select></label></div>
       <label>Process<textarea id="eh-note" data-h="process_note">${esc(h.process_note)}</textarea></label>
       <label>Remarks<textarea id="eh-rem" data-h="remarks">${esc(h.remarks)}</textarea></label>
-      <h3>Crusting</h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:52px minmax(0,1fr) 52px 50px 52px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
-      ${(finNotesNorm(), crustTimeNorm(), "")}${ed.crust.map((x, i) => `${!i || x.sec !== ed.crust[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.crust.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-cjoin="${i}">Join with section above</button>` : ""}</span></div>` : ""}<div class="er cr${x.c && pctCell(x.c) === null ? " tx" : ""}" data-sec="crust" data-i="${i}">${inp("c", i, "c", x.c, "%")}${inp("c", i, "d", x.d, "Chemical or step", "", ' data-ac="chem" list="ed-chems"')}<span class="ewt" id="ewt-${i}">${crustWt(x.c)}</span>${String(x.f || "").trim() || (!i || ed.crust[i - 1].sec !== x.sec) && !ed.crust.some((y) => y.sec === x.sec && String(y.f || "").trim()) ? inp("c", i, "f", x.f, "Time") : "<span></span>"}${btns}<button type="button" class="link slink" data-csplit="${i}">New section below</button></div>`).join("")}
+      <h3>Crusting <span id="ecost-c" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:52px minmax(0,1fr) 52px 50px 52px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
+      ${(finNotesNorm(), crustTimeNorm(), "")}${ed.crust.map((x, i) => `${!i || x.sec !== ed.crust[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.crust.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-cjoin="${i}">Join with section above</button>` : ""}</span></div>` : ""}<div class="er cr${x.c && pctCell(x.c) === null ? " tx" : ""}" data-sec="crust" data-i="${i}">${inp("c", i, "c", x.c, "%")}${inp("c", i, "d", x.d, "Chemical or step", "", ' data-ac="chem" list="ed-chems"')}<span class="ewt" id="ewt-${i}">${crustWt(x.c)}</span>${String(x.f || "").trim() || (!i || ed.crust[i - 1].sec !== x.sec) && !ed.crust.some((y) => y.sec === x.sec && String(y.f || "").trim()) ? inp("c", i, "f", x.f, "Time") : "<span></span>"}${btns}<span class="erate" id="erate-c-${i}">${rateLine(x.d, crustWt(x.c), !!crustWt(x.c))}</span><button type="button" class="link slink" data-csplit="${i}">New section below</button></div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="crust">Add a line</button>
       <h3>Machinery</h3>${ed.machinery.map((x, i) => `<div class="er m2" data-sec="machinery" data-i="${i}"><span style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>${inp("m", i, "e", x.e, "Rounds")}</div>`).join("")}
-      <h3>Finishing</h3><div class="eh" style="grid-template-columns:58px minmax(0,1fr) 62px 60px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
+      <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:58px minmax(0,1fr) 62px 60px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
       <p class="note" style="margin:4px 0 0">Each section is one mix. Change any weight and the rest of its section follows the ratios.</p>
-      ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
+      ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="finishing">Add a section</button>
       
       <div class="ebar"><p class="fmsg" id="fm-msg"></p><div class="acts"><button class="btn" type="submit">Save recipe</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></div></form>`;
@@ -1518,6 +1521,16 @@ main.solo .detail.open { display: block; }
     });
   }
   // crusting weight = % x shaved weight, as the process sheet's quantity column
+  // rate and line cost shown under each chemical in the recipe editor
+  const edRate = (d) => { const n = String(d || "").trim(); if (!n || /^(HOT |COLD )?WATER\b/i.test(n)) return null; const k = chemName(n).toUpperCase(); return { r: data.rate[n.toUpperCase()] || data.rate[k] || 0, known: !!data.chemBy[k] }; };
+  const rateLine = (d, w, hasQty) => { const x = edRate(d); if (!x || (!x.known && !hasQty)) return ""; if (!x.known) return `<span class="bad">Not in the chemical list, no rate</span>`; if (!x.r) return "Rate not set"; const q = parseFloat(String(w || "").replace(/,/g, "")) || 0; return `₹${fmtN(x.r, 2)} per kg${q ? ` · ₹${fmtN(x.r * q, 0)}` : ""}`; };
+  function edRatesRefresh() {
+    const f = $("#fm-recipe"); if (!f) return; const tot = { c: 0, f: 0 };
+    f.querySelectorAll(".erate").forEach((el) => { const [, sec, i] = el.id.split("-"), d = ($(`#e-${sec}-${i}-d`) || {}).value || "";
+      let w = ""; if (sec === "c") { w = crustWt(($(`#e-c-${i}-c`) || {}).value || ""); } else { const e = $(`#e-f-${i}-e`); w = e ? e.value || e.placeholder : ""; }
+      el.innerHTML = rateLine(d, w, !!w); const x = edRate(d), q = parseFloat(String(w).replace(/,/g, "")) || 0; if (x && x.r) tot[sec] += x.r * q; });
+    const tc = $("#ecost-c"), tf = $("#ecost-f"); if (tc) tc.textContent = tot.c ? "Chemicals ₹" + fmtN(tot.c, 0) : ""; if (tf) tf.textContent = tot.f ? "Chemicals ₹" + fmtN(tot.f, 0) : "";
+  }
   const crustWt = (c) => { const p = pctCell(c ?? ""), w = parseFloat(ed && ed.head.shaved_wt) || 0; return p === null || !w ? "" : fmtN(Number(p) * w, 3); };
   const pctCell = (t) => { const s = String(t).trim().replace(/%$/, ""); return s !== "" && !isNaN(s) ? String(+(Number(s) / 100).toFixed(10)) : null; };
   function recipeFromEditor() {
@@ -2307,6 +2320,7 @@ main.solo .detail.open { display: block; }
   }
   function closeOrStay() { const y = ed; formOpen = null; ed = null; flash = ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
   function showDetail() {
+    queueMicrotask(edRatesRefresh);
     const k = sel[tab], d = $("#detail");
     if (!k) { d.classList.remove("open"); d.innerHTML = `<p class="empty">Pick an item to see everything about it.</p>`; return; }
     const isForm = String(k).startsWith("form:");
@@ -2512,6 +2526,7 @@ main.solo .detail.open { display: block; }
     delete f.dataset.warned; $("#fm-msg").textContent = "";
     const t = e.target, row = t.closest(".er");
     if (f.id === "fm-recipe" && /^e-c-\d+-c$/.test(t.id)) { const w = $("#ewt-" + t.id.split("-")[2]); if (w) w.textContent = crustWt(t.value); }
+    if (f.id === "fm-recipe" && /^e-[cf]-\d+-[cde]$/.test(t.id)) setTimeout(edRatesRefresh, 0);
     if (f.id === "fm-count") { countCalc(f); return; }
     if (e.target.id === "fv-to") { $("#fv-newl").style.display = e.target.value ? "none" : ""; return; }
     if (e.target.dataset.pinfo) { $("#" + e.target.dataset.pinfo).textContent = purchInfo(e.target.value); return; }
