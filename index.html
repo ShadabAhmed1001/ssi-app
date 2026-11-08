@@ -2469,7 +2469,10 @@ main.solo .detail.open { display: block; }
     if (cs0 || cj0) {
       const d = $("#detail"), y = d.scrollTop, typed = [...d.querySelectorAll("input[id],select[id],textarea[id]")].filter((i) => !i.closest(".er")).map((i) => [i.id, i.value]), list = ed.crust;
       if (cs0) { const i = Number(cs0.dataset.csplit), old = list[i].sec, id = Math.max(...list.map((x) => x.sec || 0)) + 1;
-        list.forEach((x, j) => { if (j > i && x.sec === old) x.sec = id; }); list.splice(i + 1, 0, { c: "", d: "", f: "", sec: id, brk: true }); }
+        // the next line of this section starts the new section (its time box appears on it); only add a line when there is none below
+        const below = list.findIndex((x, j) => j > i && x.sec === old);
+        if (below > i) { list.forEach((x, j) => { if (j > i && x.sec === old) x.sec = id; }); list[below].brk = true; list[below].f = ""; }
+        else list.splice(i + 1, 0, { c: "", d: "", f: "", sec: id, brk: true }); }
       else { const i = Number(cj0.dataset.cjoin), old = list[i].sec, to = list[i - 1].sec; list.forEach((x) => { if (x.sec === old) { x.sec = to; x.brk = false; } }); }
       showDetail(); typed.forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; }); d.scrollTop = y; return;
     }
