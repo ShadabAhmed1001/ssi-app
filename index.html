@@ -150,6 +150,39 @@ main.solo .detail { display: none; }
 .track i.on { background: var(--accent); } .track i.now { background: var(--warn); }
 .missing { background: var(--warn-soft); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px; }
 .chdiff > summary { list-style: none; cursor: pointer; }
+/* ---- second look: compact cards (html[data-look="cards"]) ---- */
+.prog, .tab i { display: none; }
+:root[data-look="cards"] body { font-size: 14px; }
+:root[data-look="cards"] .row { line-height: 1.3; border: 0; border-left: 4px solid var(--line); border-radius: 12px; padding: 7px 12px; margin-bottom: 7px; box-shadow: 0 1px 2px rgba(0,0,0,.07), 0 2px 8px rgba(0,0,0,.04); gap: 1px 10px; }
+:root[data-look="cards"] .row[data-flag="bad"] { border-left-color: var(--bad); }
+:root[data-look="cards"] .row[data-flag="warn"] { border-left-color: var(--warn); }
+:root[data-look="cards"] .row[data-flag="ok"] { border-left-color: var(--ok); }
+:root[data-look="cards"] .row[data-flag="info"] { border-left-color: var(--accent); }
+:root[data-look="cards"] .row .k { font-size: 15px; }
+:root[data-look="cards"] .row .t, :root[data-look="cards"] .row .m { font-size: 12px; }
+:root[data-look="cards"] .prog { display: block; grid-column: 1 / -1; height: 4px; border-radius: 4px; background: var(--idle-soft); overflow: hidden; margin-top: 3px; }
+:root[data-look="cards"] .prog i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+:root[data-look="cards"] .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+:root[data-look="cards"] .tile { border: 0; border-radius: 12px; padding: 8px 10px; box-shadow: 0 1px 2px rgba(0,0,0,.07), 0 2px 8px rgba(0,0,0,.04); }
+:root[data-look="cards"] .tile b { font-size: 20px; }
+:root[data-look="cards"] .tile span { font-size: 11.5px; }
+:root[data-look="cards"] .kv { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+:root[data-look="cards"] .kv dt { font-size: 10px; }
+:root[data-look="cards"] .kv dd { font-size: 13.5px; }
+:root[data-look="cards"] h3 { border-top: 0; font-size: 13px; margin: 16px 0 6px; padding-top: 0; }
+:root[data-look="cards"] .tab { padding: 6px 2px 8px; gap: 1px; }
+:root[data-look="cards"] .tab i { display: block; width: 22px; height: 22px; }
+:root[data-look="cards"] .tab i svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+:root[data-look="cards"] .tab span { display: none; }
+:root[data-look="cards"] .tab b { font-size: 12px; }
+:root[data-look="cards"] .tab[aria-selected="true"] i { color: var(--accent); }
+/* actions always in reach: one bar that stays pinned at the top of the lot page while you scroll; swipe sideways for more */
+:root[data-look="cards"] .lotacts { position: sticky; top: 0; z-index: 3; flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.06); scrollbar-width: none; }
+:root[data-look="cards"] .lotacts::-webkit-scrollbar { display: none; }
+:root[data-look="cards"] .lotacts .btn { flex: none; border-radius: 999px; padding: 7px 14px; font-size: 13px; }
+.lookpick { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-top: 8px; }
+.lookpick button { border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; padding: 6px 12px; }
+.lookpick button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .appver { margin: 22px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.5; }
 .appver b { font-weight: 600; color: var(--ink); }
 .chdiff > summary::-webkit-details-marker { display: none; }
@@ -256,11 +289,11 @@ main.solo .detail.open { display: block; }
     <section class="detail" id="detail" aria-label="Details"><p class="empty">Pick an item to see everything about it.</p></section>
   </main>
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="today"><b>Today</b><span id="n-today">summary</span></button>
-    <button class="tab" role="tab" data-tab="lots"><b>Production</b><span id="n-lots">lots</span></button>
-    <button class="tab" role="tab" data-tab="orders"><b>Orders</b><span id="n-orders">PO items</span></button>
-    <button class="tab" role="tab" data-tab="purchases"><b>Purchases</b><span id="n-purchases">skins</span></button>
-    <button class="tab" role="tab" data-tab="chemicals"><b>Chemicals</b><span id="n-chemicals">stock</span></button>
+    <button class="tab" role="tab" data-tab="today"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></i><b>Today</b><span id="n-today">summary</span></button>
+    <button class="tab" role="tab" data-tab="lots"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg></i><b>Production</b><span id="n-lots">lots</span></button>
+    <button class="tab" role="tab" data-tab="orders"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg></i><b>Orders</b><span id="n-orders">PO items</span></button>
+    <button class="tab" role="tab" data-tab="purchases"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16l-2 12H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg></i><b>Purchases</b><span id="n-purchases">skins</span></button>
+    <button class="tab" role="tab" data-tab="chemicals"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7 15h10"/></svg></i><b>Chemicals</b><span id="n-chemicals">stock</span></button>
   </nav>
 </div>
 
@@ -268,6 +301,8 @@ main.solo .detail.open { display: block; }
 <script>
 (function () {
   "use strict";
+  // look: "classic" (default) or "cards" (compact cards), remembered on this phone
+  try { const lk = localStorage.getItem("ssi-look"); if (lk === "cards") document.documentElement.dataset.look = "cards"; } catch (e) {}
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const DAY = 86400000;
@@ -670,7 +705,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 69, at: "2026-11-08T22:49:11+05:30", notes: "New checks: process page before FAT, yield reason on dispatch, part sent ahead reminder, archive only fully accounted lots, splits can't exceed the lot, delivery over PO warning, weight before stock adjust, purchase rate required, repeat purchase warning." };
+  const APP_BUILD = { v: 70, at: "2026-11-08T22:58:53+05:30", notes: "Second look: Compact cards (switch at the bottom of Today). Coloured cards, stage progress, icons on the tabs, and lot actions pinned at the top while you scroll." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -712,7 +747,7 @@ main.solo .detail.open { display: block; }
       <div class="group">Open lots by customer</div><div class="bars">${cs.map((c) => bar("customer", c, maxC)).join("")}</div>
       <p class="note" style="margin-top:12px">Red bars include a late lot. Data is from ${data.asOf}, so anything entered in Excel after that is not shown. ${store ? `<button class="link" data-jump="entries" data-f="pending">Phone entries</button>` : ""}</p>
       ${canAdmin ? `<div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>` : ""}
-      <div class="appver"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}<br>${window.__ssiCheckUpdate ? `<button class="btn alt" data-chkupd style="margin-top:8px">Check for updates</button> <span id="updmsg"></span>` : "This Claude version always opens the latest release."}</div>`;
+      <div class="appver"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}<br><span class="lookpick" role="group" aria-label="Look"><button data-look="classic" aria-pressed="${document.documentElement.dataset.look === "cards" ? "false" : "true"}">Classic</button><button data-look="cards" aria-pressed="${document.documentElement.dataset.look === "cards" ? "true" : "false"}">Compact cards</button></span><br>${window.__ssiCheckUpdate ? `<button class="btn alt" data-chkupd style="margin-top:8px">Check for updates</button> <span id="updmsg"></span>` : "This Claude version always opens the latest release."}</div>`;
   }
   // ---------------------------------------------------------------- stock count, cost, archive
   function archiveReady() {
@@ -1208,9 +1243,10 @@ main.solo .detail.open { display: block; }
   function lotCard(l) {
     const due = l.dueIn === null ? "" : `<span class="${l.grp === 1 && l.dueIn < 0 ? "late" : l.grp === 1 && l.dueIn <= 3 ? "soon" : ""}">due ${fmtD(l.due_date)}</span>`;
     const sw = tab === "lots" && filter.lots === "late" && needsAttn(l), mu = sw && isMuted(l.lot_no);
-    return `<button class="row${sw ? " swipe" : ""}${mu ? " muted" : ""}" data-k="${esc(l.lot_no)}"${cur(l.lot_no)}${sw ? ` aria-description="${mu ? "Muted until " + esc(muteUntilText(l.lot_no)) : "Swipe left to mute for a day"}"` : ""}>
+    const sn = stageNo(l.stage) || 0, pr = /DISPATCHED/i.test(l.stage || "") ? 100 : sn > 0 && sn <= 11 ? Math.round(sn / 11 * 100) : 0;
+    return `<button class="row${sw ? " swipe" : ""}${mu ? " muted" : ""}" data-flag="${esc(l.flag || "")}" data-k="${esc(l.lot_no)}"${cur(l.lot_no)}${sw ? ` aria-description="${mu ? "Muted until " + esc(muteUntilText(l.lot_no)) : "Swipe left to mute for a day"}"` : ""}>
       <span class="k">${esc(l.lot_no)}</span><span class="pill ${l.flag}">${esc(l.flagText)}</span>
-      <span class="t">${esc(l.customer)} · ${esc(l.product)}</span>
+      <span class="t">${esc(l.customer)} · ${esc(l.product)}</span>${pr ? `<span class="prog" aria-hidden="true"><i style="width:${pr}%"></i></span>` : ""}
       <span class="m"><span><b>${esc(l.stage || "-")}</b>${l.grp === 1 && l.inStage !== null ? " · " + l.inStage + " d" : ""}</span>
         <span class="num">${fmtN(l.lot_pcs, 0)} pcs · ${fmtN(l.lot_sqft, 0)} sqft</span>${due}${l.phone ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
   }
@@ -1361,7 +1397,7 @@ main.solo .detail.open { display: block; }
     const muteTxt = needsAttn(l) ? (isMuted(k) ? `<p class="note">Muted in Needs attention until ${esc(muteUntilText(k))}. <button class="lnk" data-dunmute="${esc(k)}">Unmute</button></p>` : `<p class="note">Shown in Needs attention. <button class="lnk" data-dmute="${esc(k)}">Mute for a day</button></p>`) : "";
     return `<p class="sub">${esc(l.customer)} · ${esc(l.product)}</p>${track}
       ${flash ? `<p class="okmsg">${esc(flash)}</p>` : ""}${muteTxt}
-      ${canAct && !formOpen ? `<div class="acts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
+      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
       ${canAct && !formOpen && l.state === "OPEN" && l.lot_pcs > 0 && deliveredPcs(k) >= l.lot_pcs - 0.0001 ? `<p class="missing">All ${fmtN(l.lot_pcs, 0)} pcs are delivered. <button class="link" data-markdisp>Mark as Dispatched</button></p>` : ""}
       ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
       ${store && canWrite && !formOpen && l.state === "ARCHIVED" && returnable(l).s > 0 ? `<div class="acts"><button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button></div>` : ""}
@@ -2525,6 +2561,7 @@ main.solo .detail.open { display: block; }
   $("#list").addEventListener("pointerup", swipeEnd);
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    const lk = e.target.closest(".lookpick button[data-look]"); if (lk) { const v = lk.dataset.look; if (v === "cards") document.documentElement.dataset.look = "cards"; else delete document.documentElement.dataset.look; try { localStorage.setItem("ssi-look", v); } catch (x) {} render(); return; }
     if (e.target.closest("[data-chkupd]")) { const m = $("#updmsg"), bt = e.target.closest("[data-chkupd]"); bt.disabled = true; m.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { m.textContent = r; bt.disabled = false; }); return; }
     if (swiped) { swiped = false; e.preventDefault(); return; }
     const um = e.target.closest("[data-unmute]"); if (um) { unmuteLot(um.dataset.unmute); render(); return; }
