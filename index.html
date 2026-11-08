@@ -358,6 +358,16 @@ main.solo .detail.open { display: block; }
     const newLotNo = new Map(newLots.slice().sort(byMade).map((e, i) => [e.id, "L" + (lotBase + i + 1)]));
     const purBase = hiNum(rows("SELECT purchase_no FROM purchases").map((r) => r.purchase_no), /^P(\d+)$/);
     const newPurNo = new Map(newPurch.concat(splitE).sort(byMade).map((e, i) => [e.id, "P" + String(purBase + i + 1).padStart(3, "0")]));
+    // skins movements still waiting for Excel, shown in purchase and lot movements until the next update
+    const U = (x) => String(x || "").toUpperCase(), mvOf = (e, t, from, to, pcs, sqft) => ({ id: e.id, date: (e.data && e.data.date) || e.entry_date || String(e.created_at || "").slice(0, 10), t, from: U(from), to: U(to), pcs: Number(pcs) || 0, sqft: Number(sqft) || 0, note: (e.data && e.data.note) || "" });
+    data.pendMv = [].concat(
+      skinsE.map((e) => mvOf(e, "skins", e.data.from, e.data.to, e.data.pcs, e.data.sqft)),
+      newLots.map((e) => mvOf(e, "new lot", e.data.from, newLotNo.get(e.id) || tmp(e), e.data.pcs, e.data.sqft)),
+      backE.map((e) => mvOf(e, "skins back", e.data.to, e.data.from, e.data.pcs, e.data.sqft)),
+      moveE.map((e) => mvOf(e, e.data.is_new === "1" ? "split" : "move", e.data.from, e.data.to, e.data.pcs, e.data.sqft)),
+      newPurch.map((e) => mvOf(e, "receipt", "SUPPLIER", newPurNo.get(e.id) || tmp(e), e.data.pcs, e.data.sqft)),
+      splitE.map((e) => mvOf(e, "split", e.data.key, newPurNo.get(e.id) || tmp(e), e.data.pcs, e.data.sqft)),
+      mergeE.map((e) => mvOf(e, "merge", e.data.from, e.data.to, e.data.pcs, e.data.sqft)));
     const synthLots = newLots.map((e) => { const d = e.data; return { lot_no: newLotNo.get(e.id) || tmp(e), isNew: true, customer: d.customer, product: d.product, order_qty: d.order_qty ? Number(d.order_qty) : null, lot_pcs: Number(d.pcs) || 0, shaving: d.shaving, lot_sqft: Number(d.sqft) || 0, order_date: d.order_date, due_date: d.due_date, stage: d.stage, stage_since: d.date, weight: d.weight, remarks: d.remarks, process_page: d.process_page, state: "OPEN" }; });
     data.recDel = new Set(recDelE.map((e) => e.lot_no + "|" + e.process));
     const splitLots = moveE.filter((e) => e.data.is_new === "1").map((e) => Object.assign({}, rows("SELECT * FROM lots WHERE lot_no=?", [e.data.from])[0] || {}, { lot_no: e.data.to, isNew: true, lot_pcs: 0, lot_sqft: 0, delivered_est: null, remarks: "", order_qty: null, weight: null, state: "OPEN", splitOf: e.data.from }));
@@ -657,7 +667,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 65, at: "2026-11-08T18:19:05+05:30", notes: "A new purchase can give its skins to lots (new lot or existing lot) before it reaches Excel." };
+  const APP_BUILD = { v: 66, at: "2026-11-08T18:44:19+05:30", notes: "Skins given on the phone show in the purchase and lot movements straight away, marked waiting for Excel. Give skins from a purchase page always uses that purchase." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1224,8 +1234,12 @@ main.solo .detail.open { display: block; }
   function skinsTable(lot) {
     const r = rows(`SELECT l.*, p.supplier, p.animal, p.grade FROM purchase_ledger l LEFT JOIN purchases p ON UPPER(p.purchase_no) =
         CASE WHEN l.to_key=? THEN l.from_key ELSE l.to_key END WHERE (l.to_key=? OR l.from_key=?) ORDER BY l.id`, [lot, lot, lot]);
-    if (!r.length) return `<p class="note">No skins recorded for this lot.</p>`;
+    const pm = (data.pendMv || []).filter((m) => m.from === lot || m.to === lot);
+    if (!r.length && !pm.length) return `<p class="note">No skins recorded for this lot.</p>`;
     let tp = 0, ts = 0;
+    const pend = pm.map((m) => { const inn = m.to === lot, sgn = inn ? 1 : -1, P = data.purchases.find((x) => x.key === (inn ? m.from : m.to)) || {}; tp += sgn * m.pcs; ts += sgn * m.sqft;
+      return `<tr class="pendrow"><td class="nw">${fmtS(m.date)}</td><td>${inn ? "from " + (/^P/.test(m.from) ? purLink(m.from) : lotLink(m.from)) : "to " + (/^P/.test(m.to) ? purLink(m.to) : lotLink(m.to))} <span class="wait">waiting for Excel</span></td>
+        <td>${esc(P.supplier || "")}</td><td>${esc([P.animal, P.grade].filter(Boolean).join(" - "))}</td><td class="r num">${fmtN(sgn * m.pcs, 0)}</td><td class="r num">${fmtN(sgn * m.sqft, 2)}</td></tr>`; }).join("");
     const body = r.map((e) => {
       const inn = e.to_key === lot, sgn = inn ? 1 : -1, v = e.status === "VOID";
       if (!v) { tp += sgn * e.pcs; ts += sgn * e.sqft; }
@@ -1234,7 +1248,7 @@ main.solo .detail.open { display: block; }
         <td class="r num">${fmtN(sgn * e.pcs, 0)}</td><td class="r num">${fmtN(sgn * e.sqft, 2)}</td></tr>`;
     }).join("");
     return `<div class="tbl"><table><thead><tr><th>Date</th><th>From / to</th><th>Supplier</th><th>Animal - grade</th><th class="r">Pcs</th><th class="r">Sqft</th></tr></thead>
-      <tbody>${body}</tbody><tfoot><tr><td colspan="4"><b>Total in the lot</b></td><td class="r num"><b>${fmtN(tp, 0)}</b></td><td class="r num"><b>${fmtN(ts, 2)}</b></td></tr></tfoot></table></div>`;
+      <tbody>${body}${pend}</tbody><tfoot><tr><td colspan="4"><b>Total in the lot</b></td><td class="r num"><b>${fmtN(tp, 0)}</b></td><td class="r num"><b>${fmtN(ts, 2)}</b></td></tr></tfoot></table></div>`;
   }
   const returnable = (l) => { const p = deliveredPcs(l.lot_no); return { p: p > 0 ? p : l.state !== "OPEN" ? l.lot_pcs || 0 : 0, s: l.delivered || (l.state === "ARCHIVED" ? l.delivered_est || 0 : 0) }; };
   const lotInUse = (k) => one("SELECT COUNT(*) FROM purchase_ledger WHERE status<>'VOID' AND (to_key=? OR from_key=?)", [k, k]) || one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=?", [k]) || one("SELECT COUNT(*) FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k]) || entries.some((e) => e.status === "pending" && (e.lot_no === k || (e.data && (e.data.to === k || e.data.from === k))));
@@ -1737,7 +1751,8 @@ main.solo .detail.open { display: block; }
   const opt = (val, text, on) => `<option value="${esc(val)}"${on ? " selected" : ""}>${esc(text)}</option>`;
   const dl = (id, list) => `<datalist id="${id}">${[...new Set(list.filter(Boolean))].map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
   const purchKind = (p) => [p.animal, p.grade].filter(Boolean).join(" - ");
-  const purchOpts = (sel0) => openPurch().map((p) => opt(p.key, [p.purchase_no, purchKind(p), p.supplier, fmtN(p.leftP, 0) + " pcs left"].filter(Boolean).join(" · "), p.key === sel0)).join("");
+  // the purchase the form was opened from is always offered (and picked), even with no skins left, so another purchase is never chosen silently
+  const purchOpts = (sel0) => { const L = openPurch(), extra = sel0 && !L.some((p) => p.key === sel0) ? data.purchases.filter((p) => p.key === sel0) : []; return (sel0 ? "" : opt("", "Choose a purchase")) + extra.concat(L).map((p) => opt(p.key, [p.purchase_no, purchKind(p), p.supplier, fmtN(p.leftP, 0) + " pcs left"].filter(Boolean).join(" · "), p.key === sel0)).join(""); };
   const purchInfo = (key) => { const p = data.purchases.find((x) => x.key === key) || openPurch()[0]; return p ? `Animal: ${p.animal || "-"} · Grade: ${p.grade || "-"} · Supplier: ${p.supplier || "-"} · Left: ${fmtN(p.leftP, 0)} pcs, ${fmtN(p.leftS, 2)} sqft` : ""; };
   const lineOpts = (cur0) => data.orders.filter((o) => !o.isNew && o.grp === 1).map((o) => opt(o.id, `PO ${o.po_no} · ${o.customer} · ${o.item} · ${fmtN(o.qty_sqft, 0)} sqft`, String(o.id) === String(cur0))).join("");
   const formEnd = `<p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div>`;
@@ -2331,7 +2346,9 @@ main.solo .detail.open { display: block; }
       <h3>Movements</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>To / from</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${r.map((e) => {
         const out = e.from_key === k;
         return `<tr class="${e.status === "VOID" ? "void" : ""}"><td class="nw">${fmtS(e.entry_date)}</td><td>${esc((e.entry_type || "").toLowerCase())}</td><td>${out ? lotLink(e.to_key) : esc(e.from_key.toLowerCase())}</td>
-          <td class="r num">${fmtN((out ? -1 : 1) * e.pcs, 0)}</td><td class="r num">${fmtN((out ? -1 : 1) * e.sqft, 2)}</td><td class="note">${esc(e.note)}</td></tr>`; }).join("")}</tbody></table></div>`;
+          <td class="r num">${fmtN((out ? -1 : 1) * e.pcs, 0)}</td><td class="r num">${fmtN((out ? -1 : 1) * e.sqft, 2)}</td><td class="note">${esc(e.note)}</td></tr>`; }).join("")}${(data.pendMv || []).filter((m) => m.from === k || m.to === k).map((m) => { const out = m.from === k, other = out ? m.to : m.from;
+        return `<tr class="pendrow"><td class="nw">${fmtS(m.date)}</td><td>${esc(m.t)} <span class="wait">waiting for Excel</span></td><td>${other === "SUPPLIER" ? "supplier" : /^P/.test(other) ? purLink(other) : lotLink(other)}</td>
+          <td class="r num">${fmtN((out ? -1 : 1) * m.pcs, 0)}</td><td class="r num">${fmtN((out ? -1 : 1) * m.sqft, 2)}</td><td class="note">${esc(m.note)}</td></tr>`; }).join("")}</tbody></table></div>`;
   }
   function chemDetail(n) {
     const c = data.chemicals.find((x) => x.name === n); if (!c) return "";
