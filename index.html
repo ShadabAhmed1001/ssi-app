@@ -670,7 +670,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 68, at: "2026-11-08T22:13:05+05:30", notes: "Dispatched needs a recorded delivery. Pieces not delivered must be accounted for: rejected, leftover stock, another lot or wastage." };
+  const APP_BUILD = { v: 69, at: "2026-11-08T22:49:11+05:30", notes: "New checks: process page before FAT, yield reason on dispatch, part sent ahead reminder, archive only fully accounted lots, splits can't exceed the lot, delivery over PO warning, weight before stock adjust, purchase rate required, repeat purchase warning." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -687,6 +687,8 @@ main.solo .detail.open { display: block; }
     const noProc = data.processes.find((p) => p.none);
     const checks = [];
     const arch = archiveReady();
+    { const una = data.lots.filter((l) => l.state === "DISPATCHED" && trackedLot(l.lot_no) && notDelivered(l).dp > 0 && notDelivered(l).sh > 0);
+      if (una.length) checks.push([`data-go="lots" data-k="${esc(una[0].lot_no)}"`, una.length + (una.length === 1 ? " dispatched lot has" : " dispatched lots have") + " pieces not delivered and not accounted for (" + una.slice(0, 6).map((l) => l.lot_no).join(", ") + (una.length > 6 ? "…" : "") + "). They can't be archived until you say where they went."]); }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
     const hc = healthItems().length;
     if (hc) checks.push(["data-jump=\"health\" data-f=\"\"", "Health check: " + hc + (hc === 1 ? " item" : " items") + " to look at"]);
@@ -715,7 +717,7 @@ main.solo .detail.open { display: block; }
   // ---------------------------------------------------------------- stock count, cost, archive
   function archiveReady() {
     const days0 = Number(one("SELECT value FROM meta WHERE key='archive_days'")) || 30;
-    return data.lots.filter((l) => l.state === "DISPATCHED" && !l.isNew && !l.chem_check && l.inStage !== null && l.inStage >= days0);
+    return data.lots.filter((l) => l.state === "DISPATCHED" && !l.isNew && !l.chem_check && l.inStage !== null && l.inStage >= days0 && !(trackedLot(l.lot_no) && notDelivered(l).sh > 0));
   }
   // ---------------------------------------------------------------- costing, same sums as the process sheet
   const NOT_ROUND = ["SAMPLE DRUM", "FAT DRUM", "MILLING", "MILLING [SAMPLE]"];
@@ -1264,6 +1266,18 @@ main.solo .detail.open { display: block; }
   const BAL = [["reject", "Rejected / kept in dump"], ["stock", "Kept in stock as leftover"], ["lot", "Moved to another lot"], ["waste", "Wastage / lost"]];
   const balAcc = (k) => balRows(k).filter((r) => r.dest !== "LOT").reduce((t, r) => t + (Number(r.pcs) || 0), 0) + balPend(k).reduce((t, e) => t + BAL.reduce((u, [x]) => u + (Number(e.data[x + "_pcs"]) || 0), 0), 0);
   const notDelivered = (l) => { const dp = deliveredPcs(l.lot_no), sh = (Number(l.lot_pcs) || 0) - dp - balAcc(l.lot_no); return { dp, sh: sh > 0.0001 ? sh : 0 }; };
+  const deliveredSqft = (k) => rows("SELECT IFNULL(SUM(sqft),0) s FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k])[0].s + (data.phoneDel[k] || []).reduce((a, e) => a + (Number(e.sqft) || 0), 0) - data.voidLive.filter((e) => e.lot_no === k).reduce((a, e) => a + (Number(e.data.sqft) || 0), 0);
+  // yield on dispatch: delivered sqft against the lot's sqft for the pieces delivered; outside 85-110 % needs a reason
+  const YIELD_MIN = 0.85, YIELD_MAX = 1.10;
+  const yieldOf = (l) => { const dp = deliveredPcs(l.lot_no), ds = deliveredSqft(l.lot_no), lp = Number(l.lot_pcs) || 0, ls = Number(l.lot_sqft) || 0; if (!(dp > 0 && ds > 0 && lp > 0 && ls > 0)) return null; const exp = ls * Math.min(1, dp / lp); return exp > 0 ? ds / exp : null; };
+  // process page needed from FAT on (crusting starts there)
+  const NEED_PROC = ["FAT", "SETTING/NAILING/DRYING", "MOLISSA/STAKING", "MILLING/TOGGLING", "FINISHING", "QC / READY FOR DISPATCH", "DISPATCHED"];
+  // same as Excel's IsTrackedLot (Settings: ChemTrackFromLot = 500 on 08-Nov-2026)
+  const trackedLot = (k) => /^L\d+/.test(k) && Number(String(k).slice(1).match(/^\d+/)[0]) >= 500;
+  // part sent ahead earlier (remarks lines from Excel + phone entries still waiting)
+  const partAheadLines = (l) => String(l.remarks || "").split(/\n/).filter((t) => /PART AHEAD/i.test(t)).concat(entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no).map((e) => "PART AHEAD " + fmtS(e.data.date) + ": " + fmtN(e.data.pcs, 0) + " pcs to " + e.data.stage + " for " + String(e.data.purpose || "").toLowerCase()));
+  // PO lines this lot is linked to, with sqft delivered on each (all linked lots, phone entries included)
+  const poLines = (k) => rows("SELECT ol.id, ol.qty_sqft q, o.po_no, ol.item FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [k]).map((r) => ({ ...r, del: rows("SELECT lot_no FROM lot_orders WHERE line_id=?", [r.id]).reduce((t, x) => t + deliveredSqft(x.lot_no), 0) }));
   const deliveredPcs = (k) => rows("SELECT IFNULL(SUM(pcs),0) p FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k])[0].p + (data.phoneDel[k] || []).reduce((a, e) => a + (Number(e.pcs) || 0), 0) - data.voidLive.filter((e) => e.lot_no === k).reduce((a, e) => a + (Number(e.data.pcs) || 0), 0);
   // what Adjust Stocks would read from the sheet: D4:E101 and D194:E231, names through CHEM ALIASES
   const chemName = (n) => { const t = String(n || "").trim(), a = data.alias[t.toUpperCase()]; return a || t; };
@@ -1777,6 +1791,7 @@ main.solo .detail.open { display: block; }
   const FORMS = {
     lot_balance: { title: "Pieces not delivered", html: (a) => { const l = data.lotBy[a], { dp, sh } = notDelivered(l);
       return `<form class="fm" id="fm-lot_balance" data-lot="${esc(a)}" data-short="${sh}"><h3>${esc(a)}</h3>
+      ${partAheadLines(l).length ? `<p class="note" style="margin:0;background:var(--warn-soft);padding:6px 8px;border-radius:6px">Sent ahead earlier: ${partAheadLines(l).map(esc).join("; ")}. If those pieces were not delivered with the lot, record them here (leftover stock, or wastage if used up as samples).</p>` : ""}
       <p class="note" style="margin:0">${fmtN(l.lot_pcs, 0)} pcs in the lot, ${fmtN(dp, 0)} delivered${balAcc(a) ? ", " + fmtN(balAcc(a), 0) + " already accounted for" : ""}. <b>${fmtN(sh, 0)} pcs not delivered.</b> Say where they went (sqft is for the record only).</p>
       ${BAL.map(([x, t]) => `<fieldset class="balrow" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0"><legend style="font-size:13px;font-weight:600">${t}</legend><div class="two">${numF("fb-" + x + "-p", "Pcs")}${numF("fb-" + x + "-s", "Sqft")}${x === "lot" ? `<label>To lot<input id="fb-to" list="lotlist2" autocomplete="off"></label>${dl("lotlist2", openLots().map((o) => o.lot_no).filter((k) => k !== a))}` : ""}</div></fieldset>`).join("")}
       ${dateF("fb-date", "Date", today0())}${txtF("fb-note", "Reason / note (needed for rejected or wasted pieces)")}
@@ -2015,7 +2030,8 @@ main.solo .detail.open { display: block; }
       const from = f.dataset.lot, sel0 = need("#fv-to"), to = sel0 || need("#fv-new").toUpperCase(), pcs = numOf("#fv-pcs"), sqft = numOf("#fv-sqft"), date = need("#fv-date");
       if (!sel0 && !/^L\d+[A-Z]*$/.test(to)) return bad("Enter a lot number such as L521B."); if (!sel0 && data.lotBy[to]) return bad(to + " already exists. Pick it from the list.");
       if (pcs <= 0 && sqft <= 0) return bad("Enter the pieces or sqft to move."); if (checkDate(date)) return bad(checkDate(date));
-      if ((pcs > Number(f.dataset.pcs) + 0.0001 || sqft > (data.lotBy[from].lot_sqft || 0) + 1) && warnOnce(f, "That is more than the lot has.")) return;
+      { const av = (Number(data.lotBy[from].lot_pcs) || 0) - deliveredPcs(from); if (pcs > av + 0.0001) return bad(from + " has only " + fmtN(av, 0) + " pcs that are not delivered. A split or merge can't move more."); }
+      if (sqft > (data.lotBy[from].lot_sqft || 0) + 1 && warnOnce(f, "That is more sqft than the lot has.")) return;
       return saveNew({ type: "lot_move", lot_no: from, data: { from, to, is_new: sel0 ? "0" : "1", pcs, sqft, date, note: need("#fv-note") } }, sel0 ? "Move saved. It is waiting for Excel." : "Split saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-lot_delete") return saveNew({ type: "lot_delete", lot_no: f.dataset.lot, data: { lot: f.dataset.lot } }, "Delete saved. It is waiting for Excel.", msg, btn);
@@ -2031,6 +2047,7 @@ main.solo .detail.open { display: block; }
     if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src); }
     if (f.id === "fm-chem_adjust") {
       const l = data.lotBy[f.dataset.lot], p = chemPlan(l, f.dataset.what);
+      if (p.secs.includes("CRUSTING") && !(Number(l.weight) > 0)) return bad(l.lot_no + " has no weight. Enter the shaved weight (Edit lot) before adjusting crusting chemicals.");
       if (!p.lines.length) return bad("This recipe has no quantities to deduct.");
       if (p.short.length && warnOnce(f, p.short.length + (p.short.length === 1 ? " chemical goes" : " chemicals go") + " negative. Save again to go ahead.")) return;
       const tot = (s) => { const i = p.secs.indexOf(s); return i < 0 ? "" : p.parts[i].total; };
@@ -2097,6 +2114,9 @@ main.solo .detail.open { display: block; }
     if (f.id === "fm-purchase") {
       const pcs = numOf("#fp-pcs"), date = need("#fp-date");
       if (!need("#fp-sup")) return bad("Enter the supplier."); if (pcs <= 0) return bad("Enter the pieces received."); if (checkDate(date)) return bad(checkDate(date));
+      if (!(numOf("#fp-rate") > 0) && !/^(RETURNED|REJECTED|LEFTOVER) /i.test(need("#fp-sup"))) return bad("Enter the rate. Cost per lot is wrong without it.");
+      { const sup = need("#fp-sup").toUpperCase(), dup = data.purchases.filter((x) => String(x.supplier || "").toUpperCase() === sup && String(x.received_date || "").slice(0, 10) === date && Math.abs((Number(x.inP) || 0) - pcs) < 0.01);
+        if (dup.length && warnOnce(f, "Looks like a repeat: " + dup.map((x) => x.purchase_no).join(", ") + " is the same supplier, date and pcs. Save again if it's really a second purchase.")) return; }
       return saveNew({ type: "purchase", lot_no: "NEW", data: { supplier: need("#fp-sup"), animal: need("#fp-ani"), grade: need("#fp-gra"), pcs, sqft: numOf("#fp-sqft"), rate: numOf("#fp-rate"), per: need("#fp-per"), date, note: need("#fp-note") } }, "Purchase " + nextKey("P") + " saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-order") {
@@ -2216,10 +2236,17 @@ main.solo .detail.open { display: block; }
       if (a && b && b < a && !["ON HOLD", "DUMPED"].includes(up) && cu !== "ON HOLD" && warnOnce(f, to + " comes before " + l.stage + ".")) return;
       { const why = stageGate(l, to);
         if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
+      if (NEED_PROC.includes(up) && trackedLot(l.lot_no) && !String(l.process_page || "").trim()) { msg.innerHTML = esc(l.lot_no + " has no process page yet. Link a process before it moves to " + to + ".") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Process</button></span>`; return; }
       if (up === "DISPATCHED") {
         const { dp, sh } = notDelivered(l);
         if (dp <= 0) { msg.innerHTML = esc(l.lot_no + " can't be marked Dispatched: no delivery is recorded. Record the delivery first.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-act="delivery">Record delivery</button></span>`; return; }
         if (sh > 0) { msg.innerHTML = esc(fmtN(sh, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs were not delivered (" + fmtN(dp, 0) + " delivered). Say where they went before marking " + l.lot_no + " Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="lot_balance:${esc(l.lot_no)}">Say where they went</button></span>`; return; }
+        const y = yieldOf(l);
+        if (y !== null && (y < YIELD_MIN || y > YIELD_MAX)) {
+          const yr = ($("#fs-yield") || {}).value || "";
+          if (!yr.trim()) { if (!$("#fs-yield")) $("#fs-note").closest("label").insertAdjacentHTML("afterend", `<label>Reason for the yield<input id="fs-yield" autocomplete="off" placeholder="for example thin skins, heavy trimming"></label>`); msg.textContent = "Yield is " + fmtN(y * 100, 0) + " % (" + fmtN(deliveredSqft(l.lot_no), 0) + " sqft delivered against " + fmtN(l.lot_sqft * Math.min(1, dp / l.lot_pcs), 0) + " expected). Type the reason, then save again."; $("#fs-yield").focus(); return; }
+          $("#fs-note").value = ("YIELD " + fmtN(y * 100, 0) + "%: " + yr.trim() + ". " + $("#fs-note").value).trim();
+        }
       }
       body = { type: "stage", lot_no: l.lot_no, from_stage: l.stage || "", to_stage: to, entry_date: date, note: $("#fs-note").value.trim() };
     } else {
@@ -2231,6 +2258,8 @@ main.solo .detail.open { display: block; }
       const pcs = hides + sides / 2, sideNote = sides ? fmtN(hides, 0) + " HIDES + " + fmtN(sides, 0) + " SIDES" : "";
       const dp = deliveredPcs(l.lot_no);
       if (l.lot_pcs > 0 && dp + pcs > l.lot_pcs + 0.0001 && warnOnce(f, "That makes " + fmtN(dp + pcs, 0) + " pcs delivered, more than the lot's " + fmtN(l.lot_pcs, 0) + ".")) return;
+      { const over = poLines(l.lot_no).filter((x) => Number(x.q) > 0 && x.del + sqft > Number(x.q) * 1.05);
+        if (over.length && warnOnce(f, over.map((x) => "PO " + x.po_no + " " + x.item + ": " + fmtN(x.del + sqft, 0) + " sqft delivered against " + fmtN(x.q, 0) + " ordered").join("; ") + ". Save again if that's right.")) return; }
       body = { type: "delivery", lot_no: l.lot_no, entry_date: date, pcs, sqft, doc_no: $("#fd-doc").value.trim(), note: [sideNote, $("#fd-note").value.trim()].filter(Boolean).join(" ") };
     }
     btn.disabled = true; msg.textContent = "";
