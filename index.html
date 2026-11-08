@@ -407,7 +407,7 @@ main.solo .detail.open { display: block; }
           else if (e.type === "purchase_split" && e.lot_no === K) { p.inP -= Number(d.pcs) || 0; p.inS -= Number(d.sqft) || 0; p.phone = true; }
           else if (e.type === "purchase_merge" && d.to === K) { p.inP += Number(d.pcs) || 0; p.inS += Number(d.sqft) || 0; p.phone = true; }
           else if (e.type === "purchase_edit" && e.lot_no === K) Object.assign(p, { supplier: d.supplier, animal: d.animal, grade: d.grade, rate: Number(d.rate) || null, rate_basis: d.per, received_date: d.date, inP: Number(d.pcs) || 0, inS: Number(d.sqft) || 0, phone: true }); });
-        return p; }).filter((p) => { const K = p.purchase_no.toUpperCase(); return !purchDel.some((e) => e.lot_no === K) && !mergeE.some((e) => e.data.from === K); }).concat(newPurch.concat(splitE).map((e) => { const d = e.data; return { purchase_no: newPurNo.get(e.id) || tmp(e), isNew: true, supplier: d.supplier, animal: d.animal, grade: d.grade, received_date: d.date, rate: Number(d.rate) || null, rate_basis: d.per, inP: Number(d.pcs) || 0, inS: Number(d.sqft) || 0, outP: 0, outS: 0, note: d.note }; })).map((p) => {
+        return p; }).filter((p) => { const K = p.purchase_no.toUpperCase(); return !purchDel.some((e) => e.lot_no === K) && !mergeE.some((e) => e.data.from === K); }).concat(newPurch.concat(splitE).map((e) => { const d = e.data; return { purchase_no: newPurNo.get(e.id) || tmp(e), isNew: true, eid: e.id, supplier: d.supplier, animal: d.animal, grade: d.grade, received_date: d.date, rate: Number(d.rate) || null, rate_basis: d.per, inP: Number(d.pcs) || 0, inS: Number(d.sqft) || 0, outP: 0, outS: 0, note: d.note }; })).map((p) => {
       skinsE.concat(newLots).filter((e) => e.data.from === p.purchase_no.toUpperCase()).forEach((e) => { p.outP += Number(e.data.pcs) || 0; p.outS += Number(e.data.sqft) || 0; p.phone = true; });
       backE.filter((e) => e.data.from === p.purchase_no.toUpperCase()).forEach((e) => { p.outP -= Number(e.data.pcs) || 0; p.outS -= Number(e.data.sqft) || 0; p.phone = true; });
       const leftP = p.inP - p.outP, leftS = p.inS - p.outS;
@@ -657,7 +657,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 64, at: "2026-11-08T18:04:42+05:30", notes: "New purchases and lots get the next P / L number on the phone. Phone Back also works across tabs (lot → purchase → back to the lot)." };
+  const APP_BUILD = { v: 65, at: "2026-11-08T18:19:05+05:30", notes: "A new purchase can give its skins to lots (new lot or existing lot) before it reaches Excel." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -798,6 +798,7 @@ main.solo .detail.open { display: block; }
     const same = (x) => x.lot_no === e.lot_no, names = (x) => (x.lines || []).map((y) => y.n);
     if (e.type === "recipe" || e.type === "lot_edit" || e.type === "chem_undo") return later.filter((x) => same(x) && ["chem_adjust", "chem_readjust"].includes(x.type));
     if (e.type === "purchase_edit" || e.type === "purchase_split" || e.type === "purchase_merge") return later.filter((x) => (same(x) || (x.data && x.data.to === e.lot_no)) && x.type.startsWith("purchase_"));
+    if (e.type === "purchase" || e.type === "purchase_split") return later.filter((x) => x.data && x.data.from_entry === e.id);
     if (e.type === "chem_add") return later.filter((x) => (x.data && x.data.to === e.lot_no) || names(x).includes(e.lot_no));
     if (e.type === "chem_alias") return later.filter((x) => names(x).includes(e.data.to));
     return [];
@@ -1684,7 +1685,7 @@ main.solo .detail.open { display: block; }
         if (src[0] === "P") {
           const p = data.purchases.find((x) => x.key === src.slice(2));
           if ((dp > p.leftP + 0.0001 || dS > p.leftS + 1) && warnOnce(f, p.key + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
-          extra.push({ type: "skins", lot_no: lot, data: { from: p.key, to: lot, pcs: dp, sqft: dS, date: today0(), note: why || "Lot size increased" } });
+          extra.push({ type: "skins", lot_no: lot, data: Object.assign({ from: p.key, to: lot, pcs: dp, sqft: dS, date: today0(), note: why || "Lot size increased" }, fromEntry(p.key)) });
         } else {
           const r = backRows(lot).find((x) => "B:" + x.id === src);
           if (-dp > r.leftP + 0.0001 || -dS > r.leftS + 0.005) { msg.textContent = "That entry brought in only " + fmtN(r.leftP, 0) + " pcs and " + fmtN(r.leftS, 2) + " sqft. Choose another, or Correction only."; return; }
@@ -1729,8 +1730,10 @@ main.solo .detail.open { display: block; }
     return rows("SELECT id, entry_date, from_key, to_key, pcs, sqft FROM purchase_ledger WHERE status='OK' AND entry_type IN ('ALLOCATION','TRANSFER') AND (to_key=? OR from_key=?) ORDER BY id DESC", [k, k]).map((r) => {
       const p0 = pend(r.id); return Object.assign(r, { leftP: +(r.pcs - p0.reduce((a, e) => a + (Number(e.data.pcs) || 0), 0)).toFixed(4), leftS: +(r.sqft - p0.reduce((a, e) => a + (Number(e.data.sqft) || 0), 0)).toFixed(2) }); }).filter((r) => !used.includes(r.id) && (r.leftP > 0 || r.leftS > 0));
   }
+  // skins from a purchase that is still waiting for Excel carry its entry id, so Excel can find it even if its number changes
+  const fromEntry = (key) => { const p = data.purchases.find((x) => x.key === String(key || "").toUpperCase()); return p && p.isNew && p.eid ? { from_entry: p.eid } : {}; };
   const nextKey = (t) => { const re = t === "P" ? /^P(\d+)$/ : /^L(\d+)$/, n = (t === "P" ? data.purchases.map((p) => p.purchase_no) : data.lots.map((l) => l.lot_no)).reduce((m, k) => { const x = re.exec(String(k || "").toUpperCase()); return x ? Math.max(m, Number(x[1])) : m; }, 0) + 1; return t === "P" ? "P" + String(n).padStart(3, "0") : "L" + n; };
-  const today0 = () => iso(today), openLots = () => data.lots.filter((l) => l.grp === 1 && !l.isNew), openPurch = () => data.purchases.filter((p) => p.grp === 1 && !p.isNew && p.leftP > 0);
+  const today0 = () => iso(today), openLots = () => data.lots.filter((l) => l.grp === 1 && !l.isNew), openPurch = () => data.purchases.filter((p) => p.grp === 1 && p.leftP > 0);
   const opt = (val, text, on) => `<option value="${esc(val)}"${on ? " selected" : ""}>${esc(text)}</option>`;
   const dl = (id, list) => `<datalist id="${id}">${[...new Set(list.filter(Boolean))].map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
   const purchKind = (p) => [p.animal, p.grade].filter(Boolean).join(" - ");
@@ -2036,13 +2039,13 @@ main.solo .detail.open { display: block; }
       const from = need("#fk-from"), to = need("#fk-to").toUpperCase(), pcs = numOf("#fk-pcs"), sqft = numOf("#fk-sqft"), date = need("#fk-date"), p = data.purchases.find((x) => x.key === from);
       if (!from) return bad("Pick the purchase."); if (!data.lotBy[to]) return bad("Pick a lot from the list."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft."); if (checkDate(date)) return bad(checkDate(date));
       if ((pcs > p.leftP + 0.0001 || sqft > p.leftS + 1) && warnOnce(f, from + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
-      return saveNew({ type: "skins", lot_no: to, data: { from, to, pcs, sqft, date, note: need("#fk-note") } }, "Skins saved. They are waiting for Excel.", msg, btn);
+      return saveNew({ type: "skins", lot_no: to, data: Object.assign({ from, to, pcs, sqft, date, note: need("#fk-note") }, fromEntry(from)) }, "Skins saved. They are waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-new_lot") {
       const from = need("#fn-from"), pcs = numOf("#fn-pcs"), sqft = numOf("#fn-sqft"), date = need("#fn-date"), p = data.purchases.find((x) => x.key === from);
       if (!from) return bad("Pick the purchase."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft for the new lot."); if (checkDate(date)) return bad(checkDate(date));
       if ((pcs > p.leftP + 0.0001 || sqft > p.leftS + 1) && warnOnce(f, from + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
-      return saveNew({ type: "new_lot", lot_no: "NEW", data: { from, pcs, sqft, date, line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") } }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
+      return saveNew({ type: "new_lot", lot_no: "NEW", data: { ...fromEntry(from), from, pcs, sqft, date, line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") } }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-purchase") {
       const pcs = numOf("#fp-pcs"), date = need("#fp-date");
@@ -2315,11 +2318,12 @@ main.solo .detail.open { display: block; }
   function purchaseDetail(k) {
     const p = data.purchases.find((x) => x.key === k); if (!p) return "";
     const r = rows("SELECT * FROM purchase_ledger WHERE from_key=? OR to_key=? ORDER BY id", [k, k]);
-    const can = store && canWrite && !p.isNew;
+    const can = store && canWrite && !p.isNew, canUse = store && canWrite && p.isNew && p.leftP > 0;
     return `<p class="sub">${esc(p.supplier)} · ${esc([p.animal, p.grade].filter(Boolean).join(" - "))}</p>
       ${flash ? `<p class="okmsg">${esc(flash)}</p>` : ""}
       ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button><button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
-      ${p.isNew ? `<p class="note"><span class="wait">New purchase, waiting for Excel.</span> The number was given on the phone. Excel keeps it unless that number was used on the PC in the meantime; then it takes the next free one.</p>` : p.phone ? `<p class="note"><span class="wait">Includes phone entries not in Excel yet.</span></p>` : ""}
+      ${canUse ? `<div class="acts"><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button></div>` : ""}
+      ${p.isNew ? `<p class="note"><span class="wait">New purchase, waiting for Excel.</span> You can already give its skins to lots. To change the purchase itself, cancel its entry in Entries and make it again. The number was given on the phone. Excel keeps it unless that number was used on the PC in the meantime; then it takes the next free one.</p>` : p.phone ? `<p class="note"><span class="wait">Includes phone entries not in Excel yet.</span></p>` : ""}
       ${kv([["Received", fmtD(p.received_date)], ["Rate", p.rate ? "₹" + fmtN(p.rate, 2) + (String(p.rate_basis).toUpperCase() === "PC" ? " / pc" : " / sqft") : ""],
         ["Pcs in", fmtN(p.inP, 0)], ["Sqft in", fmtN(p.inS, 2)], ["Pcs left", `<span class="${p.over ? "late" : ""}">${fmtN(p.leftP, 0)}</span>`], ["Sqft left", fmtN(p.leftS, 2)],
         ["Closed on", fmtD(p.closed_on)], ["Note", esc(p.note)]])}
