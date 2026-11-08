@@ -343,7 +343,10 @@ main.solo .detail.open { display: block; }
       else if (e.type === "lot_return") { const d = e.data; (phoneDel[e.lot_no] = phoneDel[e.lot_no] || []).push({ isReturn: true, entry_date: d.date, pcs: -(Number(d.pcs) || 0), sqft: -(Number(d.sqft) || 0), doc_no: d.doc, note: d.outcome + ": " + d.why }); if (d.outcome === "REWORK") phoneMove[e.lot_no] = { to_stage: d.stage, entry_date: d.date }; } });
     data.phoneDel = phoneDel; data.voidLive = live.filter((e) => e.type === "delivery_void"); data.adjLive = live.filter((e) => e.type === "chem_adjust" || e.type === "chem_readjust"); data.undoLive = live.filter((e) => e.type === "chem_undo");
     const of = (t) => live.filter((e) => e.type === t), tmp = (e) => "NEW-" + String(e.id).slice(0, 4).toUpperCase();
-    const moveE = of("lot_move"), lotDelE = of("lot_delete"), recDelE = of("recipe_delete"), poDelE = of("po_delete"), purchCl = of("purchase_close"), purchDel = of("purchase_delete"), splitE = of("purchase_split"), mergeE = of("purchase_merge"), chemAddE = of("chem_add"), chemEdE = of("chem_edit"), chemDelE = of("chem_delete"), chemVoidE = of("chem_void"), aliasE = of("chem_alias"), renameE = of("chem_rename"), adjE = of("chem_adjust"), reE = of("chem_readjust"), voidE = of("delivery_void"), undoE = of("chem_undo"), purchEd = of("purchase_edit"), orderEd = of("order_edit"), orderCl = of("order_close"), orderSh = of("order_short"), unlinkE = of("po_unlink"), backE = of("skins_back"), auditE = of("audit"), skinsE = of("skins"), newLots = of("new_lot"), newPurch = of("purchase").concat(of("lot_return").filter((e) => e.data.outcome === "REJECT").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}; return Object.assign({}, e, { data: { supplier: "RETURNED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.pcs, sqft: d.sqft, rate: 0, per: "SQFT", date: d.date, note: "Returned from " + e.lot_no + ": " + d.why } }); })), newPO = of("order"), linksE = of("po_link"), chemE = of("chem"), dyeE = of("dye");
+    const moveE = of("lot_move"), lotDelE = of("lot_delete"), recDelE = of("recipe_delete"), poDelE = of("po_delete"), purchCl = of("purchase_close"), purchDel = of("purchase_delete"), splitE = of("purchase_split"), mergeE = of("purchase_merge"), chemAddE = of("chem_add"), chemEdE = of("chem_edit"), chemDelE = of("chem_delete"), chemVoidE = of("chem_void"), aliasE = of("chem_alias"), renameE = of("chem_rename"), adjE = of("chem_adjust"), reE = of("chem_readjust"), voidE = of("delivery_void"), undoE = of("chem_undo"), purchEd = of("purchase_edit"), orderEd = of("order_edit"), orderCl = of("order_close"), orderSh = of("order_short"), unlinkE = of("po_unlink"), backE = of("skins_back"), auditE = of("audit"), skinsE = of("skins"), newLots = of("new_lot"), newPurch = of("purchase").concat(of("lot_return").filter((e) => e.data.outcome === "REJECT").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}; return Object.assign({}, e, { data: { supplier: "RETURNED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.pcs, sqft: d.sqft, rate: 0, per: "SQFT", date: d.date, note: "Returned from " + e.lot_no + ": " + d.why } }); })).concat([].concat(...of("lot_balance").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}, out = [];
+      if (Number(d.reject_pcs) > 0) out.push(Object.assign({}, e, { id: e.id + ":r", created_at: String(e.created_at || "") + "0", data: { supplier: "REJECTED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.reject_pcs, sqft: d.reject_sqft, rate: 0, per: "SQFT", date: d.date, note: "Not delivered from " + e.lot_no + ": " + (d.note || "") } }));
+      if (Number(d.stock_pcs) > 0) out.push(Object.assign({}, e, { id: e.id + ":s", created_at: String(e.created_at || "") + "1", data: { supplier: "LEFTOVER " + (L.customer || ""), animal: "", grade: "LEFTOVER " + e.lot_no, pcs: d.stock_pcs, sqft: d.stock_sqft, rate: 0, per: "SQFT", date: d.date, note: "Not delivered from " + e.lot_no + (d.note ? ": " + d.note : "") } }));
+      return out; }))), newPO = of("order"), linksE = of("po_link"), chemE = of("chem"), dyeE = of("dye");
     const lineInfo = {}; rows("SELECT l.id line_id, o.po_no FROM order_lines l JOIN orders o ON o.id=l.order_id").forEach((r) => lineInfo[r.line_id] = r);
     live.forEach((e) => { if (e.type === "po_link") po[e.lot_no] = { lot_no: e.lot_no, po_no: (lineInfo[e.line_id] || {}).po_no, line_id: e.line_id }; else if (e.type === "po_unlink") delete po[e.lot_no]; });
     const linkedLater = (e) => linksE.some((x) => x.lot_no === e.lot_no && Number(x.line_id) === Number(e.line_id) && String(x.created_at) > String(e.created_at));
@@ -667,7 +670,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 66, at: "2026-11-08T18:44:19+05:30", notes: "Skins given on the phone show in the purchase and lot movements straight away, marked waiting for Excel. Give skins from a purchase page always uses that purchase." };
+  const APP_BUILD = { v: 68, at: "2026-11-08T22:13:05+05:30", notes: "Dispatched needs a recorded delivery. Pieces not delivered must be accounted for: rejected, leftover stock, another lot or wastage." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1073,6 +1076,9 @@ main.solo .detail.open { display: block; }
       q(src, `SELECT ${cols} FROM ${t}`).forEach((r) => st.run(c.map((k) => { const v = r[k]; return ln && (k === "from_key" || k === "to_key") ? String(v ?? "").toUpperCase() : v === undefined ? null : v; })));
       st.free();
     });
+    // pieces not delivered (DispatchCheck in Excel, from 08-Nov-2026)
+    a.run("CREATE TABLE IF NOT EXISTS lot_balance(id INTEGER, lot_no TEXT, bal_date TEXT, dest TEXT, pcs REAL, sqft REAL, ref_key TEXT, note TEXT, status TEXT)"); a.run("DELETE FROM lot_balance");
+    try { q(src, "SELECT id, lot_no, bal_date, dest, pcs, sqft, ref_key, note, status FROM lot_balance").forEach((r) => a.run("INSERT INTO lot_balance VALUES(?,?,?,?,?,?,?,?,?)", [r.id, String(r.lot_no || "").toUpperCase(), r.bal_date, r.dest, r.pcs, r.sqft, r.ref_key, r.note, r.status])); } catch (e) { /* not in this database yet */ }
     try { a.run("ALTER TABLE order_lines ADD COLUMN short_on TEXT"); a.run("ALTER TABLE order_lines ADD COLUMN short_note TEXT"); } catch (e) { /* already there */ }
     try { q(src, "SELECT id,short_on,short_note FROM order_lines WHERE short_on IS NOT NULL AND short_on<>''").forEach((r) => a.run("UPDATE order_lines SET short_on=?,short_note=? WHERE id=?", [r.short_on, r.short_note ?? "", r.id])); } catch (e) { /* Excel has not closed anything short yet */ }
     // chemicals
@@ -1252,6 +1258,12 @@ main.solo .detail.open { display: block; }
   }
   const returnable = (l) => { const p = deliveredPcs(l.lot_no); return { p: p > 0 ? p : l.state !== "OPEN" ? l.lot_pcs || 0 : 0, s: l.delivered || (l.state === "ARCHIVED" ? l.delivered_est || 0 : 0) }; };
   const lotInUse = (k) => one("SELECT COUNT(*) FROM purchase_ledger WHERE status<>'VOID' AND (to_key=? OR from_key=?)", [k, k]) || one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=?", [k]) || one("SELECT COUNT(*) FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k]) || entries.some((e) => e.status === "pending" && (e.lot_no === k || (e.data && (e.data.to === k || e.data.from === k))));
+  // pieces not delivered that are already accounted for: Excel's lot_balance (LOT moves already lowered the lot) + phone entries waiting
+  const balRows = (k) => { try { return rows("SELECT * FROM lot_balance WHERE status='OK' AND lot_no=? ORDER BY id", [k]); } catch (e) { return []; } };
+  const balPend = (k) => entries.filter((e) => e.type === "lot_balance" && e.status === "pending" && e.lot_no === k);
+  const BAL = [["reject", "Rejected / kept in dump"], ["stock", "Kept in stock as leftover"], ["lot", "Moved to another lot"], ["waste", "Wastage / lost"]];
+  const balAcc = (k) => balRows(k).filter((r) => r.dest !== "LOT").reduce((t, r) => t + (Number(r.pcs) || 0), 0) + balPend(k).reduce((t, e) => t + BAL.reduce((u, [x]) => u + (Number(e.data[x + "_pcs"]) || 0), 0), 0);
+  const notDelivered = (l) => { const dp = deliveredPcs(l.lot_no), sh = (Number(l.lot_pcs) || 0) - dp - balAcc(l.lot_no); return { dp, sh: sh > 0.0001 ? sh : 0 }; };
   const deliveredPcs = (k) => rows("SELECT IFNULL(SUM(pcs),0) p FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k])[0].p + (data.phoneDel[k] || []).reduce((a, e) => a + (Number(e.pcs) || 0), 0) - data.voidLive.filter((e) => e.lot_no === k).reduce((a, e) => a + (Number(e.data.pcs) || 0), 0);
   // what Adjust Stocks would read from the sheet: D4:E101 and D194:E231, names through CHEM ALIASES
   const chemName = (n) => { const t = String(n || "").trim(), a = data.alias[t.toUpperCase()]; return a || t; };
@@ -1355,6 +1367,9 @@ main.solo .detail.open { display: block; }
         `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
         { const w = entries.find((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
+      ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
+        const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
+        return `<h3>Pieces not delivered</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Where</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${br.map((r) => `<tr><td class="nw">${fmtS(r.bal_date)}</td><td>${esc(lab[r.dest] || r.dest)} ${r.ref_key ? (/^P/.test(r.ref_key) ? purLink(r.ref_key) : lotLink(r.ref_key)) : ""}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td class="note">${esc(r.note || "")}</td></tr>`).join("")}${bp.map((e) => BAL.filter(([x]) => Number(e.data[x + "_pcs"]) > 0).map(([x, t]) => `<tr class="pendrow"><td class="nw">${fmtS(e.data.date)}</td><td>${esc(t.toLowerCase())}${x === "lot" ? " " + lotLink(e.data.to_lot) : ""} <span class="wait">waiting for Excel</span></td><td class="r num">${fmtN(e.data[x + "_pcs"], 0)}</td><td class="r num">${fmtN(e.data[x + "_sqft"], 2)}</td><td class="note">${esc(e.data.note || "")}</td></tr>`).join("")).join("")}</tbody></table></div>${nd && nd.sh > 0 && nd.dp > 0 ? `<p class="late">${fmtN(nd.sh, 0)} pcs are not delivered and not accounted for.${canAct ? ` <button class="link" data-form="lot_balance:${esc(k)}">Say where they went</button>` : ""}</p>` : ""}`; })()}
       ${chemBlock(l, canAct)}`;
   }
   function procDetail(k) {
@@ -1760,6 +1775,12 @@ main.solo .detail.open { display: block; }
   const numF = (id, lb, ph) => `<label>${lb}<input id="${id}" type="number" step="any" min="0" inputmode="decimal"${ph ? ` value="${esc(ph)}"` : ""}></label>`;
   const txtF = (id, lb, list) => `<label>${lb}<input id="${id}" autocomplete="off"${list ? ` list="${list}"` : ""}></label>`;
   const FORMS = {
+    lot_balance: { title: "Pieces not delivered", html: (a) => { const l = data.lotBy[a], { dp, sh } = notDelivered(l);
+      return `<form class="fm" id="fm-lot_balance" data-lot="${esc(a)}" data-short="${sh}"><h3>${esc(a)}</h3>
+      <p class="note" style="margin:0">${fmtN(l.lot_pcs, 0)} pcs in the lot, ${fmtN(dp, 0)} delivered${balAcc(a) ? ", " + fmtN(balAcc(a), 0) + " already accounted for" : ""}. <b>${fmtN(sh, 0)} pcs not delivered.</b> Say where they went (sqft is for the record only).</p>
+      ${BAL.map(([x, t]) => `<fieldset class="balrow" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0"><legend style="font-size:13px;font-weight:600">${t}</legend><div class="two">${numF("fb-" + x + "-p", "Pcs")}${numF("fb-" + x + "-s", "Sqft")}${x === "lot" ? `<label>To lot<input id="fb-to" list="lotlist2" autocomplete="off"></label>${dl("lotlist2", openLots().map((o) => o.lot_no).filter((k) => k !== a))}` : ""}</div></fieldset>`).join("")}
+      ${dateF("fb-date", "Date", today0())}${txtF("fb-note", "Reason / note (needed for rejected or wasted pieces)")}
+      <p class="note" style="margin:0">Rejected and leftover pieces become stock lines (new P numbers) you can sell or use later. Pieces moved to another lot leave this lot.</p>${formEnd}</form>`; } },
     skins: { title: "Give skins", html: (a) => { const toLot = /^L/i.test(a) && data.lotBy[a], from = toLot ? "" : a;
       return `<form class="fm" id="fm-skins"><label>From purchase<select id="fk-from" data-pinfo="fk-info">${purchOpts(from)}</select></label><p class="note" id="fk-info" style="margin:0">${esc(purchInfo(from))}</p>
       <label>To lot<input id="fk-to" list="lotlist" autocomplete="off" value="${toLot ? esc(a) : ""}"></label>${dl("lotlist", openLots().map((l) => l.lot_no))}
@@ -2050,6 +2071,17 @@ main.solo .detail.open { display: block; }
       if (old) { btn.disabled = true; store.doc("entries/" + old.id).update({ data: Object.assign({}, old.data, { pcs: +(old.data.pcs + pcs).toFixed(4), sqft: +(old.data.sqft + sqft).toFixed(2), note: note || old.data.note }) }).then(() => closeForm("Return updated. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return; }
       return saveNew({ type: "skins_back", lot_no: r.to_key, data: { id: r.id, from: r.from_key, to: r.to_key, pcs, sqft, was_pcs: r.pcs, was_sqft: r.sqft, note } }, "Return saved. It is waiting for Excel.", msg, btn);
     }
+    if (f.id === "fm-lot_balance") {
+      const lot = f.dataset.lot, sh = Number(f.dataset.short) || 0, d = { date: need("#fb-date"), note: need("#fb-note") }; let tot = 0;
+      BAL.forEach(([x]) => { d[x + "_pcs"] = numOf("#fb-" + x + "-p"); d[x + "_sqft"] = numOf("#fb-" + x + "-s"); tot += d[x + "_pcs"]; });
+      if (checkDate(d.date)) return bad(checkDate(d.date));
+      if (tot <= 0) return bad("Type the pcs for at least one line.");
+      if (tot > sh + 0.0001) return bad("That is " + fmtN(tot, 0) + " pcs; only " + fmtN(sh, 0) + " were not delivered.");
+      if ((d.reject_pcs > 0 || d.waste_pcs > 0) && !d.note) return bad("Type the reason for the rejected or wasted pieces.");
+      if (d.lot_pcs > 0) { d.to_lot = need("#fb-to").toUpperCase(); if (!data.lotBy[d.to_lot] || d.to_lot === lot) return bad("Pick the lot they moved to."); }
+      const left = sh - tot;
+      return saveNew({ type: "lot_balance", lot_no: lot, data: d }, left > 0.0001 ? "Saved. " + fmtN(left, 0) + " pcs are still not accounted for." : "Saved. All pieces are accounted for; you can now mark " + lot + " Dispatched.", msg, btn);
+    }
     if (f.id === "fm-skins") {
       const from = need("#fk-from"), to = need("#fk-to").toUpperCase(), pcs = numOf("#fk-pcs"), sqft = numOf("#fk-sqft"), date = need("#fk-date"), p = data.purchases.find((x) => x.key === from);
       if (!from) return bad("Pick the purchase."); if (!data.lotBy[to]) return bad("Pick a lot from the list."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft."); if (checkDate(date)) return bad(checkDate(date));
@@ -2185,8 +2217,9 @@ main.solo .detail.open { display: block; }
       { const why = stageGate(l, to);
         if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
       if (up === "DISPATCHED") {
-        const dp = deliveredPcs(l.lot_no);
-        if (dp > 0 && dp < (l.lot_pcs || 0) && warnOnce(f, "Only " + fmtN(dp, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs are recorded as delivered.")) return;
+        const { dp, sh } = notDelivered(l);
+        if (dp <= 0) { msg.innerHTML = esc(l.lot_no + " can't be marked Dispatched: no delivery is recorded. Record the delivery first.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-act="delivery">Record delivery</button></span>`; return; }
+        if (sh > 0) { msg.innerHTML = esc(fmtN(sh, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs were not delivered (" + fmtN(dp, 0) + " delivered). Say where they went before marking " + l.lot_no + " Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="lot_balance:${esc(l.lot_no)}">Say where they went</button></span>`; return; }
       }
       body = { type: "stage", lot_no: l.lot_no, from_stage: l.stage || "", to_stage: to, entry_date: date, note: $("#fs-note").value.trim() };
     } else {
@@ -2222,6 +2255,7 @@ main.solo .detail.open { display: block; }
     if (e.type === "archive") return "Archive dispatched lots: " + d.lots;
     if (e.type === "audit") return `Stock audit posted: ${d.n_counted} counted, ${d.n_adj} adjusted, short ₹${fmtN(d.short, 0) || 0}, excess ₹${fmtN(d.excess, 0) || 0}`;
     if (e.type === "dye") return "Dye combinations · " + e.process + " · " + Object.keys(e.cells).length + " changes";
+    if (e.type === "lot_balance") return "Not delivered: " + BAL.filter(([x]) => Number(d[x + "_pcs"]) > 0).map(([x, t]) => fmtN(d[x + "_pcs"], 0) + " pcs " + t.toLowerCase() + (x === "lot" ? " " + d.to_lot : "")).join(", ") + (d.note ? " (" + d.note + ")" : "");
     if (e.type === "part_ahead") return `Part sent ahead to ${d.stage} for ${d.purpose.toLowerCase()}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "lot_return") return `Customer return, ${d.outcome === "REWORK" ? "rework to " + d.stage : "reject to stock"}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "return_sale") return `Sold rejected skins to ${d.buyer}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
