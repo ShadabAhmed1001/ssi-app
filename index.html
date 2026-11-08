@@ -150,6 +150,8 @@ main.solo .detail { display: none; }
 .track i.on { background: var(--accent); } .track i.now { background: var(--warn); }
 .missing { background: var(--warn-soft); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px; }
 .chdiff > summary { list-style: none; cursor: pointer; }
+.appver { margin: 22px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.5; }
+.appver b { font-weight: 600; color: var(--ink); }
 .chdiff > summary::-webkit-details-marker { display: none; }
 .chdiff[open] > summary u { display: none; }
 .copy { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 12px; }
@@ -644,6 +646,10 @@ main.solo .detail.open { display: block; }
     });
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
+  // set by stamp.py at every release
+  const APP_BUILD = { v: 60, at: "2026-11-08T15:59:01+05:30", notes: "Version and release time shown here. New section below uses the next line. Chemical rates in the recipe editor." };
+  const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
+  window.__ssiVersion = () => appVer();
   function todayView() {
     const open = data.lots.filter((l) => l.grp === 1), bad = open.filter((l) => l.flag === "bad" && !isMuted(l.lot_no)), warn = open.filter((l) => l.flag === "warn" && !isMuted(l.lot_no));
     const toStart = data.orders.filter((o) => o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION");
@@ -680,7 +686,8 @@ main.solo .detail.open { display: block; }
         `<tr class="strow" data-pick="stage" data-v="${esc(s.name)}"><td>${esc(s.name)}</td><td class="r num">${s.max || "-"}</td><td class="r num">${s.n}</td><td class="r num${s.over ? " late" : ""}">${s.over || ""}</td><td class="r num">${s.longest}</td></tr>`).join("")}</tbody></table></div>
       <div class="group">Open lots by customer</div><div class="bars">${cs.map((c) => bar("customer", c, maxC)).join("")}</div>
       <p class="note" style="margin-top:12px">Red bars include a late lot. Data is from ${data.asOf}, so anything entered in Excel after that is not shown. ${store ? `<button class="link" data-jump="entries" data-f="pending">Phone entries</button>` : ""}</p>
-      ${canAdmin ? `<div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>` : ""}`;
+      ${canAdmin ? `<div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>` : ""}
+      <div class="appver"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}</div>`;
   }
   // ---------------------------------------------------------------- stock count, cost, archive
   function archiveReady() {

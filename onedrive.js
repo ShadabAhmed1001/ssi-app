@@ -5,6 +5,7 @@
 //    all pending entries are also written as phone-entries-<phone>.csv for Excel's Import from phone,
 //    and the Excel workbook + database are read from OneDrive to refresh the app's data.
 (function () {
+  window.SSI_STANDALONE = true;
   const CFG0 = window.SSI_CONFIG || {};
   const LSK = "ssi-od-settings";
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
@@ -231,7 +232,7 @@
   function settings() {
     const c = cfg(), w = document.createElement("div"); w.className = "odset";
     const f = (k, label, hint) => `<label>${label}<input name="${k}" value="${String(c[k] || "").replace(/"/g, "&quot;")}"${hint ? ` placeholder="${hint}"` : ""}></label>`;
-    w.innerHTML = `<form><strong>OneDrive</strong>
+    w.innerHTML = `<form><span style="font-size:12px;color:var(--muted,#567)">${window.__ssiVersion ? window.__ssiVersion().replace(/</g, "&lt;") : ""}</span><strong>OneDrive</strong>
       ${account ? `<span>Signed in as ${(me.name || "").replace(/</g, "&lt;")}</span>` : ""}
       ${f("userName", "Your name (shown on entries)")}
       ${f("dataFolder", "Folder with the Excel workbook and database", "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
