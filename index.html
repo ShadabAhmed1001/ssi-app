@@ -149,6 +149,9 @@ main.solo .detail { display: none; }
 .track i { height: 6px; background: var(--line); border-radius: 2px; }
 .track i.on { background: var(--accent); } .track i.now { background: var(--warn); }
 .missing { background: var(--warn-soft); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px; }
+.chdiff > summary { list-style: none; cursor: pointer; }
+.chdiff > summary::-webkit-details-marker { display: none; }
+.chdiff[open] > summary u { display: none; }
 .copy { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 12px; }
 .copybox { width: 100%; min-height: 9em; font: inherit; font-size: 13px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-sizing: border-box; }
 
@@ -1090,6 +1093,7 @@ main.solo .detail.open { display: block; }
   window.__ssiHooks = {
     ready: () => !!db && !!store,
     pending: () => data.pending.length,
+    chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
     exportCsv: () => exportCsv(),
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
     autoUpdate: async (xb, dbb) => {
@@ -1235,6 +1239,33 @@ main.solo .detail.open { display: block; }
     ["CRUSTING", "FINISHING"].filter((s) => st[s] === "done" && one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=? AND section=?", [l.lot_no, s]) > 0).forEach((s) => chemNeed(st.r, s).lines.forEach((x) => { need[x.n] = (need[x.n] || 0) + x.q; }));
     return [...new Set(Object.keys(had).concat(Object.keys(need)))].map((n) => { const h = +(had[n] || 0).toFixed(4), w = +(need[n] || 0).toFixed(4); return { n, had: h, need: w, q: +(w - h).toFixed(4), rate: data.rate[n.toUpperCase()] || 0 }; }).filter((x) => Math.abs(x.q) > 0.01);
   }
+  // which saved version of this lot's recipe is closest to what was actually taken from stock
+  function chemBest(l, st) {
+    const had = chemDeducted(l.lot_no), secs = ["CRUSTING", "FINISHING"].filter((s) => st[s] === "done" && one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=? AND section=?", [l.lot_no, s]) > 0);
+    const dist = (r) => { const need = {}; secs.forEach((s) => chemNeed(r, s).lines.forEach((x) => { need[x.n] = (need[x.n] || 0) + x.q; })); return [...new Set(Object.keys(had).concat(Object.keys(need)))].reduce((t, n) => t + Math.abs((need[n] || 0) - (had[n] || 0)), 0); };
+    const page = l.process_page || (st.r && st.r.process) || "", own = page ? pageRecipes(page).filter((x) => x.lot === l.lot_no) : [];
+    const cur = own.find((x) => x.latest) || null; let best = null;
+    own.forEach((x) => { const r = getRecipe(x.key); if (!r) return; const d = dist(r); if (!best || d < best.d - 1e-6) best = Object.assign({ d }, x); });
+    const curD = st.r ? dist(st.r) : Infinity;
+    return { secs, cur, best: best && !best.latest && best.d < curD - 0.01 ? best : null };
+  }
+  const chemOkKey = "ssi-chemok-v1";
+  const chemSig = (ch) => ch.map((x) => x.n + ":" + x.q).sort().join("|");
+  const chemOk = (lot, ch) => { try { return (JSON.parse(localStorage.getItem(chemOkKey) || "{}")[lot] || "") === chemSig(ch); } catch (e) { return false; } };
+  function chemOkSet(lot, sig) { try { const m = JSON.parse(localStorage.getItem(chemOkKey) || "{}"); if (sig) m[lot] = sig; else delete m[lot]; localStorage.setItem(chemOkKey, JSON.stringify(m)); } catch (e) {} }
+  let chemOkShow = "";
+  function chemDiffBox(l, st, ch) {
+    const n2 = (x) => fmtN(x, 3), net = ch.reduce((t, x) => t + x.q * x.rate, 0), b = chemBest(l, st);
+    if (chemOk(l.lot_no, ch) && chemOkShow !== l.lot_no) return `<p class="note">Recipe and stock taken differ in ${ch.length} ${ch.length === 1 ? "chemical" : "chemicals"}; you chose to leave it. <button class="lnk" data-chemokshow>Show</button></p>`;
+    const old = one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=? AND reason LIKE 'Old system%'", [l.lot_no]) > 0;
+    const last = one("SELECT MAX(entry_date) FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=?", [l.lot_no]);
+    const verTxt = (x) => x ? (x.phone ? "phone version (not in Excel yet)" : "v" + x.ver + (x.saved ? ", saved " + fmtS(x.saved) : "")) : "";
+    return `<details class="chdiff"${chemOkShow === l.lot_no ? " open" : ""}><summary class="missing">The recipe no longer matches what was deducted: ${ch.length} ${ch.length === 1 ? "chemical differs" : "chemicals differ"}. <u>See the list</u></summary>
+      <p class="note">Compared: the lot's current recipe, ${esc(st.r.process || "")} ${esc(verTxt(b.cur))}, against what was taken from stock for this lot (${esc(b.secs.map((x) => x.toLowerCase()).join(" and "))}${old ? ", partly in the old system" : ""}, last on ${esc(fmtS(last))}).</p>
+      <div class="tbl"><table><thead><tr><th>Chemical</th><th class="r">Deducted</th><th class="r">Recipe now</th><th class="r">Difference</th></tr></thead><tbody>${ch.map((x) => `<tr><td>${esc(x.n)}</td><td class="r num">${n2(x.had)}</td><td class="r num">${n2(x.need)}</td><td class="r num">${x.q > 0 ? "+" : "-"}${n2(Math.abs(x.q))}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note">If stock is re-adjusted to the recipe: ${net >= 0 ? "extra cost" : "saving"} ₹${fmtN(Math.abs(net), 0)}.${b.best ? ` Version ${esc(verTxt(b.best))} ${b.best.d < 0.05 ? "matches what was deducted" : "is the closest to what was deducted"}.` : old ? " The old system did not always deduct exactly the recipe." : ""}</p>
+      <div class="acts" style="margin-top:6px"><button class="btn" data-form="chem_readjust:${esc(l.lot_no)}">Re-adjust stock to the recipe</button>${b.best ? `<button class="btn alt" data-form="process:${esc(l.lot_no)}^${esc(b.best.key)}">Go back to v${esc(String(b.best.ver))}</button>` : ""}<button class="btn alt" data-chemok="${esc(chemSig(ch))}">Leave as it is</button></div></details>`;
+  }
   function chemBlock(l, canAct) {
     const r = rows("SELECT IFNULL(section,'') s, COUNT(*) n, -SUM(qty) q, MAX(entry_date) d, SUM(reason LIKE 'Old system%') old FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? GROUP BY IFNULL(section,'')", [l.lot_no]);
     const st = chemState(l), wait = entries.filter((e) => e.type === "chem_undo" && e.status === "pending" && e.lot_no === l.lot_no), re = r.some((x) => !["CRUSTING", "FINISHING"].includes(x.s));
@@ -1244,8 +1275,8 @@ main.solo .detail.open { display: block; }
       ${adjW.length ? `<p class="note"><span class="wait">Stock adjustment waiting for Excel:</span> ${esc(adjW.map((x) => x.toLowerCase()).join(", "))}.</p>` : ""}
       ${rw.length ? `<p class="note"><span class="wait">Re-adjust waiting for Excel.</span></p>` : ""}
       ${wait.length ? `<p class="note"><span class="wait">Undo waiting for Excel:</span> ${esc(wait.map((e) => e.data.what.toLowerCase()).join(", "))}.</p>` : ""}
-      ${canAct && ch.length ? `<p class="missing">The recipe no longer matches what was deducted: ${ch.length} ${ch.length === 1 ? "chemical differs" : "chemicals differ"}.</p>` : ""}
-      ${canAct ? `<div class="acts" style="margin-top:8px">${l.state === "OPEN" ? todo.map((s) => `<button class="btn" data-form="chem_adjust:${esc(l.lot_no)}|${s}">Adjust ${s.toLowerCase()}</button>`).join("") : ""}${l.state === "OPEN" && todo.length === 2 ? `<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>` : ""}${ch.length ? `<button class="btn alt" data-form="chem_readjust:${esc(l.lot_no)}">Re-adjust</button>` : ""}${r.length && !wait.length ? `<button class="btn alt" data-chemundo="ALL">Undo all chemical entries</button>` : ""}</div>` : ""}`;
+      ${canAct && ch.length ? chemDiffBox(l, st, ch) : ""}
+      ${canAct ? `<div class="acts" style="margin-top:8px">${l.state === "OPEN" ? todo.map((s) => `<button class="btn" data-form="chem_adjust:${esc(l.lot_no)}|${s}">Adjust ${s.toLowerCase()}</button>`).join("") : ""}${l.state === "OPEN" && todo.length === 2 ? `<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>` : ""}${r.length && !wait.length ? `<button class="btn alt" data-chemundo="ALL">Undo all chemical entries</button>` : ""}</div>` : ""}`;
   }
   // Excel copies the tracker weight onto the sheet when it opens a lot, so a blank weight makes every crusting quantity 0
   const noWeight = (lot) => `<p class="missing">${esc(lot)} has no weight on the tracker, so Excel would work out every crusting quantity as 0. Enter the weight first.</p><div class="acts"><button class="btn" data-go="lots" data-k="${esc(lot)}">Open the lot</button></div>`;
@@ -1385,7 +1416,7 @@ main.solo .detail.open { display: block; }
   }
   // this lot's latest version goes first and is picked by default; otherwise the newest on the page
   const ownFirst = (list, lot) => { const i = list.findIndex((x) => x.lot === lot && x.latest); return i > 0 ? [list[i]].concat(list.slice(0, i), list.slice(i + 1)) : list; };
-  const procSrcOpts = (page, lot) => { const list = ownFirst(page ? pageRecipes(page) : [], lot); return list.length ? list.map((x, i) => recOpt(x, i === 0 ? x.key : "", lot)).join("") : `<option value="">No saved process on this page</option>`; };
+  const procSrcOpts = (page, lot, pick) => { const list = ownFirst(page ? pageRecipes(page) : [], lot), sel = pick && list.some((x) => x.key === pick) ? pick : list.length ? list[0].key : ""; return list.length ? list.map((x) => recOpt(x, x.key === sel ? x.key : "", lot)).join("") : `<option value="">No saved process on this page</option>`; };
   const procHint = (l, page) => normPage(page) === normPage(l.process_page || "") ? "" : "Saving will also move " + l.lot_no + " from " + (l.process_page || "no page") + " to " + page + ".";
   const recOpt = (x, sel0, own) => `<option value="${esc(x.key)}"${x.key === sel0 ? " selected" : ""}>${esc(x.lot)}${x.lot === own && x.latest ? " (this lot)" : ""} ${x.phone ? "phone, not in Excel yet" : "v" + x.ver}${x.multi ? " latest" : ""} · ${esc(fmtS(x.saved))} · ${esc(String(x.details || "").slice(0, 34))}</option>`;
   // ---- compare: lines are matched by chemical name, so it also works between pages
@@ -1708,12 +1739,12 @@ main.solo .detail.open { display: block; }
       return `<div class="fm"><h3>${esc(a)}</h3><p class="note" style="margin:0">Add skins from a purchase or another lot, or send skins back to where they came from.</p>
       <div class="acts" style="margin:0"><button class="btn" type="button" data-skinsgo="skins:${esc(a)}">Add skins</button>${back ? `<button class="btn" type="button" data-skinsgo="skins_back:${esc(a)}">Remove skins</button>` : ""}<button class="btn alt" type="button" data-back>Cancel</button></div>
       ${back ? "" : `<p class="note" style="margin:0">Nothing has come into this lot yet, so there is nothing to remove.</p>`}</div>`; } },
-    process: { title: "Process", html: (a) => { const l = data.lotBy[a], cur = l.process_page || "";
+    process: { title: "Process", html: (a0) => { const [a, pick] = String(a0).split("^"), l = data.lotBy[a], cur = l.process_page || "";
       const pages = [...new Map(data.pages.concat(rows("SELECT DISTINCT process FROM lot_recipes").map((r) => r.process), cur ? [cur] : []).map((p) => [normPage(p), p])).values()].sort((x, y) => String(x).localeCompare(String(y), undefined, { numeric: true }));
       const has = l.recKey && getRecipe(l.recKey);
       return `<form class="fm" id="fm-process" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc([l.customer, l.product].filter(Boolean).join(" · "))}. Now on ${esc(cur || "no process page")}.</p>
       <label>Process page<select id="fo-page">${cur ? "" : opt("", "Pick a page", true)}${pages.map((p) => opt(p, p, normPage(p) === normPage(cur))).join("")}</select></label>
-      <label>Load from<select id="fo-src">${procSrcOpts(cur, a)}</select></label>
+      <label>Load from<select id="fo-src">${procSrcOpts(cur, a, pick)}</select></label>
       <p class="note" id="fo-hint" style="margin:0">${procHint(l, cur)}</p>
       <p class="note" style="margin:0">The process opens in the editor with this lot's weight and details. Nothing is saved until you press Save recipe${has ? "; saving makes a new version of this lot" : ""}. If you picked another page, the lot moves to it when you save.</p>
       <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Load</button>${has ? `<button class="btn alt" type="button" data-cmpsrc="${esc(l.recKey)}">Compare first</button>` : ""}<button class="btn alt" type="button" data-pageonly>Change page only</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
@@ -2395,6 +2426,9 @@ main.solo .detail.open { display: block; }
     if (e.target.closest("[data-formclose]")) { if (formOpen === "recipe") closeOrStay(); else { formOpen = null; showDetail(); } return; }
     if (e.target.closest("[data-fillall]")) { const f = e.target.closest("form"); $("#fv-pcs").value = f.dataset.pcs; $("#fv-sqft").value = f.dataset.sqft; return; }
     if (e.target.closest("[data-markdisp]")) { presetStage = "Dispatched"; flash = ""; formOpen = "stage"; showDetail(); presetStage = ""; $("#detail").scrollTop = 0; return; }
+    const ok = e.target.closest("[data-chemok]");
+    if (ok) { chemOkSet(sel[tab], ok.dataset.chemok); chemOkShow = ""; showDetailKeep(); return; }
+    if (e.target.closest("[data-chemokshow]")) { chemOkShow = sel[tab]; showDetailKeep(); return; }
     const cu = e.target.closest("[data-chemundo]");
     if (cu) {
       if (!cu.dataset.sure) { cu.dataset.sure = "1"; cu.textContent = "Tap again to undo"; return; }
