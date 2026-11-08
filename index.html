@@ -650,7 +650,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 62, at: "2026-11-08T16:15:26+05:30", notes: "Smaller chemical names and narrower number boxes in the recipe editor, so full names fit. A name that still doesn't fit is shown in full under it." };
+  const APP_BUILD = { v: 63, at: "2026-11-08T16:32:32+05:30", notes: "The phone's Back button now goes back one page, like the in-app Back. In the recipe editor it warns before leaving unsaved changes." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2336,7 +2336,7 @@ main.solo .detail.open { display: block; }
   }
   function closeOrStay() { const y = ed; formOpen = null; ed = null; flash = ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
   function showDetail() {
-    queueMicrotask(edRatesRefresh);
+    queueMicrotask(edRatesRefresh); queueMicrotask(syncHist);
     const k = sel[tab], d = $("#detail");
     if (!k) { d.classList.remove("open"); d.innerHTML = `<p class="empty">Pick an item to see everything about it.</p>`; return; }
     const isForm = String(k).startsWith("form:");
@@ -2372,6 +2372,24 @@ main.solo .detail.open { display: block; }
     render(); showDetail();
   }
   window.addEventListener("hashchange", route);
+  // phone back button: each open page or form gets a history entry, so Back closes it like the in-app Back button
+  let hDepth = 0, backWarn = 0;
+  const inlineForm = () => formOpen && formOpen !== "form" && formOpen !== "recipe";
+  const navDepth = () => stack.length + (sel[tab] ? 1 : 0) + (formOpen === "recipe" || inlineForm() ? 1 : 0);
+  function syncHist() { const d = navDepth(); if (d > hDepth) { try { history.pushState({ ssi: d }, "", location.href); hDepth = d; } catch (e) {} } }
+  function backOnce() {
+    if (formOpen === "recipe") {
+      if (Date.now() - backWarn > 4000) { backWarn = Date.now(); const m = $("#fm-msg"); if (m) { m.className = "fmsg bad"; m.textContent = "Not saved yet. Press Back again to leave without saving, or press Save recipe."; } return; }
+      backWarn = 0; closeOrStay(); return;
+    }
+    if (inlineForm()) { formOpen = null; flash = ""; showDetail(); return; }
+    closeDetail();
+  }
+  window.addEventListener("popstate", (e) => {
+    const at = e.state && typeof e.state.ssi === "number" ? e.state.ssi : 0; hDepth = at;
+    if (navDepth() > at) { for (let n = 0; n < 6 && navDepth() > at; n++) { const before = navDepth(); backOnce(); if (navDepth() === before) break; } queueMicrotask(syncHist); }
+    else if (at > 0) { try { history.back(); } catch (x) {} }
+  });
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => { stack = []; pick = null; formOpen = null; if (b.dataset.tab === "today") $("#q").value = ""; go(b.dataset.tab); }));
   $("#chips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; if (b.dataset.clear) pick = null; else filter[tab] = b.dataset.f; render(); });
   $("#q").addEventListener("input", render);
