@@ -183,16 +183,18 @@ main.solo .detail { display: none; }
 .fm textarea { font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; min-height: 4.5em; resize: vertical; }
 .er { display: grid; grid-template-columns: 58px minmax(0, 1fr) 54px 28px 28px; gap: 4px; align-items: center; margin-bottom: 4px; }
 .er.tx { grid-template-columns: 120px minmax(0, 1fr) 54px 28px 28px; }
-.er.cr { grid-template-columns: 52px minmax(0, 1fr) 52px 50px 26px 26px; }
-.er.cr.tx { grid-template-columns: 96px minmax(0, 1fr) 52px 50px 26px 26px; }
+.er.cr { grid-template-columns: 42px minmax(0, 1fr) 40px 46px 24px 24px; }
+.er.cr.tx { grid-template-columns: 86px minmax(0, 1fr) 40px 46px 24px 24px; }
 .er .erate { grid-column: 2 / -1; font-size: 11.5px; color: var(--muted); margin: -2px 0 2px; font-variant-numeric: tabular-nums; min-height: 0; }
 .er .erate:empty { display: none; }
 .er .erate.bad { color: var(--bad, #b3261e); }
 .er .ewt { font-size: 13px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .er.m2 { grid-template-columns: minmax(0, 1fr) 70px; }
 .er.m2 .erate { grid-column: 1 / -1; }
-.er.fn { grid-template-columns: 54px minmax(0, 1fr) 70px 26px 26px; }
+.er.fn { grid-template-columns: 44px minmax(0, 1fr) 62px 24px 24px; }
 .er input, .er textarea { font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px; width: 100%; box-sizing: border-box; min-width: 0; font-family: inherit; }
+.er input[data-f="d"] { font-size: 12px; padding: 6px 4px; }
+.er input:not([data-f="d"]) { font-size: 15px; padding: 6px 4px; }
 .er .wide { grid-column: 1 / -1; min-height: 2.4em; resize: vertical; }
 .er .slink { grid-column: 1 / -1; justify-self: end; font-size: 11px; font-weight: 500; min-height: 0; padding: 0; margin-top: -3px; }
 .er .x { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; height: 34px; padding: 0; color: var(--muted); }
@@ -648,7 +650,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 61, at: "2026-11-08T16:06:51+05:30", notes: "Machinery rates and amounts in the recipe and the editor. Check for updates button." };
+  const APP_BUILD = { v: 62, at: "2026-11-08T16:15:26+05:30", notes: "Smaller chemical names and narrower number boxes in the recipe editor, so full names fit. A name that still doesn't fit is shown in full under it." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1493,11 +1495,11 @@ main.solo .detail.open { display: block; }
       <label>Animal (for machinery rates)<select id="eh-animal" data-h="animal"><option value="">None</option>${["Cow", "Calf", "Buff", "Goat"].map((x) => `<option${String(h.animal).toUpperCase() === x.toUpperCase() ? " selected" : ""}>${x}</option>`).join("")}</select></label></div>
       <label>Process<textarea id="eh-note" data-h="process_note">${esc(h.process_note)}</textarea></label>
       <label>Remarks<textarea id="eh-rem" data-h="remarks">${esc(h.remarks)}</textarea></label>
-      <h3>Crusting <span id="ecost-c" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:52px minmax(0,1fr) 52px 50px 52px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
+      <h3>Crusting <span id="ecost-c" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:42px minmax(0,1fr) 40px 46px 48px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
       ${(finNotesNorm(), crustTimeNorm(), "")}${ed.crust.map((x, i) => `${!i || x.sec !== ed.crust[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.crust.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-cjoin="${i}">Join with section above</button>` : ""}</span></div>` : ""}<div class="er cr${x.c && pctCell(x.c) === null ? " tx" : ""}" data-sec="crust" data-i="${i}">${inp("c", i, "c", x.c, "%")}${inp("c", i, "d", x.d, "Chemical or step", "", ' data-ac="chem" list="ed-chems"')}<span class="ewt" id="ewt-${i}">${crustWt(x.c)}</span>${String(x.f || "").trim() || (!i || ed.crust[i - 1].sec !== x.sec) && !ed.crust.some((y) => y.sec === x.sec && String(y.f || "").trim()) ? inp("c", i, "f", x.f, "Time") : "<span></span>"}${btns}<span class="erate" id="erate-c-${i}">${rateLine(x.d, crustWt(x.c), !!crustWt(x.c))}</span><button type="button" class="link slink" data-csplit="${i}">New section below</button></div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="crust">Add a line</button>
       <h3>Machinery <span id="ecost-m" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3>${ed.machinery.map((x, i) => `<div class="er m2" data-sec="machinery" data-i="${i}"><span id="e-m-${i}-d" data-name="${esc(x.d)}" style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>${inp("m", i, "e", x.e, "Rounds")}<span class="erate" id="erate-m-${i}"></span></div>`).join("")}
-      <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:58px minmax(0,1fr) 62px 60px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
+      <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:44px minmax(0,1fr) 62px 48px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
       <p class="note" style="margin:4px 0 0">Each section is one mix. Change any weight and the rest of its section follows the ratios.</p>
       ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="finishing">Add a section</button>
@@ -1541,7 +1543,8 @@ main.solo .detail.open { display: block; }
       if (sec === "m") { const nm = ($(`#e-m-${i}-d`) || {}).dataset.name || "", rd = ($(`#e-m-${i}-e`) || {}).value || ""; el.innerHTML = String(rd).trim() ? machLine(nm, rd, animal, pcs) : ""; tot.m += machCalc(nm, rd, animal, pcs).amt; return; }
       const d = ($(`#e-${sec}-${i}-d`) || {}).value || "";
       let w = ""; if (sec === "c") { w = crustWt(($(`#e-c-${i}-c`) || {}).value || ""); } else { const e = $(`#e-f-${i}-e`); w = e ? e.value || e.placeholder : ""; }
-      el.innerHTML = rateLine(d, w, !!w); const x = edRate(d), q = parseFloat(String(w).replace(/,/g, "")) || 0; if (x && x.r) tot[sec] += x.r * q; });
+      const di = $(`#e-${sec}-${i}-d`), cut = di && d && di.scrollWidth > di.clientWidth + 1;
+      el.innerHTML = (cut ? `<b style="color:var(--ink);font-weight:600">${esc(d)}</b>${rateLine(d, w, !!w) ? " · " : ""}` : "") + rateLine(d, w, !!w); const x = edRate(d), q = parseFloat(String(w).replace(/,/g, "")) || 0; if (x && x.r) tot[sec] += x.r * q; });
     const tc = $("#ecost-c"), tf = $("#ecost-f"); if (tc) tc.textContent = tot.c ? "Chemicals ₹" + fmtN(tot.c, 0) : ""; if (tf) tf.textContent = tot.f ? "Chemicals ₹" + fmtN(tot.f, 0) : ""; const tm = $("#ecost-m"); if (tm) tm.textContent = tot.m ? "₹" + fmtN(tot.m, 0) : "";
   }
   const crustWt = (c) => { const p = pctCell(c ?? ""), w = parseFloat(ed && ed.head.shaved_wt) || 0; return p === null || !w ? "" : fmtN(Number(p) * w, 3); };
