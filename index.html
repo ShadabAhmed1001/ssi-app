@@ -190,6 +190,7 @@ main.solo .detail { display: none; }
 .er .erate.bad { color: var(--bad, #b3261e); }
 .er .ewt { font-size: 13px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .er.m2 { grid-template-columns: minmax(0, 1fr) 70px; }
+.er.m2 .erate { grid-column: 1 / -1; }
 .er.fn { grid-template-columns: 54px minmax(0, 1fr) 70px 26px 26px; }
 .er input, .er textarea { font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px; width: 100%; box-sizing: border-box; min-width: 0; font-family: inherit; }
 .er .wide { grid-column: 1 / -1; min-height: 2.4em; resize: vertical; }
@@ -647,7 +648,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 60, at: "2026-11-08T15:59:01+05:30", notes: "Version and release time shown here. New section below uses the next line. Chemical rates in the recipe editor." };
+  const APP_BUILD = { v: 61, at: "2026-11-08T16:06:51+05:30", notes: "Machinery rates and amounts in the recipe and the editor. Check for updates button." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -687,7 +688,7 @@ main.solo .detail.open { display: block; }
       <div class="group">Open lots by customer</div><div class="bars">${cs.map((c) => bar("customer", c, maxC)).join("")}</div>
       <p class="note" style="margin-top:12px">Red bars include a late lot. Data is from ${data.asOf}, so anything entered in Excel after that is not shown. ${store ? `<button class="link" data-jump="entries" data-f="pending">Phone entries</button>` : ""}</p>
       ${canAdmin ? `<div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>` : ""}
-      <div class="appver"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}</div>`;
+      <div class="appver"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}<br>${window.__ssiCheckUpdate ? `<button class="btn alt" data-chkupd style="margin-top:8px">Check for updates</button> <span id="updmsg"></span>` : "This Claude version always opens the latest release."}</div>`;
   }
   // ---------------------------------------------------------------- stock count, cost, archive
   function archiveReady() {
@@ -696,6 +697,9 @@ main.solo .detail.open { display: block; }
   }
   // ---------------------------------------------------------------- costing, same sums as the process sheet
   const NOT_ROUND = ["SAMPLE DRUM", "FAT DRUM", "MILLING", "MILLING [SAMPLE]"];
+  // machinery: rate comes from the MACHINERY sheet column for the animal; most machines charge per piece per round
+  const machCalc = (d, rounds, animal, pcs) => { const u = String(d || "").toUpperCase(), col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(animal || "").trim().toUpperCase()], rw = data.mach[u], rate = rw && col ? rw[col] || 0 : 0, e = Number(rounds) || 0, per = NOT_ROUND.includes(u); return { rate, per, col, known: !!rw, amt: per ? e * rate : (Number(pcs) || 0) * e * rate }; };
+  const machLine = (d, rounds, animal, pcs) => { const m = machCalc(d, rounds, animal, pcs); if (!m.col) return "Set the animal to see the rate"; if (!m.known) return `<span class="bad">Not on the machinery sheet, no rate</span>`; if (!m.rate) return "Rate not set for " + String(animal).toLowerCase(); return `₹${fmtN(m.rate, 2)} ${m.per ? "per round" : "per pc per round"}${Number(rounds) ? ` · ₹${fmtN(m.amt, 0)}` : ""}${!m.per && Number(rounds) && !Number(pcs) ? " (pcs not set)" : ""}`; };
   function lotBlue(lot) {
     let amt = 0, sq = 0;
     rows(`SELECT l.from_key, l.to_key, l.pcs, l.sqft, p.rate, p.rate_basis FROM purchase_ledger l JOIN purchases p ON UPPER(p.purchase_no)=CASE WHEN l.to_key=? THEN l.from_key ELSE l.to_key END WHERE (l.to_key=? OR l.from_key=?) AND l.status<>'VOID'`, [lot, lot, lot]).forEach((e) => {
@@ -1372,7 +1376,7 @@ main.solo .detail.open { display: block; }
       ${r.remarks ? `<h3>Remarks</h3><p class="prose">${esc(r.remarks)}</p>` : ""}
       <h3>Crusting</h3>${crust.length ? `<div class="tbl"><table class="recipe"><thead><tr><th>%</th><th>Chemical</th><th class="r">Qty</th><th>Time</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${crust.map(crow).join("")}</tbody></table></div>` : `<p class="note">Nothing saved.</p>`}
       ${dyeRows(r.process).length ? `<details style="margin-top:12px"><summary><b>Dye combinations</b></summary><div class="tbl"><table><thead><tr><th>Rechrome</th><th>Dye</th><th class="r">Main</th><th class="r">Top 1</th><th class="r">Top 2</th><th>Product</th></tr></thead><tbody>${dyeRows(r.process).map((d) => `<tr><td class="num">${esc(d.c)}</td><td>${esc(d.d)}</td><td class="r num">${esc(d.m)}</td><td class="r num">${esc(d.a)}</td><td class="r num">${esc(d.b)}</td><td>${esc(d.r)}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
-      ${mach.length ? `<h3>Machinery</h3><div class="tbl"><table class="recipe"><thead><tr><th>Machine</th><th class="r">Round / coat</th></tr></thead><tbody>${mach.map((x) => `<tr><td>${esc(x.d)}</td><td class="r num">${esc(x.n)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      ${mach.length ? `<h3>Machinery</h3><div class="tbl"><table class="recipe"><thead><tr><th>Machine</th><th class="r">Round / coat</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${mach.map((x) => { const m = machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0); return `<tr><td>${esc(x.d)}</td><td class="r num">${esc(x.n)}</td>${showRates ? `<td class="r num">${fmtN(m.rate, 2)}${m.per ? "" : "/pc"}</td><td class="r num">${fmtN(m.amt, 0)}</td>` : ""}</tr>`; }).join("")}</tbody>${showRates ? `<tfoot><tr><td colspan="3"><b>Total</b>${r.animal ? "" : " (no animal set)"}</td><td class="r num"><b>${fmtN(mach.reduce((t, x) => t + machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0).amt, 0), 0)}</b></td></tr></tfoot>` : ""}</table></div>` : ""}
       ${fin.length ? `<h3>Finishing</h3><div class="tbl"><table class="recipe"><thead><tr><th>Ratio</th><th>Chemical</th><th class="r">Weight</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${fin.map((f, n) => frow(f, n)).join("")}</tbody></table></div>` : ""}
       <h3>Costing</h3>${costInputs(r)}<div id="costbox">${costBox(r)}</div>
       ${older.length && !old ? `<h3>Older versions</h3><p style="margin:0">${older.map((o) => `<button class="link" data-go="lots" data-k="${esc(base + "@v" + o.version)}">v${o.version} · ${fmtD(o.saved_at)} · ${esc(o.saved_by)}</button>`).join("<br>")}</p>` : ""}
@@ -1492,7 +1496,7 @@ main.solo .detail.open { display: block; }
       <h3>Crusting <span id="ecost-c" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:52px minmax(0,1fr) 52px 50px 52px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
       ${(finNotesNorm(), crustTimeNorm(), "")}${ed.crust.map((x, i) => `${!i || x.sec !== ed.crust[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.crust.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-cjoin="${i}">Join with section above</button>` : ""}</span></div>` : ""}<div class="er cr${x.c && pctCell(x.c) === null ? " tx" : ""}" data-sec="crust" data-i="${i}">${inp("c", i, "c", x.c, "%")}${inp("c", i, "d", x.d, "Chemical or step", "", ' data-ac="chem" list="ed-chems"')}<span class="ewt" id="ewt-${i}">${crustWt(x.c)}</span>${String(x.f || "").trim() || (!i || ed.crust[i - 1].sec !== x.sec) && !ed.crust.some((y) => y.sec === x.sec && String(y.f || "").trim()) ? inp("c", i, "f", x.f, "Time") : "<span></span>"}${btns}<span class="erate" id="erate-c-${i}">${rateLine(x.d, crustWt(x.c), !!crustWt(x.c))}</span><button type="button" class="link slink" data-csplit="${i}">New section below</button></div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="crust">Add a line</button>
-      <h3>Machinery</h3>${ed.machinery.map((x, i) => `<div class="er m2" data-sec="machinery" data-i="${i}"><span style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>${inp("m", i, "e", x.e, "Rounds")}</div>`).join("")}
+      <h3>Machinery <span id="ecost-m" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3>${ed.machinery.map((x, i) => `<div class="er m2" data-sec="machinery" data-i="${i}"><span id="e-m-${i}-d" data-name="${esc(x.d)}" style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>${inp("m", i, "e", x.e, "Rounds")}<span class="erate" id="erate-m-${i}"></span></div>`).join("")}
       <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:58px minmax(0,1fr) 62px 60px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
       <p class="note" style="margin:4px 0 0">Each section is one mix. Change any weight and the rest of its section follows the ratios.</p>
       ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
@@ -1532,11 +1536,13 @@ main.solo .detail.open { display: block; }
   const edRate = (d) => { const n = String(d || "").trim(); if (!n || /^(HOT |COLD )?WATER\b/i.test(n)) return null; const k = chemName(n).toUpperCase(); return { r: data.rate[n.toUpperCase()] || data.rate[k] || 0, known: !!data.chemBy[k] }; };
   const rateLine = (d, w, hasQty) => { const x = edRate(d); if (!x || (!x.known && !hasQty)) return ""; if (!x.known) return `<span class="bad">Not in the chemical list, no rate</span>`; if (!x.r) return "Rate not set"; const q = parseFloat(String(w || "").replace(/,/g, "")) || 0; return `₹${fmtN(x.r, 2)} per kg${q ? ` · ₹${fmtN(x.r * q, 0)}` : ""}`; };
   function edRatesRefresh() {
-    const f = $("#fm-recipe"); if (!f) return; const tot = { c: 0, f: 0 };
-    f.querySelectorAll(".erate").forEach((el) => { const [, sec, i] = el.id.split("-"), d = ($(`#e-${sec}-${i}-d`) || {}).value || "";
+    const f = $("#fm-recipe"); if (!f) return; const tot = { c: 0, f: 0, m: 0 }, animal = ($("#eh-animal") || {}).value || "", pcs = ($("#eh-pcs") || {}).value || (data.lotBy[ed && ed.lot] || {}).lot_pcs || 0;
+    f.querySelectorAll(".erate").forEach((el) => { const [, sec, i] = el.id.split("-");
+      if (sec === "m") { const nm = ($(`#e-m-${i}-d`) || {}).dataset.name || "", rd = ($(`#e-m-${i}-e`) || {}).value || ""; el.innerHTML = String(rd).trim() ? machLine(nm, rd, animal, pcs) : ""; tot.m += machCalc(nm, rd, animal, pcs).amt; return; }
+      const d = ($(`#e-${sec}-${i}-d`) || {}).value || "";
       let w = ""; if (sec === "c") { w = crustWt(($(`#e-c-${i}-c`) || {}).value || ""); } else { const e = $(`#e-f-${i}-e`); w = e ? e.value || e.placeholder : ""; }
       el.innerHTML = rateLine(d, w, !!w); const x = edRate(d), q = parseFloat(String(w).replace(/,/g, "")) || 0; if (x && x.r) tot[sec] += x.r * q; });
-    const tc = $("#ecost-c"), tf = $("#ecost-f"); if (tc) tc.textContent = tot.c ? "Chemicals ₹" + fmtN(tot.c, 0) : ""; if (tf) tf.textContent = tot.f ? "Chemicals ₹" + fmtN(tot.f, 0) : "";
+    const tc = $("#ecost-c"), tf = $("#ecost-f"); if (tc) tc.textContent = tot.c ? "Chemicals ₹" + fmtN(tot.c, 0) : ""; if (tf) tf.textContent = tot.f ? "Chemicals ₹" + fmtN(tot.f, 0) : ""; const tm = $("#ecost-m"); if (tm) tm.textContent = tot.m ? "₹" + fmtN(tot.m, 0) : "";
   }
   const crustWt = (c) => { const p = pctCell(c ?? ""), w = parseFloat(ed && ed.head.shaved_wt) || 0; return p === null || !w ? "" : fmtN(Number(p) * w, 3); };
   const pctCell = (t) => { const s = String(t).trim().replace(/%$/, ""); return s !== "" && !isNaN(s) ? String(+(Number(s) / 100).toFixed(10)) : null; };
@@ -2400,6 +2406,7 @@ main.solo .detail.open { display: block; }
   $("#list").addEventListener("pointerup", swipeEnd);
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-chkupd]")) { const m = $("#updmsg"), bt = e.target.closest("[data-chkupd]"); bt.disabled = true; m.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { m.textContent = r; bt.disabled = false; }); return; }
     if (swiped) { swiped = false; e.preventDefault(); return; }
     const um = e.target.closest("[data-unmute]"); if (um) { unmuteLot(um.dataset.unmute); render(); return; }
     if (e.target.closest("[data-showmuted]")) { showMuted = !showMuted; render(); return; }
@@ -2536,7 +2543,7 @@ main.solo .detail.open { display: block; }
     delete f.dataset.warned; $("#fm-msg").textContent = "";
     const t = e.target, row = t.closest(".er");
     if (f.id === "fm-recipe" && /^e-c-\d+-c$/.test(t.id)) { const w = $("#ewt-" + t.id.split("-")[2]); if (w) w.textContent = crustWt(t.value); }
-    if (f.id === "fm-recipe" && /^e-[cf]-\d+-[cde]$/.test(t.id)) setTimeout(edRatesRefresh, 0);
+    if (f.id === "fm-recipe" && (/^e-[cfm]-\d+-[cde]$/.test(t.id) || /^eh-(animal|pcs)$/.test(t.id))) setTimeout(edRatesRefresh, 0);
     if (f.id === "fm-count") { countCalc(f); return; }
     if (e.target.id === "fv-to") { $("#fv-newl").style.display = e.target.value ? "none" : ""; return; }
     if (e.target.dataset.pinfo) { $("#" + e.target.dataset.pinfo).textContent = purchInfo(e.target.value); return; }

@@ -239,9 +239,9 @@
       ${f("xlsm", "Workbook file name")}${f("db", "Database file name")}
       ${f("entriesFolder", "Phone entries folder (Excel imports from here)", "SSI/PRODUCTION/Phone entries")}
       <details><summary>Advanced</summary>${f("clientId", "App (client) ID")}${f("authority", "Sign-in authority")}</details>
-      <span class="row2">${account ? `<button type="button" data-x="out">Sign out</button>` : ""}<button type="button" data-x="cancel">Cancel</button><button type="submit">Save</button></span></form>`;
+      <span class="row2"><button type="button" data-x="upd">Check for updates</button>${account ? `<button type="button" data-x="out">Sign out</button>` : ""}<button type="button" data-x="cancel">Cancel</button><button type="submit">Save</button></span></form>`;
     document.body.appendChild(w);
-    w.onclick = (e) => { const x = e.target.dataset && e.target.dataset.x; if (e.target === w || x === "cancel") w.remove(); if (x === "out") signOut(); };
+    w.onclick = (e) => { const x = e.target.dataset && e.target.dataset.x; if (e.target === w || x === "cancel") w.remove(); if (x === "out") signOut(); if (x === "upd" && window.__ssiCheckUpdate) { e.target.disabled = true; e.target.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { e.target.textContent = r; }); } };
     w.querySelector("form").onsubmit = (e) => {
       e.preventDefault(); const o = {};
       new FormData(e.target).forEach((v, k) => { v = String(v).trim(); if (v !== String(CFG0[k] || "")) o[k] = v; });
@@ -252,6 +252,18 @@
   // ---------- app updates ----------
   function updates() {
     if (!("serviceWorker" in navigator)) return;
+    window.__ssiCheckUpdate = async () => {
+      if (!navigator.onLine) return "No internet. Try again when online.";
+      try {
+        const reg = await navigator.serviceWorker.getRegistration(); if (!reg) return "Could not check.";
+        await reg.update();
+        const wk = reg.waiting || reg.installing;
+        if (!wk) return "You have the latest version.";
+        if (wk.state !== "installed") await new Promise((ok) => { const f = () => { if (wk.state === "installed" || wk.state === "redundant") { wk.removeEventListener("statechange", f); ok(); } }; wk.addEventListener("statechange", f); setTimeout(ok, 20000); });
+        if (reg.waiting) { wk.postMessage("skip"); return "New version found. Updating…"; }
+        return "You have the latest version.";
+      } catch (e) { return "Could not check: " + (e.message || e); }
+    };
     navigator.serviceWorker.register("sw.js").then((reg) => {
       const offer = (wk) => {
         if (document.querySelector(".odup")) return;
@@ -269,9 +281,10 @@
   }
 
   // ---------- start ----------
+  updates();
   window.__ssiSync = { sync: () => sync("manual"), state: () => ({ meta, dirty: dirty(), account: !!account, me }) };
   document.addEventListener("DOMContentLoaded", async () => {
-    ui(); updates();
+    ui();
     await ready;
     try { await initAuth(); } catch (e) { setStatus("Sign-in could not start: " + (e.message || e), "bad"); }
     const waitApp = () => new Promise((ok) => { const t0 = Date.now(), tick = () => (window.__ssiHooks && window.__ssiHooks.ready()) || Date.now() - t0 > 15000 ? ok() : setTimeout(tick, 200); tick(); });
