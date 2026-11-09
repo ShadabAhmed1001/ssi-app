@@ -738,7 +738,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 73, at: "2026-11-09T13:37:26+05:30", notes: "Correct a delivery (Edit on the lot page); Delivery report under Orders: week, month, financial year or any range, PDF and CSV" };
+  const APP_BUILD = { v: 74, at: "2026-11-09T14:02:33+05:30", notes: "Process editor shows each chemical's available stock under its name" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1657,7 +1657,9 @@ main.solo .detail.open { display: block; }
   // crusting weight = % x shaved weight, as the process sheet's quantity column
   // rate and line cost shown under each chemical in the recipe editor
   const edRate = (d) => { const n = String(d || "").trim(); if (!n || /^(HOT |COLD )?WATER\b/i.test(n)) return null; const k = chemName(n).toUpperCase(); return { r: data.rate[n.toUpperCase()] || data.rate[k] || 0, known: !!data.chemBy[k] }; };
-  const rateLine = (d, w, hasQty) => { const x = edRate(d); if (!x || (!x.known && !hasQty)) return ""; if (!x.known) return `<span class="bad">Not in the chemical list, no rate</span>`; if (!x.r) return "Rate not set"; const q = parseFloat(String(w || "").replace(/,/g, "")) || 0; return `₹${fmtN(x.r, 2)} per kg${q ? ` · ₹${fmtN(x.r * q, 0)}` : ""}`; };
+  const rateLine = (d, w, hasQty) => { const x = edRate(d); if (!x || (!x.known && !hasQty)) return ""; if (!x.known) return `<span class="bad">Not in the chemical list, no rate</span>`; const q = parseFloat(String(w || "").replace(/,/g, "")) || 0, c = data.chemBy[chemName(String(d).trim()).toUpperCase()] || {}, av = +(c.available || 0);
+    const st = av <= 0 ? `<span class="bad">Stock ${fmtN(av, 2)} kg</span>` : q > av ? `<span class="bad">Stock ${fmtN(av, 2)} kg, short ${fmtN(q - av, 2)}</span>` : `Stock ${fmtN(av, 2)} kg`;
+    return (x.r ? `₹${fmtN(x.r, 2)} per kg${q ? ` · ₹${fmtN(x.r * q, 0)}` : ""}` : "Rate not set") + ` · ${st}`; };
   function edRatesRefresh() {
     const f = $("#fm-recipe"); if (!f) return; const tot = { c: 0, f: 0, m: 0 }, animal = ($("#eh-animal") || {}).value || "", pcs = ($("#eh-pcs") || {}).value || (data.lotBy[ed && ed.lot] || {}).lot_pcs || 0;
     f.querySelectorAll(".erate").forEach((el) => { const [, sec, i] = el.id.split("-");
