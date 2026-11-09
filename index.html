@@ -53,6 +53,31 @@ header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .brand .src { font-size: 11px; opacity: .85; text-align: right; }
 .search { display: flex; gap: 8px; }
 .search input { flex: 1; min-width: 0; border: 0; border-radius: 8px; padding: 10px 12px; background: var(--surface); color: var(--ink); }
+.menubtn { flex: none; display: flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--accent-ink) 45%, transparent); background: transparent; color: var(--accent-ink); border-radius: 8px; padding: 0 10px; max-width: 46%; }
+.menubtn svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.menubtn span { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menubtn span:empty { display: none; }
+.scrim { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / .35); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.side { position: fixed; inset: 0 auto 0 0; z-index: 41; width: min(300px, 86vw); background: var(--surface); color: var(--ink); box-shadow: 0 0 24px rgb(0 0 0 / .2); transform: translateX(-105%); transition: transform .22s ease; overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 10px calc(env(safe-area-inset-bottom, 0px) + 16px) max(10px, env(safe-area-inset-left, 0px)); }
+body.sideopen .scrim { opacity: 1; pointer-events: auto; }
+body.sideopen .side { transform: none; }
+.side:focus { outline: none; }
+.side .shd { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 8px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.side .shd b { font-family: var(--f-display); font-size: 18px; color: var(--accent); }
+.side .shd span { font-size: 11px; color: var(--muted); }
+.sgrp { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.sgrp:last-of-type { border-bottom: 0; }
+.shead, .sitem { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; border-radius: 8px; color: inherit; }
+.shead { padding: 9px 8px; font-weight: 600; font-family: var(--f-display); font-size: 15px; }
+.shead i { width: 20px; height: 20px; flex: none; color: var(--accent); }
+.shead i svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.shead small { margin-left: auto; font-weight: 400; font-family: var(--f-body); font-size: 12px; color: var(--muted); }
+.sitem { padding: 7px 8px 7px 38px; font-size: 14px; color: var(--muted); }
+.shead:hover, .sitem:hover { background: var(--accent-soft); }
+.sitem[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.shead[aria-current="true"] { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .side, .scrim { transition: none; } }
 .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .chip { flex: none; border: 1px solid color-mix(in srgb, var(--accent-ink) 45%, transparent); background: transparent; color: var(--accent-ink);
   border-radius: 999px; padding: 4px 11px; font-size: 13px; }
@@ -307,7 +332,7 @@ main.solo .detail.open { display: block; }
 <div class="app">
   <header class="top">
     <div class="brand"><h1>SSI Production</h1><div class="src" id="src">Preview · read only</div></div>
-    <div class="search"><input id="q" type="search" placeholder="Search lot, customer, product, process, PO, chemical…" autocomplete="off" aria-label="Search"></div>
+    <div class="search"><button class="menubtn" id="menubtn" type="button" aria-label="Menu" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span id="viewname"></span></button><input id="q" type="search" placeholder="Search lot, customer, product, process, PO, chemical…" autocomplete="off" aria-label="Search"></div>
     <div class="chips" id="chips" role="group" aria-label="Show"></div>
     <datalist id="ed-chems"></datalist>
   </header>
@@ -317,6 +342,8 @@ main.solo .detail.open { display: block; }
     </section>
     <section class="detail" id="detail" aria-label="Details"><p class="empty">Pick an item to see everything about it.</p></section>
   </main>
+  <div class="scrim" id="scrim"></div>
+  <aside class="side" id="side" aria-label="Menu" aria-hidden="true" tabindex="-1"></aside>
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="today"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></i><b>Today</b><span id="n-today">summary</span></button>
     <button class="tab" role="tab" data-tab="lots"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg></i><b>Production</b><span id="n-lots">lots</span></button>
@@ -612,8 +639,29 @@ main.solo .detail.open { display: block; }
   function chips() {
     const f = tab === "today" || tab === "health" ? "" : filter[tab] || CHIPS[tab][0][0];
     const p = tab === "lots" && pick ? `<button class="chip pick" data-clear="1" aria-label="Remove filter ${esc(pick.value)}">${esc(pick.value)} ×</button>` : "";
-    $("#chips").innerHTML = p + CHIPS[tab].map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === f}">${t}</button>`).join("");
+    $("#chips").innerHTML = p;
+    const c = CHIPS[tab].find(([k]) => k === f); $("#viewname").textContent = c ? c[1] : SIDE_T[tab] || "";
+    if (sideOpen) $("#side").innerHTML = sideHtml();
   }
+  // ---------------------------------------------------------------- sidebar: every tab and its views
+  const SIDE_T = { today: "Today", lots: "Production", orders: "Orders", purchases: "Purchases", chemicals: "Chemicals", entries: "Phone entries", health: "Health check" };
+  const SIDE_ICON = { entries: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>', health: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>' };
+  let sideOpen = false;
+  function sideHtml() {
+    const f0 = (t) => t === "today" || t === "health" ? "" : filter[t] || CHIPS[t][0][0];
+    return `<div class="shd"><b>SSI Production</b><span>v${esc(APP_BUILD.v)}</span></div>` + Object.keys(SIDE_T).map((t) => {
+      const ic = SIDE_ICON[t] || (document.querySelector(`.tab[data-tab="${t}"] i`) || {}).innerHTML || "", n = (document.getElementById("n-" + t) || {}).textContent || "";
+      return `<div class="sgrp"><button class="shead" data-side="${t}|" aria-current="${t === tab && !CHIPS[t].length}"><i aria-hidden="true">${ic}</i>${SIDE_T[t]}${n && t !== "today" ? `<small>${esc(n)}</small>` : ""}</button>`
+        + CHIPS[t].map(([k, l]) => `<button class="sitem" data-side="${t}|${k}" aria-current="${t === tab && f0(t) === k}">${esc(l)}</button>`).join("") + `</div>`;
+    }).join("");
+  }
+  function openSide() {
+    if (sideOpen) return; sideOpen = true; $("#side").innerHTML = sideHtml(); document.body.classList.add("sideopen"); $("#side").setAttribute("aria-hidden", "false"); $("#menubtn").setAttribute("aria-expanded", "true");
+    try { history.pushState({ ssi: navDepth(), side: 1 }, "", location.hash || "#" + tab); } catch (e) {}
+    $("#side").focus({ preventScroll: true }); const cur = $("#side [aria-current=true]"); if (cur) cur.scrollIntoView({ block: "nearest" });
+  }
+  function hideSide() { sideOpen = false; document.body.classList.remove("sideopen"); $("#side").setAttribute("aria-hidden", "true"); $("#menubtn").setAttribute("aria-expanded", "false"); }
+  function closeSide() { if (!sideOpen) return; hideSide(); try { history.back(); } catch (e) {} $("#menubtn").focus({ preventScroll: true }); }
   function keep(it) {
     const f = filter[tab] || CHIPS[tab][0][0];
     if (tab === "lots" && pick && String(it[pick.field] || "").toUpperCase() !== pick.value.toUpperCase()) return false;
@@ -738,7 +786,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 75, at: "2026-11-09T14:50:21+05:30", notes: "Load process saves and opens the recipe view instead of the editor" };
+  const APP_BUILD = { v: 76, at: "2026-11-09T15:55:51+05:30", notes: "Views moved from the chips row into a sidebar menu (button left of search)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3021,6 +3069,7 @@ main.solo .detail.open { display: block; }
     closeDetail();
   }
   window.addEventListener("popstate", (e) => {
+    if (sideOpen) { hideSide(); return; }
     const at = e.state && typeof e.state.ssi === "number" ? e.state.ssi : 0; hDepth = at; popping = true;
     try {
       if (navDepth() > at) { for (let n = 0; n < 8 && navDepth() > at; n++) { const before = navDepth(); backOnce(); if (navDepth() === before) break; } }
@@ -3029,6 +3078,19 @@ main.solo .detail.open { display: block; }
     } finally { popping = false; }
     queueMicrotask(syncHist);
   });
+  $("#menubtn").addEventListener("click", () => (sideOpen ? closeSide() : openSide()));
+  $("#scrim").addEventListener("click", closeSide);
+  $("#side").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-side]"); if (!b) return;
+    const [t, k] = b.dataset.side.split("|");
+    if (k) filter[t] = k;
+    hideSide(); stack = []; pick = null; formOpen = null; if (t !== tab) sel[t] = sel[t] || null;
+    // the menu's history entry becomes this page, so Back works as after a tab tap
+    try { history.replaceState({ ssi: navDepth() }, "", "#" + t); } catch (x) {}
+    if (t === tab) { render(); showDetail(); } else route(t);
+    $("#list").scrollTop = 0;
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sideOpen) { e.stopPropagation(); closeSide(); } }, true);
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => { stack = []; pick = null; formOpen = null; if (b.dataset.tab === "today") $("#q").value = ""; go(b.dataset.tab); }));
   $("#chips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; if (b.dataset.clear) pick = null; else filter[tab] = b.dataset.f; render(); });
   $("#q").addEventListener("input", render);
