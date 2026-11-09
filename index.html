@@ -738,7 +738,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 74, at: "2026-11-09T14:02:33+05:30", notes: "Process editor shows each chemical's available stock under its name" };
+  const APP_BUILD = { v: 75, at: "2026-11-09T14:50:21+05:30", notes: "Load process saves and opens the recipe view instead of the editor" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2473,13 +2473,22 @@ main.solo .detail.open { display: block; }
   }
   function loadProcess(l, key) {
     const m = key.split("@v"), a = m[0].slice(4).split("|"), lotS = a[0], process = a.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process];
-    if (lotS === l.lot_no && !m[1]) { flash = ""; sel.lots = key; openEditor(key); if (normPage(process) !== normPage(l.process_page || "")) ed.movePage = process; showDetail(); $("#detail").scrollTop = 0; return; }
+    if (lotS === l.lot_no && !m[1]) { flash = ""; sel.lots = key;
+      if (normPage(process) === normPage(l.process_page || "")) { formOpen = null; ed = null; showDetail(); $("#detail").scrollTop = 0; return; }
+      openEditor(key); ed.movePage = process; showDetail(); $("#detail").scrollTop = 0; loadSave("Process page changed to " + process + "."); return; }
     const src = recAt(lotS, process, m[1] ? Number(m[1]) : live0 ? nextVer(live0) : 0);
     const seed = Object.assign({}, src, { lot_no: l.lot_no, from: lotS, base_process: process, base_ver: src.version, load_cur: curVersion(l.lot_no, process), details: [l.customer, l.product].filter(Boolean).join(" "), substance: l.shaving || src.substance, pcs: l.lot_pcs, shaved_wt: parseFloat(l.weight) || src.shaved_wt, wb_sqft: l.lot_sqft, finish_sqft: l.delivered_est ?? null });
     if (seed.shaved_wt !== src.shaved_wt) seed.crust = seed.crust.map((c) => c.p !== null && c.p !== undefined && !c.nq ? Object.assign({}, c, { q: +(c.p * seed.shaved_wt).toFixed(4) }) : c);
     flash = ""; sel.lots = "rec:" + l.lot_no + "|" + process; openEditor(sel.lots, seed);
     if (normPage(process) !== normPage(l.process_page || "")) ed.movePage = process;
     showDetail(); $("#detail").scrollTop = 0;
+    loadSave("Process loaded from " + lotS + (src.version ? " v" + src.version : "") + ". It is waiting for Excel; tap Edit to change it.");
+  }
+  // loading saves straight away and shows the recipe; if a check stops the save, the editor stays open with the message
+  async function loadSave(done) {
+    const f = $("#fm-recipe"); if (!f) return;
+    await submitRecipe(f);
+    if (formOpen !== "recipe" && !ed) { flash = done; showDetail(); $("#detail").scrollTop = 0; setTimeout(() => { flash = ""; showDetailKeep(); }, 7000); }
   }
   const dbDyes = (p) => { const r = rows("SELECT rows FROM process_dyes WHERE UPPER(process)=UPPER(?)", [p])[0]; return r ? JSON.parse(r.rows) : []; };
   async function saveNew(body, done, msg, btn) {
@@ -2971,7 +2980,7 @@ main.solo .detail.open { display: block; }
     if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
     const title = isProc ? (data.processes.find((p) => p.key === k) || {}).name : isRec ? k.slice(4).split("|")[0] + " recipe" + (k.includes("@v") ? " v" + k.split("@v")[1] : "") : { lots: k, orders: (() => { const o = data.orders.find((x) => String(x.id) === String(k)); return o ? "PO " + o.po_no : ""; })(), purchases: k, chemicals: k }[tab];
-    const body = isProc ? procDetail(k) : isRec ? recipeDetail(k) : { lots: lotDetail, orders: orderDetail, purchases: purchaseDetail, chemicals: chemDetail }[tab](k);
+    const body = isProc ? procDetail(k) : isRec ? (flash ? `<p class="okmsg">${esc(flash)}</p>` : "") + recipeDetail(k) : { lots: lotDetail, orders: orderDetail, purchases: purchaseDetail, chemicals: chemDetail }[tab](k);
     d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(title)}</h2></div>${body}
       ${tab === "lots" && !isProc && !isRec ? `<div class="foot"><span class="note">Data of ${data.asOf}</span><button class="copy" data-copy>Copy lot summary</button></div><div id="copyout"></div>` : ""}`;
     d.classList.add("open"); d.scrollTop = 0;
