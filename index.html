@@ -149,6 +149,9 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 tr.tot td { border-top: 2px solid var(--ink); }
 .invline { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 8px; background: var(--bg); }
 .invline input[readonly] { opacity: .7; }
+.invnew { border-left: 3px solid var(--bad); padding: 4px 0 4px 10px; display: grid; gap: 6px; }
+label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+label.chk input { width: 20px; height: 20px; }
 .invadd { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 6px; }
 .invcand { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .invcand:first-of-type { border-top: 0; }
@@ -495,7 +498,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (had || entries.length) refresh(); else if (tab === "today" || tab === "entries") render(); else showDetailKeep();
     }, () => { clearTimeout(timer); store = null; srcLine(); showDetailKeep(); render(); });
     s.collection("audits").onSnapshot((snap) => { audits = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "chemicals") render(); }, () => {});
-    s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
+    s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); setTimeout(invSyncTally, 500); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
     s.collection("invset").onSnapshot((snap) => { const d = snap.docs.find((x) => x.id === "main"); invSet = d ? d.data() : {}; }, () => {});
   }
   function showDetailKeep() { if (formOpen) return; const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
@@ -870,7 +873,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 82, at: "2026-11-09T23:21:54+05:30", notes: "Invoices carry the Tally invoice no (next in your NN/26-27 series, editable); Sampling charge line; Packing goes to Packing Charges; Tally file shares to OneDrive on the phone" };
+  const APP_BUILD = { v: 83, at: "2026-11-09T23:37:40+05:30", notes: "Invoices use Tally's own lists (from Excel's Refresh from Tally): party picker fills GSTIN, state and address; items only from Tally or created with the invoice; next number from Tally; invoices Excel entered in Tally are marked In Tally" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1281,6 +1284,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // pieces not delivered (DispatchCheck in Excel, from 08-Nov-2026)
     a.run("CREATE TABLE IF NOT EXISTS lot_balance(id INTEGER, lot_no TEXT, bal_date TEXT, dest TEXT, pcs REAL, sqft REAL, ref_key TEXT, note TEXT, status TEXT)"); a.run("DELETE FROM lot_balance");
     try { q(src, "SELECT id, lot_no, bal_date, dest, pcs, sqft, ref_key, note, status FROM lot_balance").forEach((r) => a.run("INSERT INTO lot_balance VALUES(?,?,?,?,?,?,?,?,?)", [r.id, String(r.lot_no || "").toUpperCase(), r.bal_date, r.dest, r.pcs, r.sqft, r.ref_key, r.note, r.status])); } catch (e) { /* not in this database yet */ }
+    // Tally masters read by Excel (TallyLink "Refresh from Tally", from 09-Nov-2026)
+    [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
+     ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"]].forEach(([t, cols, sel]) => {
+      a.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols})`); a.run(`DELETE FROM ${t}`);
+      try { const n = sel.split(",").length; q(src, `SELECT ${sel} FROM ${t}`).forEach((r) => a.run(`INSERT INTO ${t} VALUES(${Array(n).fill("?").join(",")})`, Object.values(r))); } catch (e) { /* Excel has not read Tally yet */ }
+    });
     try { a.run("ALTER TABLE order_lines ADD COLUMN short_on TEXT"); a.run("ALTER TABLE order_lines ADD COLUMN short_note TEXT"); } catch (e) { /* already there */ }
     try { q(src, "SELECT id,short_on,short_note FROM order_lines WHERE short_on IS NOT NULL AND short_on<>''").forEach((r) => a.run("UPDATE order_lines SET short_on=?,short_note=? WHERE id=?", [r.short_on, r.short_note ?? "", r.id])); } catch (e) { /* Excel has not closed anything short yet */ }
     // chemicals
@@ -2214,9 +2223,24 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const p = rows("SELECT ol.item, ol.rate, ol.hsn, o.po_no FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [lot])[0];
     return p || null;
   }
+  // Tally masters (from Excel's Refresh from Tally); empty until Excel has read Tally once
+  const trows = (sql, p) => { try { return rows(sql, p); } catch (e) { return []; } };
+  const tParties = () => trows("SELECT * FROM tally_parties ORDER BY name");
+  const tItems = () => trows("SELECT * FROM tally_items ORDER BY CASE WHEN UPPER(unit)='SQF' THEN 0 ELSE 1 END, name");
+  const tMeta = (k) => (trows("SELECT v FROM tally_meta WHERE k=?", [k])[0] || {}).v || "";
+  const tParty = (n) => trows("SELECT * FROM tally_parties WHERE UPPER(name)=UPPER(?)", [String(n || "").trim()])[0];
+  const tItem = (n) => trows("SELECT * FROM tally_items WHERE UPPER(name)=UPPER(?)", [String(n || "").trim()])[0];
+  // the Tally voucher for an app invoice: same app number, and the same invoice no (or, for invoices made before v82, the same party)
+  const tSale = (v) => trows("SELECT * FROM tally_sales WHERE ref=?", [v.temp]).find((t) => v.vno ? String(t.vno).trim() === String(v.vno).trim() : UP(t.party) === UP(v.party));
+  // invoices Excel already put into Tally get their Tally number here
+  let invSyncing = false;
+  async function invSyncTally() {
+    if (invSyncing || !store || !canWrite) return; invSyncing = true;
+    try { for (const v of invLive()) { if (v.tally_no) continue; const t = tSale(v); if (t) await store.doc("invoices/" + v.id).update({ tally_no: t.vno, status: "tally", tally_at: new Date().toISOString(), tally_by: "Excel" }); } } catch (e) {} finally { invSyncing = false; }
+  }
   // Tally's own series ("79/26-27") isn't applied to imported vouchers, so the app puts the number in the file
   function vnoNum(t) { const S = iset(), re = new RegExp("^" + String(S.vnoFmt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{n\\}", "(\\d+)") + "$"), m = String(t || "").trim().match(re); return m ? Number(m[1]) : 0; }
-  function nextVno(exceptId) { const S = iset(); let n = Number(S.lastNo) || 0; invLive().forEach((v) => { if (v.id !== exceptId) n = Math.max(n, vnoNum(v.vno), vnoNum(v.tally_no)); }); return String(S.vnoFmt).replace("{n}", n + 1); }
+  function nextVno(exceptId) { const S = iset(); let n = Math.max(Number(S.lastNo) || 0, Number(tMeta("last_sale_no")) || 0); trows("SELECT vno FROM tally_sales").forEach((r) => { n = Math.max(n, vnoNum(r.vno)); }); invLive().forEach((v) => { if (v.id !== exceptId) n = Math.max(n, vnoNum(v.vno), vnoNum(v.tally_no)); }); return String(S.vnoFmt).replace("{n}", n + 1); }
   const descOf = (ln) => ln.lot + " - " + [Number(ln.hides) || !Number(ln.sides) ? fmtN(Number(ln.hides) || 0, 1) + " hides" : "", Number(ln.sides) ? fmtN(ln.sides, 0) + " sides" : ""].filter(Boolean).join(" + ");
   function invLine(lot, cand) {
     const S = iset(), l = data.lotBy[lot] || {}, p = invPoLine(lot), item0 = p ? p.item : l.product || "";
@@ -2224,7 +2248,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     ln.desc = descOf(ln); ln.autodesc = true; return ln;
   }
   function invPartyFill(v) {
-    const S = iset(), p = S.parties[UP(v.customer)] || {};
+    const S = iset(), p0 = S.parties[UP(v.customer)] || {}, tp = p0.party ? tParty(p0.party) : null, p = tp ? Object.assign({}, p0, { party: tp.name, gstin: tp.gstin, state: tp.state || p0.state, addr: [tp.address, tp.pincode].filter(Boolean).join(" ") }) : p0;
     v.party = p.party || v.customer; v.gstin = p.gstin || ""; v.state = p.state || (GST_CODE[String(p.gstin || "").slice(0, 2)] || S.state); v.addr = p.addr || ""; v.dest = v.dest || p.dest || "";
   }
   function invNew(cust, lot) {
@@ -2259,7 +2283,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const all = invLive().filter((v) => match([v.temp, v.tally_no, v.customer, v.party, (v.lines || []).map((l) => l.lot + " " + l.item).join(" ")].join(" "), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.temp).localeCompare(String(a.temp)));
     const waiting = all.filter((v) => !v.tally_no);
     let h = store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-invnew>New invoice</button>${waiting.length ? `<button class="btn alt" data-invxmlall>Tally file for all not in Tally (${waiting.length})</button>` : ""}<button class="btn alt" data-invset>Tally names</button></div>` : "";
-    h += `<p class="note" style="margin:6px 2px">Make the invoice here, then import the Tally file in Tally (Gateway of Tally → Import → Transactions). Tally gives the invoice number; type it back here with “Entered in Tally”.</p><div id="invout"></div>`;
+    h += `<p class="note" style="margin:6px 2px">Make the invoice here, tap Make Tally file and share it to OneDrive, folder SSI › Accountancy › tally data › SSI › XML DATA. On the PC press <b>Invoices &gt; Tally</b> in Excel: it enters every waiting file in Tally. The app marks them In Tally with the next data refresh.${tMeta("refreshed_at") ? ` Tally lists from ${esc(tMeta("refreshed_at"))}.` : ""}</p><div id="invout"></div>`;
     if (!all.length) return h + `<p class="empty">No invoices yet. Tap New invoice, or open a lot and tap Make invoice.</p>`;
     const grp = (t, list) => list.length ? `<div class="group">${t} · ${list.length}</div>` + list.map(invCard).join("") : "";
     return h + grp("Not in Tally yet", waiting) + grp("In Tally", all.filter((v) => v.tally_no));
@@ -2304,9 +2328,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<form class="fm" id="fm-invoice">
       <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustomers().map((c) => `<option${c === UP(v.customer) ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
       ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}${ivF("iv-vno", "Tally invoice no", v.vno || "", ' placeholder="' + esc(nextVno(v.id)) + '"')}</div>
-      ${v.customer ? `<div class="two">${ivF("iv-party", "Party name as in Tally", v.party)}${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
+      ${v.customer ? `<div class="two">${ivF("iv-party", "Party (Tally ledger)", v.party, ' list="iv-parties"')}${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
       ${ivF("iv-addr", "Address (optional)", v.addr)}
-      <p class="note" style="margin:0">Party name must match the ledger in Tally exactly. It is remembered for ${esc(v.customer)}.</p>
+      <p class="note" style="margin:0">${tParties().length ? (tParty(v.party) ? "From Tally: GSTIN, state and address fill in by themselves." : `<span class="bad">Pick the party from the list</span>: it must be a Tally ledger.`) : "Type the party exactly as its Tally ledger. (Press Refresh from Tally in Excel once to get Tally's party list here.)"} Remembered for ${esc(v.customer)}.</p>
       <h3 style="margin:10px 0 0">Lots on this invoice</h3>
       ${v.lines.length ? v.lines.map((ln, i) => invLineHtml(ln, i)).join("") : `<p class="note" style="margin:0">No lots yet. Add a delivery below.</p>`}
       <div class="invadd"><p style="margin:0"><b>Add a delivery</b> <button type="button" class="lnk" data-inv="showall">${invShowAll ? "Only " + esc(v.customer) : "Show all customers"}</button></p>
@@ -2319,15 +2343,25 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="two">${ivF("iv-transporter", "Transporter", v.transporter)}${ivF("iv-vehicle", "Vehicle no", v.vehicle)}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
       ${ivF("iv-narration", "Narration (optional)", v.narration)}
       <div id="iv-tot">${invTotHtml(v)}</div>
-      <datalist id="iv-items">${items.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}
+      <datalist id="iv-items">${(tItems().length ? tItems().map((x) => x.name) : items).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+      <datalist id="iv-parties">${tParties().map((x) => `<option value="${esc(x.name)}">${esc([x.gstin, x.state].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>` : ""}
       <p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit" id="iv-savexml">Save and make Tally file</button><button class="btn alt" type="submit" id="iv-save">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`;
+  }
+  function invItemNote(ln, i) {
+    if (!tItems().length || !String(ln.item || "").trim()) return "";
+    if (tItem(ln.item)) return "";
+    const grps = [...new Set(tItems().filter((x) => UP(x.unit) === UP(iset().unit)).map((x) => x.grp).filter(Boolean))].sort();
+    return `<div class="invnew" id="ivn-${i}"><p class="bad" style="margin:0">“${esc(ln.item)}” is not a Tally stock item. Pick one from the list, or create it:</p>
+      <label class="chk"><input type="checkbox" data-ivl="${i}" data-f="newitem"${ln.newitem ? " checked" : ""}> Create this item in Tally with the invoice</label>
+      ${ln.newitem ? `<label>Stock group<select data-ivl="${i}" data-f="newgrp">${grps.map((g) => `<option${g === (ln.newgrp || "4107") ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>` : ""}</div>`;
   }
   function invLineHtml(ln, i) {
     const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = !ln.newdel;
     const n = (f, lb, more) => `<label>${lb}<input data-ivl="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" type="number" step="any" inputmode="decimal"${lock && ["hides", "sides", "sqft"].includes(f) ? " readonly" : ""}${more || ""}></label>`;
     return `<div class="invline"><p style="margin:0;display:flex;justify-content:space-between;gap:8px"><span><b>${esc(ln.lot)}</b> ${ln.newdel ? "· new delivery, recorded when you save" : d ? "· delivered " + fmtD(d.date) + (d.doc ? " · " + esc(d.doc) : "") + (d.wait ? " · waiting for Excel" : "") : ""}${ln.po ? " · PO " + esc(ln.po) : ""}</span><button type="button" class="mini" data-inv="del:${i}">Remove</button></p>
-      <label>Stock item as in Tally<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" list="iv-items" autocomplete="off"></label>
+      <label>Stock item (Tally)<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" list="iv-items" autocomplete="off"></label>
+      ${invItemNote(ln, i)}
       <label>Description<input data-ivl="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
       <div class="two">${n("hides", "Hides")}${n("sides", "Sides", ' step="1"')}${n("sqft", "Sqft")}${ln.newdel ? `<label>Delivery date<input data-ivl="${i}" data-f="ddate" type="date" value="${esc(ln.ddate || "")}"></label>` : ""}${n("rate", "Rate / sqft")}${n("disc", "Discount %")}<label>HSN<input data-ivl="${i}" data-f="hsn" value="${esc(ln.hsn)}" inputmode="numeric"></label>${n("gst", "GST %")}</div>
       <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${lock ? " · counts come from the delivery" : ""}</p></div>`;
@@ -2338,9 +2372,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (t.dataset.iv) {
       const k = t.dataset.iv; v[k] = t.value;
       if (k === "customer") { v.lines = []; invPartyFill(v); invRedraw(); return; }
+      if (k === "party") { const tp = tParty(t.value); if (tp) { v.party = tp.name; v.gstin = tp.gstin || ""; v.state = tp.state || v.state; v.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); invRedraw(); return; } }
       if (k === "gstin") { const st = GST_CODE[t.value.trim().slice(0, 2)]; if (st && t.value.trim().length >= 2) { v.state = st; const s = $("#iv-state"); if (s) s.value = st; } }
     } else if (t.dataset.ivl !== undefined) {
-      const ln = v.lines[Number(t.dataset.ivl)], f = t.dataset.f; ln[f] = t.value;
+      const ln = v.lines[Number(t.dataset.ivl)], f = t.dataset.f; ln[f] = t.type === "checkbox" ? t.checked : t.value;
+      if (f === "newitem") { if (ln.newitem && !ln.newgrp) ln.newgrp = "4107"; invRedraw(); return; }
+      if (f === "item") { const box = $("#ivn-" + t.dataset.ivl), html = invItemNote(ln, Number(t.dataset.ivl)); if (box) { if (html) box.outerHTML = html; else box.remove(); } else if (html) t.closest("label").insertAdjacentHTML("afterend", html); }
       if (f === "desc") ln.autodesc = false;
       if ((f === "hides" || f === "sides") && ln.autodesc) { ln.desc = descOf(ln); const di = document.querySelector(`[data-ivl="${t.dataset.ivl}"][data-f="desc"]`); if (di) di.value = ln.desc; }
       const a = $("#ivl-amt-" + t.dataset.ivl); if (a) a.textContent = rs(r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)));
@@ -2364,14 +2401,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const v = inv, S = iset(), bad = (t) => { msg.textContent = t; };
     if (!v.customer) return bad("Pick the customer.");
     if (!v.date || checkDate(v.date)) return bad(checkDate(v.date) || "Pick the invoice date.");
-    if (!String(v.party || "").trim()) return bad("Type the party name as it is in Tally.");
+    if (!String(v.party || "").trim()) return bad("Pick the party (Tally ledger).");
+    if (tParties().length && !tParty(v.party)) return bad("“" + v.party + "” is not a party in Tally. Pick it from the list (or create the ledger in Tally and press Refresh from Tally in Excel).");
+    if (tParty(v.party)) v.party = tParty(v.party).name;
     if (!String(v.vno || "").trim()) v.vno = nextVno(v.id);
     { const dup = invLive().find((x) => x.id !== v.id && String(x.vno || x.tally_no || "").trim() === String(v.vno).trim()); if (dup) return bad("Invoice no " + v.vno + " is already on " + (dup.tally_no || dup.temp) + ". Next free: " + nextVno(v.id) + "."); }
     if (v.gstin && !/^\d{2}[A-Z0-9]{13}$/i.test(v.gstin.trim())) return bad("The GSTIN should be 15 characters starting with the 2-digit state code.");
     if (!v.lines.length) return bad("Add at least one lot.");
     if (Number(v.discount) && !S.discount) return bad("Tally has no discount ledger yet. Make one in Tally, type its name under Orders → Invoices → Tally names, or give the discount as a % on the lines.");
     for (const ln of v.lines) {
-      if (!String(ln.item || "").trim()) return bad(ln.lot + ": type the stock item name as in Tally.");
+      if (!String(ln.item || "").trim()) return bad(ln.lot + ": pick the stock item.");
+      if (tItems().length && !tItem(ln.item) && !ln.newitem) return bad(ln.lot + ": “" + ln.item + "” is not in Tally. Pick it from the list, or tick Create this item in Tally.");
+      if (tItem(ln.item)) { ln.item = tItem(ln.item).name; ln.newitem = false; }
       if (!(Number(ln.sqft) > 0)) return bad(ln.lot + ": type the sqft.");
       if (!(Number(ln.rate) > 0)) return bad(ln.lot + ": type the rate.");
       if (ln.newdel) { if (!(Number(ln.hides) > 0 || Number(ln.sides) > 0)) return bad(ln.lot + ": type the hides and / or sides delivered."); const dd = checkDate(ln.ddate || v.date); if (dd) return bad(ln.lot + ": " + dd); }
@@ -2434,10 +2475,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       + (t.intra ? (t.cgst ? led(S.cgst, t.cgst) + led(S.sgst, t.sgst) : "") : (t.igst ? led(S.igst, t.igst) : ""))
       + (t.ro ? led(S.round, t.ro) : "") + ways + `</VOUCHER></TALLYMESSAGE>`;
   }
+  function invNewItems(list) {
+    const S = iset(), seen = {}, out = [];
+    list.forEach((v) => (v.lines || []).forEach((ln) => { if (ln.newitem && !tItem(ln.item) && !seen[UP(ln.item)]) { seen[UP(ln.item)] = 1;
+      out.push(`<TALLYMESSAGE xmlns:UDF="TallyUDF"><STOCKITEM NAME="${xe(ln.item.trim())}" ACTION="Create"><NAME.LIST TYPE="String"><NAME>${xe(ln.item.trim())}</NAME></NAME.LIST><PARENT>${xe(ln.newgrp || "4107")}</PARENT><BASEUNITS>${xe(S.unit)}</BASEUNITS><GSTAPPLICABLE>&#4; Applicable</GSTAPPLICABLE><GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY><GSTDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM><SRCOFGSTDETAILS>As per Company/Stock Group</SRCOFGSTDETAILS></GSTDETAILS.LIST><HSNDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM><HSNCODE>${xe(ln.hsn || S.hsn)}</HSNCODE><SRCOFHSNDETAILS>Specify Details Here</SRCOFHSNDETAILS></HSNDETAILS.LIST></STOCKITEM></TALLYMESSAGE>`); } }));
+    return out.join("\r\n");
+  }
   function invXml(list) {
     const S = iset();
     return `<?xml version="1.0" encoding="UTF-8"?>\r\n<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${xe(S.company)}</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>\r\n`
-      + list.map(invVoucherXml).join("\r\n") + `\r\n</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>\r\n`;
+      + [invNewItems(list)].concat(list.map(invVoucherXml)).filter(Boolean).join("\r\n") + `\r\n</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>\r\n`;
   }
   async function invExport(list, out) {
     if (!list.length) return;
@@ -2447,7 +2494,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     let ok = false;
     if (dl) { try { await dl.save({ filename: name, data: text }); ok = true; } catch (err) { if (err.code !== "declined") box(); } } else box();
     if (ok) { const now = new Date().toISOString(); for (const v of list) if (!v.tally_no) await store.doc("invoices/" + v.id).update({ exported_at: now, status: "exported" }).catch(() => {});
-      if (out) out.innerHTML = `<p class="okmsg">${esc(name)} made. On the computer: Gateway of Tally → Import → Transactions (Import Data → Vouchers in older Tally), pick this file. Then type the invoice number Tally gave with “Entered in Tally”.</p>`; }
+      if (out) out.innerHTML = `<p class="okmsg">${esc(name)} made. Save it in OneDrive › SSI › Accountancy › tally data › SSI › XML DATA, then press Invoices &gt; Tally in Excel on the PC.</p>`; }
   }
   // ---- Tally names
   FORMS.invoice = { get title() { return inv && inv.id ? "Edit " + (inv.tally_no || inv.temp) : "New invoice"; }, html: () => invForm() };
