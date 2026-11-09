@@ -98,6 +98,25 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
 .kv div > span { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .kv div > b { font-weight: 500; overflow-wrap: anywhere; }
+.drep { display: grid; gap: 10px; padding: 8px 2px 24px; }
+.drseg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.drseg button { flex: 1; padding: 9px 4px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.drseg button.on { background: var(--accent); color: var(--accent-ink); }
+.drnav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.drnav b { flex: 1; text-align: center; }
+.drnav label { display: flex; align-items: center; gap: 8px; }
+.drnav select { flex: 1; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; }
+.drep.noval .vcol { display: none; }
+.drtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.drtiles > div { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.drtiles span { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.drtiles b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.drtiles small { display: block; color: var(--muted); font-size: 12px; }
+.drbars { display: flex; align-items: flex-end; gap: 2px; height: 120px; border-bottom: 1px solid var(--line); padding-top: 6px; }
+.drbars > div { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; }
+.drbars i { display: block; width: 100%; max-width: 28px; background: var(--accent); border-radius: 3px 3px 0 0; }
+.drbars span { font-size: 9px; color: var(--muted); height: 14px; line-height: 14px; overflow: hidden; }
+tr.tot td { border-top: 2px solid var(--ink); }
 .invline { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 8px; background: var(--bg); }
 .invline input[readonly] { opacity: .7; }
 .invadd { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 6px; }
@@ -584,7 +603,7 @@ main.solo .detail.open { display: block; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["drep", "Delivery report"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -606,7 +625,7 @@ main.solo .detail.open { display: block; }
   }
   function render() {
     chips();
-    $("main").classList.toggle("solo", tab === "today" || tab === "entries" || tab === "health" || (tab === "lots" && filter.lots === "table") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "today" || tab === "entries" || tab === "health" || (tab === "lots" && filter.lots === "table") || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     const ws = words($("#q").value);
@@ -620,6 +639,7 @@ main.solo .detail.open { display: block; }
     }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
+    if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cost") { $("#list").innerHTML = costView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "names") { $("#list").innerHTML = namesView(ws); return; }
@@ -718,7 +738,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 72, at: "2026-11-09T11:44:42+05:30", notes: "Invoice Tally names default to the ones your Excel purchase file uses" };
+  const APP_BUILD = { v: 73, at: "2026-11-09T13:37:26+05:30", notes: "Correct a delivery (Edit on the lot page); Delivery report under Orders: week, month, financial year or any range, PDF and CSV" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1427,9 +1447,9 @@ main.solo .detail.open { display: block; }
       <h3>Stage history</h3>${hist.length ? `<div class="tbl"><table><thead><tr><th>Moved on</th><th>From</th><th>To</th><th class="r">Days in previous</th></tr></thead><tbody>${hist.map((h) =>
         `<tr><td class="nw">${fmtS(h.moved_on)}</td><td>${esc(h.from_stage)}</td><td>${esc(h.to_stage)}</td><td class="r num">${fmtN(h.days_in_prev, 0)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No stage moves recorded through the app yet.</p>`}
       ${pd.length ? `<h3>Deliveries from the phone</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${pd.map((d) =>
-        `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${store && canWrite ? ` <button class="mini" data-deledit="e:${esc(d.id)}">Edit</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
-        { const w = entries.find((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
+        { const w = entries.find((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type === "DELIVERY" && !w && store && canWrite ? ` <button class="mini" data-deledit="d:${d.id}">Edit</button>` : ""}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
       ${(() => { const iv = invOfLot(k); return iv.length ? `<h3>Invoices</h3><p>${iv.map((v) => `<button class="mini" data-go="orders" data-k="inv:${esc(v.id)}">${esc(invName(v))} · ${fmtD(v.date)}</button>`).join(" ")}</p>` : ""; })()}
       ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
         const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
@@ -2301,6 +2321,148 @@ main.solo .detail.open { display: block; }
     try { await store.doc("invset/main").set(next); invSet = next; closeForm("Tally names saved."); } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
   function invOfLot(lot) { return invLive().filter((v) => (v.lines || []).some((l) => l.lot === lot)); }
+  // ---------------------------------------------------------------- delivery corrections
+  // a recorded delivery is corrected by cancelling it and recording the right one (Excel already does both);
+  // one still waiting for Excel is replaced. Invoices that carry it follow the new delivery.
+  let delEdit = null;
+  function delOld(k) {
+    if (!k) return null;
+    if (k.startsWith("d:")) { const d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(k.slice(2))])[0]; if (!d) return null;
+      const s = sidesOf(d.note, d.pcs), m = String(d.note || "").match(/HIDES\s*\+\s*[\d.]+\s*SIDES\s*(.*)$/i);
+      return { k, lot: d.lot_no, date: d.del_date, pcs: d.pcs, sqft: d.sqft, doc: d.doc_no || "", hides: s.hides, sides: s.sides, note: (m ? m[1] : String(d.note || "")).replace(/^Phone \S+\s*/i, "").trim() }; }
+    const e = entries.find((x) => x.id === k.slice(2)); if (!e) return null;
+    const s = sidesOf(e.note, e.pcs);
+    return { k, lot: e.lot_no, date: e.entry_date, pcs: e.pcs, sqft: e.sqft, doc: e.doc_no || "", hides: s.hides, sides: s.sides, note: String(e.note || "").replace(/^[\d.]+ HIDES \+ [\d.]+ SIDES\s*/i, "").trim(), entry: e };
+  }
+  async function delCorrect(old, body, why) {
+    const now = Date.now(), at = (ms) => new Date(now + ms).toISOString();
+    if (old.k.startsWith("e:")) await store.doc("entries/" + old.entry.id).update({ status: "cancelled", cancelled_at: at(0), note_cancel: "Corrected" + (why ? ": " + why : "") });
+    else await writeEntry(store.collection("entries").doc(), { type: "delivery_void", lot_no: old.lot, data: { id: Number(old.k.slice(2)), lot: old.lot, pcs: old.pcs, sqft: old.sqft, date: old.date, reason: "Corrected" + (why ? ": " + why : "") }, status: "pending", entered_by: uid, created_at: at(0) });
+    const nr = store.collection("entries").doc();
+    if (old.entry && old.entry.invoice) body.invoice = old.entry.invoice;
+    await writeEntry(nr, Object.assign(body, { corrects: old.k, status: "pending", entered_by: uid, created_at: at(5) }));
+    // invoices that carry the old delivery
+    const tallyOnes = [];
+    for (const v of invLive()) {
+      let hit = false; const lines = (v.lines || []).map((ln) => { if (!ln.dkey || !dkeyAlias(ln.dkey).includes(old.k) && ln.dkey !== old.k) return ln; hit = true;
+        const n = Object.assign({}, ln, { dkey: "e:" + nr.id });
+        if (!v.tally_no) { const s = sidesOf(body.note, body.pcs); n.hides = s.hides; n.sides = s.sides; n.sqft = body.sqft; if (n.autodesc !== false) n.desc = descOf(n); }
+        return n; });
+      if (hit) { await store.doc("invoices/" + v.id).update({ lines, updated_at: at(6) }); if (v.tally_no) tallyOnes.push(v.tally_no); }
+    }
+    return tallyOnes;
+  }
+  // ---------------------------------------------------------------- delivery reports (Orders → Delivery report)
+  let drep = { per: "month", ref: "", from: "", to: "", by: "customer" };
+  try { Object.assign(drep, JSON.parse(localStorage.getItem("ssi-drep") || "{}")); } catch (e) {}
+  const drSave = () => { try { localStorage.setItem("ssi-drep", JSON.stringify({ per: drep.per, by: drep.by })); } catch (e) {} };
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dISO = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const dOf = (s) => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  // the period around drep.ref: week Mon–Sun, month, financial year Apr–Mar, or the typed range
+  function drRange() {
+    const r = dOf(drep.ref) || new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    let a, b, label;
+    if (drep.per === "week") { a = new Date(r); a.setDate(r.getDate() - ((r.getDay() + 6) % 7)); b = new Date(a); b.setDate(a.getDate() + 6); label = "Week " + fmtD(dISO(a)) + " to " + fmtD(dISO(b)); }
+    else if (drep.per === "month") { a = new Date(r.getFullYear(), r.getMonth(), 1); b = new Date(r.getFullYear(), r.getMonth() + 1, 0); label = MON[a.getMonth()] + " " + a.getFullYear(); }
+    else if (drep.per === "year") { const y = r.getMonth() >= 3 ? r.getFullYear() : r.getFullYear() - 1; a = new Date(y, 3, 1); b = new Date(y + 1, 2, 31); label = "FY " + y + "-" + String(y + 1).slice(2) + " (Apr–Mar)"; }
+    else { a = dOf(drep.from) || new Date(r.getFullYear(), r.getMonth(), 1); b = dOf(drep.to) || new Date(today.getFullYear(), today.getMonth(), today.getDate()); if (b < a) [a, b] = [b, a]; label = fmtD(dISO(a)) + " to " + fmtD(dISO(b)); }
+    return { a: dISO(a), b: dISO(b), label };
+  }
+  function drShift(n) {
+    const r = dOf(drep.ref) || new Date(today);
+    if (drep.per === "week") r.setDate(r.getDate() + 7 * n); else if (drep.per === "month") r.setMonth(r.getMonth() + n, 1); else if (drep.per === "year") r.setFullYear(r.getFullYear() + n);
+    drep.ref = dISO(r);
+  }
+  // every delivery the app knows: recorded in Excel, waiting from the phone, and the tracker's older undated quantity
+  function drAll() {
+    const out = [], dated = {}, voided = {};
+    data.voidLive.forEach((e) => { voided[Number(e.data.id)] = 1; });
+    const inv = invUsed(null);
+    const add = (o) => { const l = data.lotBy[o.lot] || {}, p = invPoLine(o.lot), iv = o.key ? inv[o.key] || dkeyAlias(o.key).map((x) => inv[x]).find(Boolean) : null;
+      const rate = p && Number(p.rate) ? Number(p.rate) : null;
+      out.push(Object.assign({ cust: l.customer || "", item: l.product || "", rate, value: rate === null ? null : r2(o.sqft * rate), inv: iv ? iv.tally_no || iv.temp : "" }, o)); };
+    rows("SELECT * FROM lot_deliveries WHERE status='OK' AND entry_type IN ('DELIVERY','RETURN')").forEach((d) => {
+      if (voided[d.id]) return; const ret = d.entry_type === "RETURN", sg = ret ? -1 : 1, s = sidesOf(d.note, d.pcs);
+      dated[d.lot_no] = (dated[d.lot_no] || 0) + sg * Math.abs(d.sqft);
+      add({ key: "d:" + d.id, src: ret ? "return" : "rec", date: d.del_date, lot: d.lot_no, pcs: sg * Math.abs(d.pcs), hides: sg * s.hides, sides: sg * s.sides, sqft: sg * Math.abs(d.sqft), doc: d.doc_no || "" });
+    });
+    entries.filter((e) => e.type === "delivery" && e.status === "pending").forEach((e) => { const s = sidesOf(e.note, e.pcs);
+      add({ key: "e:" + e.id, src: "wait", date: e.entry_date, lot: e.lot_no, pcs: Number(e.pcs) || 0, hides: s.hides, sides: s.sides, sqft: Number(e.sqft) || 0, doc: e.doc_no || "" }); });
+    data.lots.forEach((l) => {
+      const rem = r2((Number(l.delivered_est) || 0) - (dated[l.lot_no] || 0)); if (rem < 1) return;
+      const disp = /^dispatch/i.test(l.stage || "") || l.state === "ARCHIVED" || l.state === "DISPATCHED";
+      add({ key: "", src: disp && l.stage_since ? "est" : "undated", date: disp ? l.stage_since || "" : "", lot: l.lot_no, pcs: null, hides: null, sides: null, sqft: rem, doc: "" });
+    });
+    return out;
+  }
+  function drGroupKey(x) {
+    if (drep.by === "customer") return x.cust || "(no customer)";
+    if (drep.by === "product") return x.item || "(no product)";
+    if (drep.by === "lot") return x.lot;
+    return x.date;
+  }
+  function drData() {
+    const R = drRange(), all = drAll(), list = all.filter((x) => x.date && x.date >= R.a && x.date <= R.b).sort((p, q) => String(p.date).localeCompare(String(q.date)) || String(p.lot).localeCompare(String(q.lot)));
+    const undated = all.filter((x) => x.src === "undated");
+    const sum = (xs, f) => r2(xs.reduce((t, x) => t + (Number(x[f]) || 0), 0));
+    const T = { n: list.filter((x) => x.src !== "est").length, lots: new Set(list.map((x) => x.lot)).size, custs: new Set(list.map((x) => x.cust)).size, sqft: sum(list, "sqft"), hides: sum(list, "hides"), sides: sum(list, "sides"), value: sum(list.filter((x) => x.value !== null), "value"), noRate: r2(list.filter((x) => x.value === null).reduce((t, x) => t + x.sqft, 0)), est: sum(list.filter((x) => x.src === "est"), "sqft") };
+    const G = {}; list.forEach((x) => { const k = drGroupKey(x), g = G[k] = G[k] || { k, n: 0, sqft: 0, hides: 0, sides: 0, value: 0, lots: new Set() }; g.n += x.src === "est" ? 0 : 1; g.sqft += x.sqft; g.hides += x.hides || 0; g.sides += x.sides || 0; g.value += x.value || 0; g.lots.add(x.lot); });
+    const groups = Object.values(G).sort((p, q) => drep.by === "day" ? String(p.k).localeCompare(String(q.k)) : q.sqft - p.sqft);
+    // trend: by day for a week / month / short range, by month for a year / long range
+    const A = dOf(R.a), B = dOf(R.b), byMonth = drep.per === "year" || (B - A) / DAY > 62, bars = [];
+    if (byMonth) { for (let d = new Date(A.getFullYear(), A.getMonth(), 1); d <= B; d.setMonth(d.getMonth() + 1)) { const k = dISO(d).slice(0, 7); bars.push({ k, lab: MON[d.getMonth()], v: sum(list.filter((x) => x.date.slice(0, 7) === k), "sqft") }); } }
+    else { for (let d = new Date(A); d <= B; d.setDate(d.getDate() + 1)) { const k = dISO(d); bars.push({ k, lab: drep.per === "week" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()] : String(d.getDate()), v: sum(list.filter((x) => x.date === k), "sqft") }); } }
+    // the same period last time, for comparison
+    const prev = (() => { if (drep.per === "custom") return null; const keep = drep.ref; drShift(-1); const P = drRange(); drep.ref = keep; return { label: P.label, sqft: sum(all.filter((x) => x.date && x.date >= P.a && x.date <= P.b), "sqft") }; })();
+    return { R, list, T, groups, bars, byMonth, undated, prev };
+  }
+  const SRC = { rec: "", wait: "waiting for Excel", est: "tracker, dated by dispatch", return: "return", undated: "no date" };
+  const hs = (h, s) => h === null ? "—" : fmtN(h, 1) + (s ? " + " + fmtN(s, 0) + "s" : "");
+  function drView() {
+    if (!drep.ref) drep.ref = iso(today);
+    const D = drData(), T = D.T, mx = Math.max(1, ...D.bars.map((b) => b.v)), byT = { customer: "Customer", product: "Product", lot: "Lot", day: "Date" };
+    const seg = (k, l) => `<button type="button" class="${drep.per === k ? "on" : ""}" data-drper="${k}">${l}</button>`;
+    let h = `<div class="drep${D.T.value ? "" : " noval"}"><div class="drseg" role="group" aria-label="Period">${seg("week", "Week")}${seg("month", "Month")}${seg("year", "Year")}${seg("custom", "Range")}</div>
+      ${drep.per === "custom" ? `<div class="two"><label>From<input type="date" data-drf="from" value="${esc(drep.from || D.R.a)}"></label><label>To<input type="date" data-drf="to" value="${esc(drep.to || D.R.b)}"></label></div>`
+        : `<div class="drnav"><button type="button" class="mini" data-drnav="-1" aria-label="Previous">‹</button><b>${esc(D.R.label)}</b><button type="button" class="mini" data-drnav="1" aria-label="Next">›</button>${D.R.a <= iso(today) && D.R.b >= iso(today) ? "" : `<button type="button" class="lnk" data-drnav="0">This ${drep.per}</button>`}</div>`}
+      <div class="drtiles"><div><span>Sqft delivered</span><b>${fmtN(T.sqft, 0)}</b>${D.prev ? `<small>${D.prev.sqft ? (T.sqft >= D.prev.sqft ? "▲ " : "▼ ") + fmtN(Math.abs(T.sqft - D.prev.sqft) / D.prev.sqft * 100, 0) + "% vs " : "previous: "}${esc(D.prev.label)}${D.prev.sqft ? "" : " none"}</small>` : ""}</div>
+        <div><span>Hides + sides</span><b>${fmtN(T.hides, 0)}${T.sides ? " + " + fmtN(T.sides, 0) : ""}</b></div><div><span>Deliveries</span><b>${fmtN(T.n, 0)}</b><small>${T.lots} lot${T.lots === 1 ? "" : "s"}, ${T.custs} customer${T.custs === 1 ? "" : "s"}</small></div>
+        ${T.value ? `<div><span>Value at PO rate</span><b>${rs(T.value).replace(/\.\d\d$/, "")}</b>${T.noRate ? `<small>${fmtN(T.noRate, 0)} sqft has no PO rate</small>` : ""}</div>` : ""}</div>
+      ${T.sqft ? `<div class="drbars" aria-label="Sqft by ${D.byMonth ? "month" : "day"}">${D.bars.map((b) => `<div title="${esc(b.k)}: ${fmtN(b.v, 0)} sqft"><i style="height:${b.v ? Math.max(3, b.v / mx * 100) : 0}%"></i><span>${esc(b.lab)}</span></div>`).join("")}</div>` : ""}
+      <div class="drnav"><label style="flex:1">Group by<select data-drby>${Object.entries(byT).map(([k, l]) => `<option value="${k}"${drep.by === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <button type="button" class="btn alt" data-drdl="pdf">PDF</button><button type="button" class="btn alt" data-drdl="csv">CSV</button></div><div id="drout"></div>`;
+    if (!D.list.length) h += `<p class="empty">No deliveries in this period.</p>`;
+    else {
+      h += `<div class="tbl"><table><thead><tr><th>${byT[drep.by]}</th><th class="r">Deliv.</th><th class="r">Hides</th><th class="r">Sqft</th><th class="r">%</th><th class="r vcol">Value</th></tr></thead><tbody>${D.groups.map((g) => `<tr><td>${esc(drep.by === "day" ? fmtD(g.k) : g.k)}${drep.by !== "lot" && drep.by !== "day" ? `<br><span class="note">${g.lots.size} lot${g.lots.size === 1 ? "" : "s"}</span>` : ""}</td><td class="r num">${g.n}</td><td class="r num">${fmtN(g.hides, 0)}${g.sides ? "+" + fmtN(g.sides, 0) + "s" : ""}</td><td class="r num">${fmtN(g.sqft, 0)}</td><td class="r num">${fmtN(T.sqft ? g.sqft / T.sqft * 100 : 0, 0)}</td><td class="r num vcol">${g.value ? fmtN(g.value, 0) : "—"}</td></tr>`).join("")}
+        <tr class="tot"><td><b>Total</b></td><td class="r num"><b>${T.n}</b></td><td class="r num"><b>${fmtN(T.hides, 0)}${T.sides ? "+" + fmtN(T.sides, 0) + "s" : ""}</b></td><td class="r num"><b>${fmtN(T.sqft, 0)}</b></td><td></td><td class="r num vcol"><b>${fmtN(T.value, 0)}</b></td></tr></tbody></table></div>
+        <h3>Each delivery</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Lot</th><th>Customer / product</th><th class="r">Hides</th><th class="r">Sqft</th><th>Bill</th></tr></thead><tbody>${D.list.map((x) => `<tr class="${x.src === "wait" || x.src === "est" ? "pendrow" : x.src === "return" ? "void" : ""}"><td class="nw">${fmtD(x.date)}</td><td><button class="mini" data-drlot="${esc(x.lot)}">${esc(x.lot)}</button></td><td>${esc(x.cust)}<br><span class="note">${esc(x.item)}${SRC[x.src] ? ` · <span class="wait">${SRC[x.src]}</span>` : ""}</span></td><td class="r num">${hs(x.hides, x.sides)}</td><td class="r num">${fmtN(x.sqft, 2)}</td><td>${esc(x.doc)}${x.inv ? `<br><span class="note">Inv ${esc(x.inv)}</span>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+      if (T.est) h += `<p class="note">${fmtN(T.est, 0)} sqft comes from the tracker's delivered quantity for lots dispatched before deliveries were recorded with dates. It is shown on the day the lot was marked Dispatched.</p>`;
+    }
+    if (D.undated.length) h += `<p class="note">Not in any period: ${fmtN(D.undated.reduce((t, x) => t + x.sqft, 0), 0)} sqft delivered from ${D.undated.length} open lot${D.undated.length === 1 ? "" : "s"} (${esc(D.undated.slice(0, 8).map((x) => x.lot).join(", "))}${D.undated.length > 8 ? "…" : ""}) is in the tracker without a date.</p>`;
+    return h + `</div>`;
+  }
+  async function drDownload(kind, out) {
+    const D = drData(), name = "deliveries " + D.R.a + " to " + D.R.b;
+    const dl = window.claude ? await window.claude.use("downloads") : null;
+    if (!dl) { out.textContent = "Saving files isn't available in this view."; return; }
+    try {
+      if (kind === "csv") {
+        const q = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const lines = [["Date", "Lot", "Customer", "Product", "Pcs (hides)", "Hides", "Sides", "Sqft", "PO rate", "Value", "Bill / challan", "Invoice", "Source"].join(",")]
+          .concat(D.list.map((x) => [x.date, x.lot, x.cust, x.item, x.pcs ?? "", x.hides ?? "", x.sides ?? "", x.sqft, x.rate ?? "", x.value ?? "", x.doc, x.inv, SRC[x.src] || "recorded"].map(q).join(",")));
+        await dl.save({ filename: name + ".csv", data: "﻿" + lines.join("\r\n") + "\r\n" });
+      } else {
+        const JS = await pdfLib(), doc = new JS({ unit: "mm", format: "a4" }), T = D.T, byT = { customer: "Customer", product: "Product", lot: "Lot", day: "Date" };
+        pdfHead(doc, "S S International - Delivery report", D.R.label + "   ·   made " + fmtD(iso(today)));
+        doc.autoTable(Object.assign({}, TBL, { startY: 24, head: [["Sqft delivered", "Hides + sides", "Deliveries", "Lots", "Value at PO rate"]], body: [[fmtN(T.sqft, 0), fmtN(T.hides, 0) + (T.sides ? " + " + fmtN(T.sides, 0) : ""), String(T.n), String(T.lots), "Rs " + fmtN(T.value, 0)]] }));
+        doc.autoTable(Object.assign({}, TBL, { startY: doc.lastAutoTable.finalY + 4, head: [[byT[drep.by], "Deliveries", "Hides", "Sqft", "%", "Value"]], body: D.groups.map((g) => [plain(drep.by === "day" ? fmtD(g.k) : g.k), String(g.n), fmtN(g.hides, 0) + (g.sides ? " + " + fmtN(g.sides, 0) + "s" : ""), fmtN(g.sqft, 0), fmtN(T.sqft ? g.sqft / T.sqft * 100 : 0, 0), g.value ? fmtN(g.value, 0) : "-"]), foot: [["Total", String(T.n), fmtN(T.hides, 0), fmtN(T.sqft, 0), "", fmtN(T.value, 0)]] }));
+        doc.autoTable(Object.assign({}, TBL, { startY: doc.lastAutoTable.finalY + 4, head: [["Date", "Lot", "Customer", "Product", "Hides", "Sqft", "Bill", "Note"]], body: D.list.map((x) => [fmtD(x.date), x.lot, plain(x.cust), plain(x.item), plain(hs(x.hides, x.sides)), fmtN(x.sqft, 2), plain(x.doc + (x.inv ? " / Inv " + x.inv : "")), plain(SRC[x.src] || "")]) }));
+        if (T.est) doc.text(plain(fmtN(T.est, 0) + " sqft is the tracker's delivered quantity for lots dispatched before dated deliveries, shown on the dispatch date."), 12, Math.min(285, doc.lastAutoTable.finalY + 6));
+        await savePdf(doc, name + ".pdf", out); return;
+      }
+    } catch (e) { if (e.code !== "declined") out.textContent = "The file could not be saved."; }
+  }
   function openForm(spec) {
     const i = spec.indexOf(":"), kind = i < 0 ? spec : spec.slice(0, i), arg = i < 0 ? "" : spec.slice(i + 1);
     if (kind === "order") ed = { lines: [{ d: "", q: "", r: "", h: "" }] };
@@ -2551,10 +2713,14 @@ main.solo .detail.open { display: block; }
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
   function deliveryForm(l) {
-    return `<form class="fm" id="fm-delivery" data-lot="${esc(l.lot_no)}"><h3>Delivery for ${esc(l.lot_no)}</h3>
-      <div class="two"><label>Hides (whole)<input id="fd-pcs" type="number" min="0" step="any" inputmode="decimal"></label><label>Sides<input id="fd-sides" type="number" min="0" step="1" inputmode="numeric"></label><label>Sqft<input id="fd-sqft" type="number" min="0" step="any" inputmode="decimal"></label>
-      <label>Date<input id="fd-date" type="date" value="${iso(today)}"></label><label>Bill / challan no<input id="fd-doc" autocomplete="off"></label></div>
-      <label>Note<input id="fd-note" autocomplete="off"></label><p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
+    const o = delEdit ? delOld(delEdit) : null, v = (x) => o ? ` value="${esc(x ?? "")}"` : "";
+    if (delEdit && !o) delEdit = null;
+    const iv = o ? invLive().filter((x) => (x.lines || []).some((ln) => ln.dkey && (ln.dkey === o.k || dkeyAlias(ln.dkey).includes(o.k)))) : [];
+    return `<form class="fm" id="fm-delivery" data-lot="${esc(l.lot_no)}"><h3>${o ? "Correct the delivery of " + fmtD(o.date) : "Delivery for " + esc(l.lot_no)}</h3>
+      ${o ? `<p class="note" style="margin:0">Was ${hs(o.hides, o.sides)} hides, ${fmtN(o.sqft, 2)} sqft${o.doc ? ", bill " + esc(o.doc) : ""}. ${o.k.startsWith("d:") ? "Excel cancels the old delivery and records this one, so the history keeps both." : "This replaces the entry still waiting for Excel."}${iv.length ? " On " + iv.map((x) => esc(invName(x))).join(", ") + (iv.some((x) => x.tally_no) ? "; an invoice already in Tally must be corrected in Tally too." : "; the invoice is updated.") : ""}</p>` : ""}
+      <div class="two"><label>Hides (whole)<input id="fd-pcs" type="number" min="0" step="any" inputmode="decimal"${v(o && o.hides)}></label><label>Sides<input id="fd-sides" type="number" min="0" step="1" inputmode="numeric"${v(o && o.sides)}></label><label>Sqft<input id="fd-sqft" type="number" min="0" step="any" inputmode="decimal"${v(o && o.sqft)}></label>
+      <label>Date<input id="fd-date" type="date" value="${o ? esc(o.date) : iso(today)}"></label><label>Bill / challan no<input id="fd-doc" autocomplete="off"${v(o && o.doc)}></label></div>
+      <label>Note<input id="fd-note" autocomplete="off"${v(o && o.note)}></label>${o ? `<label>What was wrong${o.k.startsWith("d:") ? "" : " (optional)"}<input id="fd-why" autocomplete="off" placeholder="for example wrong sqft typed"></label>` : ""}<p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
   function checkDate(v) {
@@ -2606,11 +2772,24 @@ main.solo .detail.open { display: block; }
       if (!hides && !sides && !sqft) { msg.textContent = "Type the hides, sides and / or sqft delivered."; return; }
       // two sides make one hide, so Delivered stays in hides; the note keeps the count as sent
       const pcs = hides + sides / 2, sideNote = sides ? fmtN(hides, 0) + " HIDES + " + fmtN(sides, 0) + " SIDES" : "";
-      const dp = deliveredPcs(l.lot_no);
+      const old = delEdit ? delOld(delEdit) : null, why = old ? ($("#fd-why").value || "").trim() : "";
+      if (old && old.k.startsWith("d:") && !why) { msg.textContent = "Say what was wrong, so the correction is clear in Excel."; $("#fd-why").focus(); return; }
+      if (old && Math.abs(old.pcs - pcs) < 0.001 && Math.abs(old.sqft - sqft) < 0.001 && old.date === date && old.doc === $("#fd-doc").value.trim() && old.note === $("#fd-note").value.trim()) { msg.textContent = "Nothing changed."; return; }
+      const dp = deliveredPcs(l.lot_no) - (old ? Number(old.pcs) || 0 : 0);
       if (l.lot_pcs > 0 && dp + pcs > l.lot_pcs + 0.0001 && warnOnce(f, "That makes " + fmtN(dp + pcs, 0) + " pcs delivered, more than the lot's " + fmtN(l.lot_pcs, 0) + ".")) return;
-      { const over = poLines(l.lot_no).filter((x) => Number(x.q) > 0 && x.del + sqft > Number(x.q) * 1.05);
+      { const over = poLines(l.lot_no).filter((x) => Number(x.q) > 0 && x.del - (old ? Number(old.sqft) || 0 : 0) + sqft > Number(x.q) * 1.05);
         if (over.length && warnOnce(f, over.map((x) => "PO " + x.po_no + " " + x.item + ": " + fmtN(x.del + sqft, 0) + " sqft delivered against " + fmtN(x.q, 0) + " ordered").join("; ") + ". Save again if that's right.")) return; }
       body = { type: "delivery", lot_no: l.lot_no, entry_date: date, pcs, sqft, doc_no: $("#fd-doc").value.trim(), note: [sideNote, $("#fd-note").value.trim()].filter(Boolean).join(" ") };
+      if (old) {
+        btn.disabled = true; msg.textContent = "";
+        try {
+          if (why) body.note = (body.note + " (correction of " + fmtD(old.date) + ": " + why + ")").trim();
+          const inTally = await delCorrect(old, body, why);
+          formOpen = null; delEdit = null; flash = "Delivery corrected. " + (old.k.startsWith("d:") ? "The cancellation and the corrected delivery are waiting for Excel." : "The corrected delivery is waiting for Excel.") + (inTally.length ? " Correct invoice " + inTally.join(", ") + " in Tally too." : "");
+          refresh(); showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 8000);
+        } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+        return;
+      }
     }
     btn.disabled = true; msg.textContent = "";
     try {
@@ -2874,6 +3053,11 @@ main.solo .detail.open { display: block; }
     else r.style.transform = "";
   };
   $("#list").addEventListener("pointerup", swipeEnd);
+  $("#list").addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.matches("[data-drby]")) { drep.by = t.value; drSave(); render(); }
+    else if (t.matches("[data-drf]")) { drep[t.dataset.drf] = t.value; render(); }
+  });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
     const lk = e.target.closest(".lookpick button[data-look]"); if (lk) { const v = lk.dataset.look; if (v === "cards") document.documentElement.dataset.look = "cards"; else delete document.documentElement.dataset.look; try { localStorage.setItem("ssi-look", v); } catch (x) {} render(); return; }
@@ -2893,6 +3077,11 @@ main.solo .detail.open { display: block; }
     if (srt) { tsort = tsort.k === srt.dataset.sort ? { k: tsort.k, dir: -tsort.dir } : { k: srt.dataset.sort, dir: 1 }; render(); return; }
     const tl = e.target.closest("[data-tlot]");
     if (tl) { stack = []; sel.lots = tl.dataset.tlot; showDetail(); return; }
+    { const b = e.target.closest("[data-drper],[data-drnav],[data-drlot],[data-drdl]");
+      if (b) { if (b.dataset.drper) { drep.per = b.dataset.drper; drSave(); } else if (b.dataset.drnav !== undefined) { if (b.dataset.drnav === "0") drep.ref = iso(today); else drShift(Number(b.dataset.drnav)); }
+        else if (b.dataset.drlot) { stack = [{ tab, k: sel[tab] }]; sel.lots = b.dataset.drlot; go("lots"); return; }
+        else { drDownload(b.dataset.drdl, $("#drout")); return; }
+        const y = window.scrollY; render(); window.scrollTo(0, y); return; } }
     if (e.target.closest("[data-invnew]")) { sel[tab] = null; stack = []; inv = invNew(); invShowAll = false; openForm("invoice:new"); return; }
     if (e.target.closest("[data-invset]")) { sel[tab] = null; stack = []; openForm("invset:"); return; }
     if (e.target.closest("[data-invxmlall]")) { invExport(invLive().filter((v) => !v.tally_no), $("#invout")); return; }
@@ -2926,7 +3115,8 @@ main.solo .detail.open { display: block; }
     const fb = e.target.closest("[data-form]");
     if (fb) { openForm(fb.dataset.form); return; }
     const act = e.target.closest("[data-act]");
-    if (act) { flash = ""; formOpen = act.dataset.act; showDetail(); $("#detail").scrollTop = 0; return; }
+    if (act) { flash = ""; delEdit = null; formOpen = act.dataset.act; showDetail(); $("#detail").scrollTop = 0; return; }
+    const dle = e.target.closest("[data-deledit]"); if (dle) { flash = ""; delEdit = dle.dataset.deledit; formOpen = "delivery"; showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-formclose]")) { if (formOpen === "recipe") closeOrStay(); else { formOpen = null; showDetail(); } return; }
     if (e.target.closest("[data-fillall]")) { const f = e.target.closest("form"); $("#fv-pcs").value = f.dataset.pcs; $("#fv-sqft").value = f.dataset.sqft; return; }
     if (e.target.closest("[data-markdisp]")) { presetStage = "Dispatched"; flash = ""; formOpen = "stage"; showDetail(); presetStage = ""; $("#detail").scrollTop = 0; return; }
