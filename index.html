@@ -149,6 +149,14 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 tr.tot td { border-top: 2px solid var(--ink); }
 .invline { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 8px; background: var(--bg); }
 .invline input[readonly] { opacity: .7; }
+.pickw { position: relative; }
+.sugg:empty { display: none; }
+.sugg { margin-top: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 18px rgb(0 0 0 / .12); max-height: 300px; overflow-y: auto; }
+.sgi { display: grid; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 10px 12px; font: inherit; }
+.sgi:last-child { border-bottom: 0; }
+.sgi b { font-weight: 600; }
+.sgi span { font-size: 12px; color: var(--muted); }
+.sgi:hover, .sgi:focus-visible { background: var(--accent-soft); }
 .invnew { border-left: 3px solid var(--bad); padding: 4px 0 4px 10px; display: grid; gap: 6px; }
 label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 label.chk input { width: 20px; height: 20px; }
@@ -873,7 +881,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 83, at: "2026-11-09T23:37:40+05:30", notes: "Invoices use Tally's own lists (from Excel's Refresh from Tally): party picker fills GSTIN, state and address; items only from Tally or created with the invoice; next number from Tally; invoices Excel entered in Tally are marked In Tally" };
+  const APP_BUILD = { v: 85, at: "2026-11-10T00:26:55+05:30", notes: "Invoice: tap-to-pick lists for Tally parties and stock items (the phone's own suggestion box often didn't show)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2328,9 +2336,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<form class="fm" id="fm-invoice">
       <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustomers().map((c) => `<option${c === UP(v.customer) ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
       ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}${ivF("iv-vno", "Tally invoice no", v.vno || "", ' placeholder="' + esc(nextVno(v.id)) + '"')}</div>
-      ${v.customer ? `<div class="two">${ivF("iv-party", "Party (Tally ledger)", v.party, ' list="iv-parties"')}${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
+      ${v.customer ? `<div class="two"><div class="pickw">${ivF("iv-party", "Party (Tally ledger)", v.party, ' placeholder="Type to search Tally parties"')}<div class="sugg" id="sg-party"></div></div>${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
       ${ivF("iv-addr", "Address (optional)", v.addr)}
-      <p class="note" style="margin:0">${tParties().length ? (tParty(v.party) ? "From Tally: GSTIN, state and address fill in by themselves." : `<span class="bad">Pick the party from the list</span>: it must be a Tally ledger.`) : "Type the party exactly as its Tally ledger. (Press Refresh from Tally in Excel once to get Tally's party list here.)"} Remembered for ${esc(v.customer)}.</p>
+      <p class="note" style="margin:0">${tParties().length ? (tParty(v.party) ? "From Tally: GSTIN, state and address fill in by themselves." : `<span class="bad">Pick the party from the list</span>: it must be a Tally ledger.`) : `<span class="bad">Tally's party and item lists aren't in this app's data yet.</span> On the PC press Import from phone in Excel (it reads Tally), then Update from Excel here.`} Remembered for ${esc(v.customer)}.</p>
       <h3 style="margin:10px 0 0">Lots on this invoice</h3>
       ${v.lines.length ? v.lines.map((ln, i) => invLineHtml(ln, i)).join("") : `<p class="note" style="margin:0">No lots yet. Add a delivery below.</p>`}
       <div class="invadd"><p style="margin:0"><b>Add a delivery</b> <button type="button" class="lnk" data-inv="showall">${invShowAll ? "Only " + esc(v.customer) : "Show all customers"}</button></p>
@@ -2348,6 +2356,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit" id="iv-savexml">Save and make Tally file</button><button class="btn alt" type="submit" id="iv-save">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`;
   }
+  // tap-to-pick lists (the browser's own suggestion box doesn't show on many phones)
+  function suggHtml(list, act) {
+    return list.length ? list.map((x) => `<button type="button" class="sgi" data-inv="${act}${esc(x.name)}"><b>${esc(x.name)}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ""}</button>`).join("") : `<p class="note" style="margin:4px 6px">No match in Tally.</p>`;
+  }
+  function suggFind(list, q) { const ws = words(q); return list.filter((x) => match(x.name + " " + (x.sub || ""), ws)).slice(0, 8); }
+  function suggShow(t) {
+    if (!inv) return;
+    if (t.id === "iv-party") { const box = $("#sg-party"); if (!box) return; const L = tParties(); if (!L.length) { box.innerHTML = ""; return; }
+      const q = tParty(t.value) ? "" : t.value; box.innerHTML = suggHtml(suggFind(L.map((x) => ({ name: x.name, sub: [x.gstin, x.state].filter(Boolean).join(" · ") })), q), "pp:"); return; }
+    if (t.dataset.f === "item" && t.dataset.ivl !== undefined) { const i = t.dataset.ivl, box = $("#sg-item-" + i); if (!box) return; const L = tItems(); if (!L.length) { box.innerHTML = ""; return; }
+      const q = tItem(t.value) ? "" : t.value; box.innerHTML = suggHtml(suggFind(L.map((x) => ({ name: x.name, sub: [x.grp, x.unit].filter(Boolean).join(" · ") })), q), "pi:" + i + "|"); }
+  }
+  function suggHide() { document.querySelectorAll("#detail .sugg").forEach((b) => { b.innerHTML = ""; }); }
   function invItemNote(ln, i) {
     if (!tItems().length || !String(ln.item || "").trim()) return "";
     if (tItem(ln.item)) return "";
@@ -2360,7 +2381,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = !ln.newdel;
     const n = (f, lb, more) => `<label>${lb}<input data-ivl="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" type="number" step="any" inputmode="decimal"${lock && ["hides", "sides", "sqft"].includes(f) ? " readonly" : ""}${more || ""}></label>`;
     return `<div class="invline"><p style="margin:0;display:flex;justify-content:space-between;gap:8px"><span><b>${esc(ln.lot)}</b> ${ln.newdel ? "· new delivery, recorded when you save" : d ? "· delivered " + fmtD(d.date) + (d.doc ? " · " + esc(d.doc) : "") + (d.wait ? " · waiting for Excel" : "") : ""}${ln.po ? " · PO " + esc(ln.po) : ""}</span><button type="button" class="mini" data-inv="del:${i}">Remove</button></p>
-      <label>Stock item (Tally)<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" list="iv-items" autocomplete="off"></label>
+      <div class="pickw"><label>Stock item (Tally)<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" autocomplete="off" placeholder="Type to search Tally items"></label><div class="sugg" id="sg-item-${i}"></div></div>
       ${invItemNote(ln, i)}
       <label>Description<input data-ivl="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
       <div class="two">${n("hides", "Hides")}${n("sides", "Sides", ' step="1"')}${n("sqft", "Sqft")}${ln.newdel ? `<label>Delivery date<input data-ivl="${i}" data-f="ddate" type="date" value="${esc(ln.ddate || "")}"></label>` : ""}${n("rate", "Rate / sqft")}${n("disc", "Discount %")}<label>HSN<input data-ivl="${i}" data-f="hsn" value="${esc(ln.hsn)}" inputmode="numeric"></label>${n("gst", "GST %")}</div>
@@ -2383,9 +2404,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const a = $("#ivl-amt-" + t.dataset.ivl); if (a) a.textContent = rs(r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)));
     }
     const box = $("#iv-tot"); if (box) box.innerHTML = invTotHtml(v);
+    if (t.id === "iv-party" || t.dataset.f === "item") suggShow(t);
   }
   function invClick(b) {
     const a = b.dataset.inv, k = sel[tab], v = String(k).startsWith("inv:") ? invoices.find((x) => "inv:" + x.id === k) : null;
+    if (a.startsWith("pp:")) { const tp = tParty(a.slice(3)); if (tp) { inv.party = tp.name; inv.gstin = tp.gstin || ""; inv.state = tp.state || inv.state; inv.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); } invRedraw(); return; }
+    if (a.startsWith("pi:")) { const [i, name] = [a.slice(3, a.indexOf("|")), a.slice(a.indexOf("|") + 1)], ln = inv.lines[Number(i)], ti = tItem(name); if (ln && ti) { ln.item = ti.name; ln.newitem = false; if (ti.hsn) ln.hsn = ti.hsn; } invRedraw(); return; }
     if (a === "showall") { invShowAll = !invShowAll; invRedraw(); return; }
     if (a.startsWith("add:")) { const c = invCands("", inv.id).find((x) => x.dkey === a.slice(4)); if (c) inv.lines.push(invLine(c.lot, c)); invRedraw(); return; }
     if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; } inv.lines.push(invLine(lot, null)); invRedraw(); return; }
@@ -3375,6 +3399,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (sec) { sel[sec.dataset.sec] = b.dataset.k; go(sec.dataset.sec); return; }
     sel[tab] = b.dataset.k; render(); showDetail();
   });
+  $("#detail").addEventListener("focusin", (e) => { const t = e.target; if (t.id === "iv-party" || (t.dataset && t.dataset.f === "item")) suggShow(t); });
+  $("#detail").addEventListener("focusout", (e) => { const t = e.target; if (t.id === "iv-party" || (t.dataset && t.dataset.f === "item")) setTimeout(() => { const a = document.activeElement; if (!a || !a.closest || !a.closest(".pickw")) suggHide(); }, 200); });
   $("#detail").addEventListener("toggle", (e) => { const t = e.target; if (t.matches && t.matches("details[data-sec]")) { SECOPEN[t.dataset.sec] = t.open; try { localStorage.setItem("ssi-secs", JSON.stringify(SECOPEN)); } catch (x) {} } }, true);
   $("#detail").addEventListener("click", (e) => {
     { const mo = e.target.closest("[data-mopen]"); if (mo) { const m = $(`#detail [data-msheet="${mo.dataset.mopen}"]`); if (m) { m.hidden = false; const f = m.querySelector(".mitem"); if (f) f.focus({ preventScroll: true }); } return; }
