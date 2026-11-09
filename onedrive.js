@@ -62,7 +62,9 @@
   // ---------- saving files on the phone ----------
   const downloadsApi = { save: async ({ filename, data }) => {
     const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : "application/octet-stream";
-    const file = new File([data], filename, { type });
+    let file = new File([data], filename, { type });
+    // Android's share sheet refuses .xml files; the same file as .txt can be shared to OneDrive, and Tally imports it as XML
+    if (/\.xml$/i.test(filename) && navigator.canShare && !navigator.canShare({ files: [file] })) file = new File([data], filename + ".txt", { type: "text/plain" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file], title: filename }); return { status: "saved" }; }
       catch (e) { if (e && e.name === "AbortError") { const err = new Error("declined"); err.code = "declined"; throw err; } }

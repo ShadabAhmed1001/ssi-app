@@ -870,7 +870,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 81, at: "2026-11-09T22:57:56+05:30", notes: "Invoices: FOX bills to Foxglove Lifestyles Private Limited and FAME to Fame Enterprises, with GSTIN and address from Tally" };
+  const APP_BUILD = { v: 82, at: "2026-11-09T23:21:54+05:30", notes: "Invoices carry the Tally invoice no (next in your NN/26-27 series, editable); Sampling charge line; Packing goes to Packing Charges; Tally file shares to OneDrive on the phone" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2161,7 +2161,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   };
   // ---------------------------------------------------------------- invoices (apps only; Tally makes the real invoice from the XML file)
   // names as read from Tally on 9 Nov 2026 (company S. S. International, FY from 1-Apr-26)
-  const INV_DEF = { company: "S. S. International", vtype: "SALE", sales: "Sales", cgst: "Output CGST", sgst: "Output SGST", igst: "Output IGST", freight: "Freight & Packaging @12%", packing: "Freight & Packaging @12%", discount: "", round: "Rounding Off", godown: "Main Location", unit: "SQF", gst: 5, hsn: "4107", state: "West Bengal", gstin: "19AOLPA8927M1ZB", taxExtras: "yes", parties: {}, items: {} };
+  const INV_DEF = { company: "S. S. International", vtype: "SALE", sales: "Sales", cgst: "Output CGST", sgst: "Output SGST", igst: "Output IGST", freight: "Freight & Packaging @12%", packing: "Packing Charges", sampling: "SAMPLING CHARGE", discount: "", round: "Rounding Off", vnoFmt: "{n}/26-27", lastNo: 79, godown: "Main Location", unit: "SQF", gst: 5, hsn: "4107", state: "West Bengal", gstin: "19AOLPA8927M1ZB", taxExtras: "yes", parties: {}, items: {} };
   const STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
   // GSTIN starts with the state code
   const GST_CODE = { "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" };
@@ -2170,10 +2170,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const OLD_DEF = { company: ["S. S. International - (from 1-Apr-24)"], vtype: ["Sales"], cgst: ["CGST"], sgst: ["SGST"], round: ["ROUNDING OFF", "Round Off"], unit: ["SQFT"], discount: ["Discount Allowed"] };
   const invSetFixed = () => { const o = Object.assign({}, invSet); Object.entries(OLD_DEF).forEach(([k, vs]) => { if (vs.includes(o[k])) delete o[k]; }); return o; };
   // Tally ledgers for lot customers, as confirmed on 9 Nov 2026 (BIL, RAFEEK, ROHIT: typed on their first invoice)
-  const DEF_PARTIES = {
-    FOX: { party: "Foxglove Lifestyles Private Limited", gstin: "06AAFCF8909F1ZK", state: "Haryana", addr: "Building No. 20, Udyog Vihar Phase-4, Gurugram, Haryana 122015", dest: "Gurugram" },
-    FAME: { party: "Fame Enterprises", gstin: "09AQUPA9620J1ZD", state: "Uttar Pradesh", addr: "90/20 Iftikharabad, Near Sadiq Shah Baba Mazar, Kanpur 208001", dest: "Kanpur" },
-  };
+  const DEF_PARTIES = {}; // customer details live only in the app store (remembered per customer), never in the code
   const iset = () => Object.assign({}, INV_DEF, invSetFixed(), { parties: Object.assign({}, DEF_PARTIES, invSet.parties || {}), items: Object.assign({}, invSet.items || {}) });
   const r2 = (n) => Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100;
   const UP = (s) => String(s || "").trim().toUpperCase();
@@ -2217,6 +2214,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const p = rows("SELECT ol.item, ol.rate, ol.hsn, o.po_no FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [lot])[0];
     return p || null;
   }
+  // Tally's own series ("79/26-27") isn't applied to imported vouchers, so the app puts the number in the file
+  function vnoNum(t) { const S = iset(), re = new RegExp("^" + String(S.vnoFmt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{n\\}", "(\\d+)") + "$"), m = String(t || "").trim().match(re); return m ? Number(m[1]) : 0; }
+  function nextVno(exceptId) { const S = iset(); let n = Number(S.lastNo) || 0; invLive().forEach((v) => { if (v.id !== exceptId) n = Math.max(n, vnoNum(v.vno), vnoNum(v.tally_no)); }); return String(S.vnoFmt).replace("{n}", n + 1); }
   const descOf = (ln) => ln.lot + " - " + [Number(ln.hides) || !Number(ln.sides) ? fmtN(Number(ln.hides) || 0, 1) + " hides" : "", Number(ln.sides) ? fmtN(ln.sides, 0) + " sides" : ""].filter(Boolean).join(" + ");
   function invLine(lot, cand) {
     const S = iset(), l = data.lotBy[lot] || {}, p = invPoLine(lot), item0 = p ? p.item : l.product || "";
@@ -2229,7 +2229,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function invNew(cust, lot) {
     const n = invoices.reduce((m, v) => Math.max(m, Number(String(v.temp || "").replace(/\D/g, "")) || 0), 0) + 1;
-    const v = { temp: "APP-" + String(n).padStart(4, "0"), date: iso(today), customer: cust || "", lines: [], freight: "", packing: "", discount: "", transporter: "", vehicle: "", lr: "", lrdate: "", eway: "", ewaydate: "", dest: "", narration: "", status: "draft" };
+    const v = { temp: "APP-" + String(n).padStart(4, "0"), vno: nextVno(), date: iso(today), customer: cust || "", lines: [], freight: "", packing: "", sampling: "", discount: "", transporter: "", vehicle: "", lr: "", lrdate: "", eway: "", ewaydate: "", dest: "", narration: "", status: "draft" };
     if (cust) invPartyFill(v);
     if (lot) { const cs = invCands(cust).filter((c) => c.lot === lot); v.lines = cs.length ? cs.map((c) => invLine(lot, c)) : [invLine(lot, null)]; }
     return v;
@@ -2238,19 +2238,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function invCalc(v) {
     const S = iset(), intra = UP(v.state || S.state) === UP(S.state);
     const lines = (v.lines || []).map((ln) => { const q = Number(ln.sqft) || 0, r = Number(ln.rate) || 0, d = Number(ln.disc) || 0; return Object.assign({}, ln, { amt: r2(q * r * (1 - d / 100)) }); });
-    const goods = r2(lines.reduce((t, x) => t + x.amt, 0)), fr = r2(v.freight), pk = r2(v.packing), ds = r2(v.discount), extra = r2(fr + pk - ds);
+    const goods = r2(lines.reduce((t, x) => t + x.amt, 0)), fr = r2(v.freight), pk = r2(v.packing), sm = r2(v.sampling), ds = r2(v.discount), extra = r2(fr + pk + sm - ds);
     const byRate = {}; lines.forEach((x) => { const g = Number(x.gst) || 0; byRate[g] = r2((byRate[g] || 0) + x.amt); });
     const main = lines.slice().sort((a, b) => b.amt - a.amt)[0], mr = main ? Number(main.gst) || 0 : Number(S.gst) || 0;
     if (S.taxExtras !== "no" && extra) byRate[mr] = r2((byRate[mr] || 0) + extra);
     let cgst = 0, igst = 0; Object.entries(byRate).forEach(([g, base]) => { if (intra) cgst += r2(base * Number(g) / 200); else igst += r2(base * Number(g) / 100); });
     cgst = r2(cgst); igst = r2(igst);
     const exact = r2(goods + extra + cgst * 2 + igst), total = Math.round(exact), ro = r2(total - exact);
-    return { intra, lines, goods, fr, pk, ds, taxable: r2(Object.values(byRate).reduce((t, x) => t + x, 0)), cgst, sgst: cgst, igst, ro, total, byRate, hides: lines.reduce((t, x) => t + (Number(x.hides) || 0), 0), sides: lines.reduce((t, x) => t + (Number(x.sides) || 0), 0), sqft: r2(lines.reduce((t, x) => t + (Number(x.sqft) || 0), 0)) };
+    return { intra, lines, goods, fr, pk, sm, ds, taxable: r2(Object.values(byRate).reduce((t, x) => t + x, 0)), cgst, sgst: cgst, igst, ro, total, byRate, hides: lines.reduce((t, x) => t + (Number(x.hides) || 0), 0), sides: lines.reduce((t, x) => t + (Number(x.sides) || 0), 0), sqft: r2(lines.reduce((t, x) => t + (Number(x.sqft) || 0), 0)) };
   }
   const rs = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function invTotHtml(v) {
     const t = invCalc(v);
-    return `<table class="invtot"><tbody><tr><td>Goods (${fmtN(t.sqft, 2)} sqft)</td><td class="r num">${rs(t.goods)}</td></tr>${t.fr ? `<tr><td>Freight</td><td class="r num">${rs(t.fr)}</td></tr>` : ""}${t.pk ? `<tr><td>Packing</td><td class="r num">${rs(t.pk)}</td></tr>` : ""}${t.ds ? `<tr><td>Discount</td><td class="r num">−${rs(t.ds)}</td></tr>` : ""}
+    return `<table class="invtot"><tbody><tr><td>Goods (${fmtN(t.sqft, 2)} sqft)</td><td class="r num">${rs(t.goods)}</td></tr>${t.fr ? `<tr><td>Freight</td><td class="r num">${rs(t.fr)}</td></tr>` : ""}${t.pk ? `<tr><td>Packing</td><td class="r num">${rs(t.pk)}</td></tr>` : ""}${t.sm ? `<tr><td>Sampling</td><td class="r num">${rs(t.sm)}</td></tr>` : ""}${t.ds ? `<tr><td>Discount</td><td class="r num">−${rs(t.ds)}</td></tr>` : ""}
       <tr><td>Taxable value</td><td class="r num">${rs(t.taxable)}</td></tr>${t.intra ? `<tr><td>CGST</td><td class="r num">${rs(t.cgst)}</td></tr><tr><td>SGST</td><td class="r num">${rs(t.sgst)}</td></tr>` : `<tr><td>IGST</td><td class="r num">${rs(t.igst)}</td></tr>`}
       ${t.ro ? `<tr><td>Round off</td><td class="r num">${t.ro < 0 ? "−" : ""}${rs(Math.abs(t.ro))}</td></tr>` : ""}<tr class="grand"><td><b>Invoice total</b></td><td class="r num"><b>${rs(t.total)}</b></td></tr></tbody></table>`;
   }
@@ -2279,11 +2279,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const warn = (v.lines || []).map((ln) => { const d = invDelInfo(ln.dkey); return !d ? ln.lot + ": its delivery is not found." : d.void ? ln.lot + ": its delivery was cancelled." : ""; }).filter(Boolean);
     const tr = [["Transporter", v.transporter], ["Vehicle no", v.vehicle], ["LR / doc no", v.lr], ["LR date", v.lrdate ? fmtD(v.lrdate) : ""], ["E-way bill", v.eway], ["E-way date", v.ewaydate ? fmtD(v.ewaydate) : ""], ["Destination", v.dest]].filter((x) => x[1]);
     return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${warn.length ? `<p class="fmsg bad">${esc(warn.join(" "))}</p>` : ""}
-      <div class="kv"><div><span>Status</span><b>${v.tally_no ? "In Tally as " + esc(v.tally_no) : v.exported_at ? "Tally file made " + esc(fmtS(v.exported_at)) + ", not marked in Tally yet" : "Draft"}</b></div><div><span>App number</span><b>${esc(v.temp)}</b></div><div><span>Date</span><b>${fmtD(v.date)}</b></div>
+      <div class="kv"><div><span>Status</span><b>${v.tally_no ? "In Tally as " + esc(v.tally_no) : v.exported_at ? "Tally file made " + esc(fmtS(v.exported_at)) + ", not marked in Tally yet" : "Draft"}</b></div><div><span>App number</span><b>${esc(v.temp)}</b></div><div><span>Tally invoice no</span><b>${esc(v.tally_no || v.vno || "—")}</b></div><div><span>Date</span><b>${fmtD(v.date)}</b></div>
       <div><span>Party (Tally)</span><b>${esc(v.party)}</b></div><div><span>GSTIN</span><b>${esc(v.gstin || "—")}</b></div><div><span>State</span><b>${esc(v.state)}${t.intra ? " (CGST + SGST)" : " (IGST)"}</b></div></div>
       ${store && canWrite ? `<div class="acts lotacts"><button class="btn" data-inv="xml">Make Tally file</button>${!v.tally_no ? `<button class="btn alt" data-inv="edit">Edit</button>` : ""}<button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>` : ""}
       <div id="invout"></div>
-      ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
+      ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || v.vno || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
       ${formOpen === "invdel" ? `<div class="fm"><p style="margin:0">Delete ${esc(invName(v))}? Its deliveries stay recorded and can go on another invoice.</p><div class="acts" style="margin:0"><button class="btn" data-inv="delsure">Delete invoice</button><button class="btn alt" type="button" data-formclose>Keep it</button></div></div>` : ""}
       <h3>Items</h3><div class="tbl"><table><thead><tr><th>Item / description</th><th class="r">Sqft</th><th class="r">Rate</th><th class="r">Disc</th><th class="r">Amount</th></tr></thead><tbody>${t.lines.map((ln) => { const d = invDelInfo(ln.dkey);
         return `<tr><td><b>${esc(ln.item)}</b><br><span class="note">${esc(ln.desc)} · HSN ${esc(ln.hsn)} · GST ${fmtN(ln.gst, 2)}%${d ? " · delivered " + fmtD(d.date) + (d.wait ? " (waiting for Excel)" : "") : ""}</span> <button class="mini" data-go="lots" data-k="${esc(ln.lot)}">${esc(ln.lot)}</button></td><td class="r num">${fmtN(ln.sqft, 2)}</td><td class="r num">${fmtN(ln.rate, 2)}</td><td class="r num">${ln.disc ? fmtN(ln.disc, 2) + "%" : ""}</td><td class="r num">${fmtN(ln.amt, 2)}</td></tr>`; }).join("")}</tbody></table></div>
@@ -2303,7 +2303,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const t = invCalc(v);
     return `<form class="fm" id="fm-invoice">
       <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustomers().map((c) => `<option${c === UP(v.customer) ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-      ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}</div>
+      ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}${ivF("iv-vno", "Tally invoice no", v.vno || "", ' placeholder="' + esc(nextVno(v.id)) + '"')}</div>
       ${v.customer ? `<div class="two">${ivF("iv-party", "Party name as in Tally", v.party)}${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
       ${ivF("iv-addr", "Address (optional)", v.addr)}
       <p class="note" style="margin:0">Party name must match the ledger in Tally exactly. It is remembered for ${esc(v.customer)}.</p>
@@ -2313,8 +2313,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${cands.length ? cands.slice(0, 40).map((c) => `<div class="invcand"><span><b>${esc(c.lot)}</b> · ${fmtD(c.date)} · ${fmtN(c.hides, 1)} hides${c.sides ? " + " + fmtN(c.sides, 0) + " sides" : ""} · ${fmtN(c.sqft, 2)} sqft${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? " · waiting for Excel" : ""}</span><button type="button" class="mini" data-inv="add:${esc(c.dkey)}">Add</button></div>`).join("") : `<p class="note" style="margin:0">No delivery waiting to be invoiced${invShowAll ? "" : " for " + esc(v.customer)}.</p>`}
       <p style="margin:6px 0 0"><b>Delivery not recorded yet?</b> Pick the lot and type the delivery on its line. Saving the invoice records the delivery too.</p>
       <div class="two"><label>Lot<select id="iv-newlot"><option value="">Pick a lot</option>${lotsOf.map((l) => `<option value="${esc(l.lot_no)}">${esc(l.lot_no)} · ${esc(l.product || "")} · ${esc(l.state === "OPEN" ? l.stage || "" : l.state)}</option>`).join("")}</select></label><label>&nbsp;<button type="button" class="btn alt" data-inv="addlot">Add lot</button></label></div></div>
-      <h3 style="margin:10px 0 0">Freight, packing, discount</h3>
-      <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
+      <h3 style="margin:10px 0 0">Freight, packing, sampling, discount</h3>
+      <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-sampling", "Sampling ₹", v.sampling, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
       <h3 style="margin:10px 0 0">Transport and e-way bill</h3>
       <div class="two">${ivF("iv-transporter", "Transporter", v.transporter)}${ivF("iv-vehicle", "Vehicle no", v.vehicle)}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
       ${ivF("iv-narration", "Narration (optional)", v.narration)}
@@ -2365,6 +2365,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!v.customer) return bad("Pick the customer.");
     if (!v.date || checkDate(v.date)) return bad(checkDate(v.date) || "Pick the invoice date.");
     if (!String(v.party || "").trim()) return bad("Type the party name as it is in Tally.");
+    if (!String(v.vno || "").trim()) v.vno = nextVno(v.id);
+    { const dup = invLive().find((x) => x.id !== v.id && String(x.vno || x.tally_no || "").trim() === String(v.vno).trim()); if (dup) return bad("Invoice no " + v.vno + " is already on " + (dup.tally_no || dup.temp) + ". Next free: " + nextVno(v.id) + "."); }
     if (v.gstin && !/^\d{2}[A-Z0-9]{13}$/i.test(v.gstin.trim())) return bad("The GSTIN should be 15 characters starting with the 2-digit state code.");
     if (!v.lines.length) return bad("Add at least one lot.");
     if (Number(v.discount) && !S.discount) return bad("Tally has no discount ledger yet. Make one in Tally, type its name under Orders → Invoices → Tally names, or give the discount as a % on the lines.");
@@ -2390,7 +2392,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       // remember party details and item names for next time
       const parties = Object.assign({}, S.parties, { [UP(v.customer)]: { party: v.party.trim(), gstin: (v.gstin || "").trim().toUpperCase(), state: v.state, addr: v.addr || "", dest: v.dest || "" } }), its = Object.assign({}, S.items);
       v.lines.forEach((ln) => { if (ln.poitem && ln.item) its[UP(ln.poitem)] = ln.item.trim(); });
-      await store.doc("invset/main").set(Object.assign({}, invSet, { parties, items: its }));
+      await store.doc("invset/main").set(Object.assign({}, invSet, { parties, items: its, lastNo: Math.max(Number(S.lastNo) || 0, vnoNum(v.vno)) }));
       const id = ref.id, wantXml = submitter === "iv-savexml"; inv = null; invoices = invoices.filter((x) => x.id !== id).concat([Object.assign({ id }, body)]);
       formOpen = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; stack = []; if (tab !== "orders" && sel[tab]) stack.push({ tab, k: sel[tab] }); filter.orders = "inv"; flash = "Invoice saved" + (v.lines.some((x) => String(x.dkey).startsWith("e:")) ? ". New deliveries are waiting for Excel." : ".");
       sel.orders = "inv:" + id; if (tab !== "orders") go("orders"); else { render(); showDetail(); }
@@ -2422,13 +2424,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         + `<ACCOUNTINGALLOCATIONS.LIST>${T("LEDGERNAME", S.sales)}<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>${am(ln.amt)}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>`; }).join("");
     const ways = v.eway ? `<EWAYBILLDETAILS.LIST>${T("BILLDATE", td(v.ewaydate || v.date))}${T("BILLNUMBER", v.eway)}<DOCUMENTTYPE>Tax Invoice</DOCUMENTTYPE><SUBTYPE>Supply</SUBTYPE><TRANSPORTDETAILS.LIST>${T("TRANSPORTERNAME", v.transporter)}<TRANSPORTMODE>1 - Road</TRANSPORTMODE>${T("VEHICLENUMBER", String(v.vehicle || "").replace(/\s+/g, ""))}${T("DOCUMENTNUMBER", v.lr)}${T("DOCUMENTDATE", td(v.lrdate))}</TRANSPORTDETAILS.LIST></EWAYBILLDETAILS.LIST>` : "";
     return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(S.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
-      + `<DATE>${td(v.date)}</DATE><EFFECTIVEDATE>${td(v.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", S.vtype)}${T("REFERENCE", v.temp)}${T("REFERENCEDATE", td(v.date))}`
+      + `<DATE>${td(v.date)}</DATE><EFFECTIVEDATE>${td(v.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", S.vtype)}${T("VOUCHERNUMBER", v.tally_no || v.vno || "")}${T("REFERENCE", v.temp)}${T("REFERENCEDATE", td(v.date))}`
       + `${T("PARTYLEDGERNAME", v.party.trim())}${T("PARTYNAME", v.party.trim())}${T("BASICBUYERNAME", v.party.trim())}${T("PARTYMAILINGNAME", v.party.trim())}${T("PARTYGSTIN", (v.gstin || "").toUpperCase())}${v.gstin ? "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" : "<GSTREGISTRATIONTYPE>Unregistered/Consumer</GSTREGISTRATIONTYPE>"}${T("STATENAME", v.state)}${T("PLACEOFSUPPLY", v.state)}<COUNTRYOFRESIDENCE>India</COUNTRYOFRESIDENCE>${T("CMPGSTIN", S.gstin)}${T("CMPGSTSTATE", S.state)}`
       + (v.addr ? `<ADDRESS.LIST TYPE="String">${String(v.addr).split(/\s*[,\n]\s*(?=\S)/).slice(0, 4).map((x) => T("ADDRESS", x)).join("")}</ADDRESS.LIST><BASICBUYERADDRESS.LIST TYPE="String">${T("BASICBUYERADDRESS", v.addr)}</BASICBUYERADDRESS.LIST>` : "")
       + `${T("BASICSHIPPEDBY", v.transporter)}${T("BASICSHIPDOCUMENTNO", v.lr)}${T("BASICSHIPVESSELNO", v.vehicle)}${T("BASICFINALDESTINATION", v.dest)}${T("BILLOFLADINGNO", v.lr)}${T("BILLOFLADINGDATE", td(v.lrdate))}`
       + `${T("NARRATION", narr)}<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><VCHENTRYMODE>Item Invoice</VCHENTRYMODE><ISINVOICE>Yes</ISINVOICE>`
       + led(v.party.trim(), -t.total, true) + inv0
-      + (t.fr ? led(S.freight, t.fr) : "") + (t.pk ? led(S.packing, t.pk) : "") + (t.ds ? led(S.discount, -t.ds) : "")
+      + (t.fr ? led(S.freight, t.fr) : "") + (t.pk ? led(S.packing, t.pk) : "") + (t.sm ? led(S.sampling, t.sm) : "") + (t.ds ? led(S.discount, -t.ds) : "")
       + (t.intra ? (t.cgst ? led(S.cgst, t.cgst) + led(S.sgst, t.sgst) : "") : (t.igst ? led(S.igst, t.igst) : ""))
       + (t.ro ? led(S.round, t.ro) : "") + ways + `</VOUCHER></TALLYMESSAGE>`;
   }
@@ -2452,14 +2454,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   FORMS.invset = { title: "Tally names for invoices", html: () => { const S = iset(), f = (k, lb) => `<label>${lb}<input id="is-${k}" value="${esc(S[k])}" autocomplete="off"></label>`;
     const ps = Object.entries(S.parties);
     return `<form class="fm" id="fm-invset"><p class="note" style="margin:0">These must match the names in Tally exactly, or Tally refuses the import.</p>
-      <div class="two">${f("company", "Company name in Tally")}${f("vtype", "Sales voucher type")}${f("sales", "Sales ledger")}${f("cgst", "CGST ledger")}${f("sgst", "SGST ledger")}${f("igst", "IGST ledger")}${f("freight", "Freight ledger")}${f("packing", "Packing ledger")}${f("discount", "Discount ledger (none in Tally yet)")}${f("round", "Round off ledger")}${f("godown", "Godown (blank if not used)")}${f("unit", "Unit of sqft in Tally")}${f("gst", "Usual GST %")}${f("hsn", "Usual HSN")}${f("gstin", "Our GSTIN")}
+      <div class="two">${f("company", "Company name in Tally")}${f("vtype", "Sales voucher type")}${f("sales", "Sales ledger")}${f("cgst", "CGST ledger")}${f("sgst", "SGST ledger")}${f("igst", "IGST ledger")}${f("freight", "Freight ledger")}${f("packing", "Packing ledger")}${f("sampling", "Sampling ledger")}${f("discount", "Discount ledger (none in Tally yet)")}${f("vnoFmt", "Invoice no pattern ({n} = number)")}${f("lastNo", "Last invoice no used")}${f("round", "Round off ledger")}${f("godown", "Godown (blank if not used)")}${f("unit", "Unit of sqft in Tally")}${f("gst", "Usual GST %")}${f("hsn", "Usual HSN")}${f("gstin", "Our GSTIN")}
       <label>Our state<select id="is-state">${STATES.map((s) => `<option${s === S.state ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
       <label>GST on freight / packing<select id="is-taxExtras"><option value="yes"${S.taxExtras !== "no" ? " selected" : ""}>Yes, at the goods' rate</option><option value="no"${S.taxExtras === "no" ? " selected" : ""}>No</option></select></label></div>
       ${ps.length ? `<h3 style="margin:8px 0 0">Remembered parties</h3><div class="tbl"><table><thead><tr><th>Customer</th><th>Tally party</th><th>GSTIN</th><th>State</th></tr></thead><tbody>${ps.map(([c, p]) => `<tr><td>${esc(c)}</td><td>${esc(p.party)}</td><td>${esc(p.gstin)}</td><td>${esc(p.state)}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:0">Change a party on its next invoice; it is remembered again when saved.</p>` : ""}
       ${formEnd}</form>`; } };
   async function invSetSave(f, msg, btn) {
     const next = Object.assign({}, invSet);
-    ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
+    ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "sampling", "vnoFmt", "lastNo", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
     next.gst = parseFloat($("#is-gst").value) || 0;
     if (!next.company || !next.vtype || !next.sales) { msg.textContent = "Company, voucher type and sales ledger are needed."; return; }
     btn.disabled = true;
