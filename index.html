@@ -870,7 +870,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 80, at: "2026-11-09T22:23:14+05:30", notes: "Invoice Tally names now match your Tally: company S. S. International, voucher type SALE, Output CGST/SGST/IGST, Rounding Off, unit SQF" };
+  const APP_BUILD = { v: 81, at: "2026-11-09T22:57:56+05:30", notes: "Invoices: FOX bills to Foxglove Lifestyles Private Limited and FAME to Fame Enterprises, with GSTIN and address from Tally" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2169,7 +2169,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // values saved from the earlier guessed defaults are replaced by the names Tally really has
   const OLD_DEF = { company: ["S. S. International - (from 1-Apr-24)"], vtype: ["Sales"], cgst: ["CGST"], sgst: ["SGST"], round: ["ROUNDING OFF", "Round Off"], unit: ["SQFT"], discount: ["Discount Allowed"] };
   const invSetFixed = () => { const o = Object.assign({}, invSet); Object.entries(OLD_DEF).forEach(([k, vs]) => { if (vs.includes(o[k])) delete o[k]; }); return o; };
-  const iset = () => Object.assign({}, INV_DEF, invSetFixed(), { parties: Object.assign({}, invSet.parties || {}), items: Object.assign({}, invSet.items || {}) });
+  // Tally ledgers for lot customers, as confirmed on 9 Nov 2026 (BIL, RAFEEK, ROHIT: typed on their first invoice)
+  const DEF_PARTIES = {
+    FOX: { party: "Foxglove Lifestyles Private Limited", gstin: "06AAFCF8909F1ZK", state: "Haryana", addr: "Building No. 20, Udyog Vihar Phase-4, Gurugram, Haryana 122015", dest: "Gurugram" },
+    FAME: { party: "Fame Enterprises", gstin: "09AQUPA9620J1ZD", state: "Uttar Pradesh", addr: "90/20 Iftikharabad, Near Sadiq Shah Baba Mazar, Kanpur 208001", dest: "Kanpur" },
+  };
+  const iset = () => Object.assign({}, INV_DEF, invSetFixed(), { parties: Object.assign({}, DEF_PARTIES, invSet.parties || {}), items: Object.assign({}, invSet.items || {}) });
   const r2 = (n) => Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100;
   const UP = (s) => String(s || "").trim().toUpperCase();
   const invLive = () => invoices.filter((x) => x.status !== "deleted");
