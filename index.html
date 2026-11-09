@@ -786,7 +786,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 76, at: "2026-11-09T15:55:51+05:30", notes: "Views moved from the chips row into a sidebar menu (button left of search)" };
+  const APP_BUILD = { v: 77, at: "2026-11-09T17:01:44+05:30", notes: "Dye table no longer shows the sheet's empty rows as zeros (app and PDF)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1523,7 +1523,9 @@ main.solo .detail.open { display: block; }
         `<tr><td class="num">${esc(d.c)}</td><td>${esc(d.d)}</td><td class="r num">${esc(d.m)}</td><td class="r num">${esc(d.a)}</td><td class="r num">${esc(d.b)}</td><td>${esc(d.r)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
   }
   const pct = (p) => +(p * 100).toFixed(3) + "%";
-  const dyeRows = (proc) => data.dyes[String(proc).toUpperCase()] || [];
+  // the sheet's empty dye rows hold formulas that show 0: drop rows with no dye, and blank a bare 0
+  const dz = (v) => /^\s*0+(\.0+)?\s*$/.test(String(v ?? "")) ? "" : v;
+  const dyeRows = (proc) => (data.dyes[String(proc).toUpperCase()] || []).map((x) => Object.assign({}, x, { m: dz(x.m), a: dz(x.a), b: dz(x.b), c: dz(x.c) })).filter((x) => [x.c, x.d, x.m, x.a, x.b, x.r].some((v) => String(v ?? "").trim() !== ""));
   function recipeDetail(k) {
     if (formOpen === "recipe") return recipeEditor();
     const old = k.includes("@v"), r = getRecipe(k); if (!r) return "";
