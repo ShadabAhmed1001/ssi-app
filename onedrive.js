@@ -11,7 +11,7 @@
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const cfg = () => Object.assign({}, CFG0, lsGet(LSK, {}));
-  const SYNCED = ["entries", "audits", "people"];
+  const SYNCED = ["entries", "audits", "people", "invoices", "invset"];
 
   // ---------- local store ----------
   const DBN = "ssi-standalone", ST = "docs", META = "meta";
@@ -61,7 +61,7 @@
 
   // ---------- saving files on the phone ----------
   const downloadsApi = { save: async ({ filename, data }) => {
-    const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : "application/octet-stream";
+    const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : "application/octet-stream";
     const file = new File([data], filename, { type });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file], title: filename }); return { status: "saved" }; }

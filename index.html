@@ -96,6 +96,16 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .kv div { min-width: 0; }
 .kv dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.kv div > span { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.kv div > b { font-weight: 500; overflow-wrap: anywhere; }
+.invline { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 8px; background: var(--bg); }
+.invline input[readonly] { opacity: .7; }
+.invadd { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 6px; }
+.invcand { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.invcand:first-of-type { border-top: 0; }
+.invtot { width: 100%; max-width: 420px; margin: 10px 0 0 auto; border-collapse: collapse; }
+.invtot td { padding: 4px 6px; border-top: 1px solid var(--line); }
+.invtot .grand td { border-top: 2px solid var(--ink); font-size: 16px; }
 h3 { font-family: var(--f-display); font-size: 15px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin: 18px 0 6px; border-top: 1px solid var(--line); padding-top: 12px; }
 .tbl { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -359,6 +369,8 @@ main.solo .detail.open { display: block; }
       if (had || entries.length) refresh(); else if (tab === "today" || tab === "entries") render(); else showDetailKeep();
     }, () => { clearTimeout(timer); store = null; srcLine(); showDetailKeep(); render(); });
     s.collection("audits").onSnapshot((snap) => { audits = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "chemicals") render(); }, () => {});
+    s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
+    s.collection("invset").onSnapshot((snap) => { const d = snap.docs.find((x) => x.id === "main"); invSet = d ? d.data() : {}; }, () => {});
   }
   function showDetailKeep() { if (formOpen) return; const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
   function refresh() { load(); render(); showDetailKeep(); }
@@ -572,7 +584,7 @@ main.solo .detail.open { display: block; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -607,6 +619,7 @@ main.solo .detail.open { display: block; }
       return;
     }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
+    if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cost") { $("#list").innerHTML = costView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "names") { $("#list").innerHTML = namesView(ws); return; }
@@ -705,7 +718,7 @@ main.solo .detail.open { display: block; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 70, at: "2026-11-08T22:58:53+05:30", notes: "Second look: Compact cards (switch at the bottom of Today). Coloured cards, stage progress, icons on the tabs, and lot actions pinned at the top while you scroll." };
+  const APP_BUILD = { v: 71, at: "2026-11-09T11:20:52+05:30", notes: "Invoices: make invoices from lots and deliveries (or record the delivery on the invoice), Tally file for import, Tally number back in the app" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1397,7 +1410,7 @@ main.solo .detail.open { display: block; }
     const muteTxt = needsAttn(l) ? (isMuted(k) ? `<p class="note">Muted in Needs attention until ${esc(muteUntilText(k))}. <button class="lnk" data-dunmute="${esc(k)}">Unmute</button></p>` : `<p class="note">Shown in Needs attention. <button class="lnk" data-dmute="${esc(k)}">Mute for a day</button></p>`) : "";
     return `<p class="sub">${esc(l.customer)} · ${esc(l.product)}</p>${track}
       ${flash ? `<p class="okmsg">${esc(flash)}</p>` : ""}${muteTxt}
-      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
+      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
       ${canAct && !formOpen && l.state === "OPEN" && l.lot_pcs > 0 && deliveredPcs(k) >= l.lot_pcs - 0.0001 ? `<p class="missing">All ${fmtN(l.lot_pcs, 0)} pcs are delivered. <button class="link" data-markdisp>Mark as Dispatched</button></p>` : ""}
       ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
       ${store && canWrite && !formOpen && l.state === "ARCHIVED" && returnable(l).s > 0 ? `<div class="acts"><button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button></div>` : ""}
@@ -1417,6 +1430,7 @@ main.solo .detail.open { display: block; }
         `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
         { const w = entries.find((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
+      ${(() => { const iv = invOfLot(k); return iv.length ? `<h3>Invoices</h3><p>${iv.map((v) => `<button class="mini" data-go="orders" data-k="inv:${esc(v.id)}">${esc(invName(v))} · ${fmtD(v.date)}</button>`).join(" ")}</p>` : ""; })()}
       ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
         const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
         return `<h3>Pieces not delivered</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Where</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${br.map((r) => `<tr><td class="nw">${fmtS(r.bal_date)}</td><td>${esc(lab[r.dest] || r.dest)} ${r.ref_key ? (/^P/.test(r.ref_key) ? purLink(r.ref_key) : lotLink(r.ref_key)) : ""}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td class="note">${esc(r.note || "")}</td></tr>`).join("")}${bp.map((e) => BAL.filter(([x]) => Number(e.data[x + "_pcs"]) > 0).map(([x, t]) => `<tr class="pendrow"><td class="nw">${fmtS(e.data.date)}</td><td>${esc(t.toLowerCase())}${x === "lot" ? " " + lotLink(e.data.to_lot) : ""} <span class="wait">waiting for Excel</span></td><td class="r num">${fmtN(e.data[x + "_pcs"], 0)}</td><td class="r num">${fmtN(e.data[x + "_sqft"], 2)}</td><td class="note">${esc(e.data.note || "")}</td></tr>`).join("")).join("")}</tbody></table></div>${nd && nd.sh > 0 && nd.dp > 0 ? `<p class="late">${fmtN(nd.sh, 0)} pcs are not delivered and not accounted for.${canAct ? ` <button class="link" data-form="lot_balance:${esc(k)}">Say where they went</button>` : ""}</p>` : ""}`; })()}
@@ -1990,6 +2004,303 @@ main.solo .detail.open { display: block; }
       <button type="button" class="btn alt" data-edadd="end" data-sec="dyes">Add a line</button>
       <div class="ebar"><p class="fmsg" id="fm-msg"></p><div class="acts"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div></div></form>` },
   };
+  // ---------------------------------------------------------------- invoices (apps only; Tally makes the real invoice from the XML file)
+  const INV_DEF = { company: "S. S. International - (from 1-Apr-24)", vtype: "Sales", sales: "Sales", cgst: "Output CGST", sgst: "Output SGST", igst: "Output IGST", freight: "Freight Charges", packing: "Packing Charges", discount: "Discount Allowed", round: "Round Off", godown: "Main Location", unit: "SQFT", gst: 5, hsn: "4107", state: "West Bengal", gstin: "19AOLPA8927M1ZB", taxExtras: "yes", parties: {}, items: {} };
+  const STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
+  // GSTIN starts with the state code
+  const GST_CODE = { "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" };
+  let invoices = [], invSet = {}, inv = null, invShowAll = false;
+  const iset = () => Object.assign({}, INV_DEF, invSet, { parties: Object.assign({}, invSet.parties || {}), items: Object.assign({}, invSet.items || {}) });
+  const r2 = (n) => Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100;
+  const UP = (s) => String(s || "").trim().toUpperCase();
+  const invLive = () => invoices.filter((x) => x.status !== "deleted");
+  const invName = (v) => v.tally_no ? "Invoice " + v.tally_no : "Draft " + v.temp;
+  // phone deliveries become lot_deliveries rows once Excel imports them; match them up so a delivery is invoiced only once
+  function dkeyAlias(k) {
+    if (!String(k).startsWith("e:")) return [k];
+    const e = entries.find((x) => x.id === k.slice(2)); if (!e) return [k];
+    const m = rows("SELECT id FROM lot_deliveries WHERE lot_no=? AND del_date=? AND ABS(sqft-?)<0.01 AND ABS(pcs-?)<0.01", [e.lot_no, e.entry_date || "", Number(e.sqft) || 0, Number(e.pcs) || 0]);
+    return [k].concat(m.map((r) => "d:" + r.id));
+  }
+  function invUsed(exceptId) {
+    const s = {}; invLive().forEach((v) => { if (v.id === exceptId) return; (v.lines || []).forEach((ln) => { if (ln.dkey) dkeyAlias(ln.dkey).forEach((k) => { s[k] = v; }); }); }); return s;
+  }
+  function sidesOf(note, pcs) {
+    const m = String(note || "").match(/([\d.]+)\s*HIDES\s*\+\s*([\d.]+)\s*SIDES/i);
+    return m ? { hides: Number(m[1]), sides: Number(m[2]) } : { hides: Number(pcs) || 0, sides: 0 };
+  }
+  // deliveries that can go on an invoice: recorded in Excel or waiting from the phone, not on another invoice
+  function invCands(cust, exceptId) {
+    const used = invUsed(exceptId), out = [], c = UP(cust);
+    rows("SELECT d.id, d.lot_no, d.del_date, d.pcs, d.sqft, d.doc_no, d.note FROM lot_deliveries d WHERE d.status='OK' AND d.entry_type='DELIVERY' ORDER BY d.del_date DESC, d.id DESC").forEach((d) => {
+      const l = data.lotBy[d.lot_no] || {}; if (c && UP(l.customer) !== c) return;
+      if (used["d:" + d.id]) return; if (entries.some((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id)) return;
+      out.push(Object.assign({ dkey: "d:" + d.id, lot: d.lot_no, date: d.del_date, pcs: d.pcs, sqft: d.sqft, doc: d.doc_no, wait: false }, sidesOf(d.note, d.pcs)));
+    });
+    entries.filter((e) => e.type === "delivery" && e.status === "pending").forEach((e) => {
+      const l = data.lotBy[e.lot_no] || {}; if (c && UP(l.customer) !== c) return; if (used["e:" + e.id]) return;
+      out.push(Object.assign({ dkey: "e:" + e.id, lot: e.lot_no, date: e.entry_date, pcs: e.pcs, sqft: e.sqft, doc: e.doc_no, wait: true }, sidesOf(e.note, e.pcs)));
+    });
+    return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+  function invDelInfo(k) {
+    if (!k) return null;
+    if (k.startsWith("d:")) { const d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(k.slice(2))])[0]; return d ? { date: d.del_date, doc: d.doc_no, void: d.status === "VOID", wait: false } : null; }
+    const e = entries.find((x) => x.id === k.slice(2)); return e ? { date: e.entry_date, doc: e.doc_no, void: e.status === "cancelled", wait: e.status === "pending" } : null;
+  }
+  const invCustomers = () => [...new Set(data.lots.map((l) => UP(l.customer)).filter(Boolean))].sort();
+  function invPoLine(lot) {
+    const p = rows("SELECT ol.item, ol.rate, ol.hsn, o.po_no FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [lot])[0];
+    return p || null;
+  }
+  const descOf = (ln) => ln.lot + " - " + [Number(ln.hides) || !Number(ln.sides) ? fmtN(Number(ln.hides) || 0, 1) + " hides" : "", Number(ln.sides) ? fmtN(ln.sides, 0) + " sides" : ""].filter(Boolean).join(" + ");
+  function invLine(lot, cand) {
+    const S = iset(), l = data.lotBy[lot] || {}, p = invPoLine(lot), item0 = p ? p.item : l.product || "";
+    const ln = { lot, dkey: cand ? cand.dkey : "", newdel: !cand, hides: cand ? cand.hides : "", sides: cand ? cand.sides : "", sqft: cand ? cand.sqft : "", rate: p && p.rate ? p.rate : "", disc: "", hsn: (p && p.hsn) || S.hsn, gst: S.gst, poitem: item0, item: S.items[UP(item0)] || item0, po: p ? p.po_no : "", ddate: iso(today), ddoc: "" };
+    ln.desc = descOf(ln); ln.autodesc = true; return ln;
+  }
+  function invPartyFill(v) {
+    const S = iset(), p = S.parties[UP(v.customer)] || {};
+    v.party = p.party || v.customer; v.gstin = p.gstin || ""; v.state = p.state || (GST_CODE[String(p.gstin || "").slice(0, 2)] || S.state); v.addr = p.addr || ""; v.dest = v.dest || p.dest || "";
+  }
+  function invNew(cust, lot) {
+    const n = invoices.reduce((m, v) => Math.max(m, Number(String(v.temp || "").replace(/\D/g, "")) || 0), 0) + 1;
+    const v = { temp: "APP-" + String(n).padStart(4, "0"), date: iso(today), customer: cust || "", lines: [], freight: "", packing: "", discount: "", transporter: "", vehicle: "", lr: "", lrdate: "", eway: "", ewaydate: "", dest: "", narration: "", status: "draft" };
+    if (cust) invPartyFill(v);
+    if (lot) { const cs = invCands(cust).filter((c) => c.lot === lot); v.lines = cs.length ? cs.map((c) => invLine(lot, c)) : [invLine(lot, null)]; }
+    return v;
+  }
+  // totals: GST on each line's rate; freight / packing / discount go at the main line's rate when taxed
+  function invCalc(v) {
+    const S = iset(), intra = UP(v.state || S.state) === UP(S.state);
+    const lines = (v.lines || []).map((ln) => { const q = Number(ln.sqft) || 0, r = Number(ln.rate) || 0, d = Number(ln.disc) || 0; return Object.assign({}, ln, { amt: r2(q * r * (1 - d / 100)) }); });
+    const goods = r2(lines.reduce((t, x) => t + x.amt, 0)), fr = r2(v.freight), pk = r2(v.packing), ds = r2(v.discount), extra = r2(fr + pk - ds);
+    const byRate = {}; lines.forEach((x) => { const g = Number(x.gst) || 0; byRate[g] = r2((byRate[g] || 0) + x.amt); });
+    const main = lines.slice().sort((a, b) => b.amt - a.amt)[0], mr = main ? Number(main.gst) || 0 : Number(S.gst) || 0;
+    if (S.taxExtras !== "no" && extra) byRate[mr] = r2((byRate[mr] || 0) + extra);
+    let cgst = 0, igst = 0; Object.entries(byRate).forEach(([g, base]) => { if (intra) cgst += r2(base * Number(g) / 200); else igst += r2(base * Number(g) / 100); });
+    cgst = r2(cgst); igst = r2(igst);
+    const exact = r2(goods + extra + cgst * 2 + igst), total = Math.round(exact), ro = r2(total - exact);
+    return { intra, lines, goods, fr, pk, ds, taxable: r2(Object.values(byRate).reduce((t, x) => t + x, 0)), cgst, sgst: cgst, igst, ro, total, byRate, hides: lines.reduce((t, x) => t + (Number(x.hides) || 0), 0), sides: lines.reduce((t, x) => t + (Number(x.sides) || 0), 0), sqft: r2(lines.reduce((t, x) => t + (Number(x.sqft) || 0), 0)) };
+  }
+  const rs = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function invTotHtml(v) {
+    const t = invCalc(v);
+    return `<table class="invtot"><tbody><tr><td>Goods (${fmtN(t.sqft, 2)} sqft)</td><td class="r num">${rs(t.goods)}</td></tr>${t.fr ? `<tr><td>Freight</td><td class="r num">${rs(t.fr)}</td></tr>` : ""}${t.pk ? `<tr><td>Packing</td><td class="r num">${rs(t.pk)}</td></tr>` : ""}${t.ds ? `<tr><td>Discount</td><td class="r num">−${rs(t.ds)}</td></tr>` : ""}
+      <tr><td>Taxable value</td><td class="r num">${rs(t.taxable)}</td></tr>${t.intra ? `<tr><td>CGST</td><td class="r num">${rs(t.cgst)}</td></tr><tr><td>SGST</td><td class="r num">${rs(t.sgst)}</td></tr>` : `<tr><td>IGST</td><td class="r num">${rs(t.igst)}</td></tr>`}
+      ${t.ro ? `<tr><td>Round off</td><td class="r num">${t.ro < 0 ? "−" : ""}${rs(Math.abs(t.ro))}</td></tr>` : ""}<tr class="grand"><td><b>Invoice total</b></td><td class="r num"><b>${rs(t.total)}</b></td></tr></tbody></table>`;
+  }
+  // ---- list (Orders → Invoices)
+  function invListView(ws) {
+    const all = invLive().filter((v) => match([v.temp, v.tally_no, v.customer, v.party, (v.lines || []).map((l) => l.lot + " " + l.item).join(" ")].join(" "), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.temp).localeCompare(String(a.temp)));
+    const waiting = all.filter((v) => !v.tally_no);
+    let h = store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-invnew>New invoice</button>${waiting.length ? `<button class="btn alt" data-invxmlall>Tally file for all not in Tally (${waiting.length})</button>` : ""}<button class="btn alt" data-invset>Tally names</button></div>` : "";
+    h += `<p class="note" style="margin:6px 2px">Make the invoice here, then import the Tally file in Tally (Gateway of Tally → Import → Transactions). Tally gives the invoice number; type it back here with “Entered in Tally”.</p><div id="invout"></div>`;
+    if (!all.length) return h + `<p class="empty">No invoices yet. Tap New invoice, or open a lot and tap Make invoice.</p>`;
+    const grp = (t, list) => list.length ? `<div class="group">${t} · ${list.length}</div>` + list.map(invCard).join("") : "";
+    return h + grp("Not in Tally yet", waiting) + grp("In Tally", all.filter((v) => v.tally_no));
+  }
+  function invCard(v) {
+    const t = invCalc(v), lots = [...new Set((v.lines || []).map((l) => l.lot))];
+    return `<button class="row" data-k="inv:${esc(v.id)}"${cur("inv:" + v.id)}>
+      <span class="k" style="font-size:15px">${esc(v.tally_no || v.temp)}</span><span class="pill ${v.tally_no ? "ok" : v.exported_at ? "info" : "warn"}">${v.tally_no ? "In Tally" : v.exported_at ? "File made" : "Draft"}</span>
+      <span class="t">${esc(v.party || v.customer)}</span>
+      <span class="m num"><span>${fmtD(v.date)}</span><span>${esc(lots.join(", "))}</span><span>${fmtN(t.sqft, 0)} sqft</span><span>${rs(t.total)}</span></span></button>`;
+  }
+  // ---- detail
+  function invDetail(k) {
+    const v = invoices.find((x) => "inv:" + x.id === k);
+    if (!v) return `<p class="empty">This invoice is not here any more.</p>`;
+    const t = invCalc(v), S = iset();
+    const warn = (v.lines || []).map((ln) => { const d = invDelInfo(ln.dkey); return !d ? ln.lot + ": its delivery is not found." : d.void ? ln.lot + ": its delivery was cancelled." : ""; }).filter(Boolean);
+    const tr = [["Transporter", v.transporter], ["Vehicle no", v.vehicle], ["LR / doc no", v.lr], ["LR date", v.lrdate ? fmtD(v.lrdate) : ""], ["E-way bill", v.eway], ["E-way date", v.ewaydate ? fmtD(v.ewaydate) : ""], ["Destination", v.dest]].filter((x) => x[1]);
+    return `${flash ? `<p class="okmsg">${esc(flash)}</p>` : ""}${warn.length ? `<p class="fmsg bad">${esc(warn.join(" "))}</p>` : ""}
+      <div class="kv"><div><span>Status</span><b>${v.tally_no ? "In Tally as " + esc(v.tally_no) : v.exported_at ? "Tally file made " + esc(fmtS(v.exported_at)) + ", not marked in Tally yet" : "Draft"}</b></div><div><span>App number</span><b>${esc(v.temp)}</b></div><div><span>Date</span><b>${fmtD(v.date)}</b></div>
+      <div><span>Party (Tally)</span><b>${esc(v.party)}</b></div><div><span>GSTIN</span><b>${esc(v.gstin || "—")}</b></div><div><span>State</span><b>${esc(v.state)}${t.intra ? " (CGST + SGST)" : " (IGST)"}</b></div></div>
+      ${store && canWrite ? `<div class="acts lotacts"><button class="btn" data-inv="xml">Make Tally file</button>${!v.tally_no ? `<button class="btn alt" data-inv="edit">Edit</button>` : ""}<button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>` : ""}
+      <div id="invout"></div>
+      ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
+      ${formOpen === "invdel" ? `<div class="fm"><p style="margin:0">Delete ${esc(invName(v))}? Its deliveries stay recorded and can go on another invoice.</p><div class="acts" style="margin:0"><button class="btn" data-inv="delsure">Delete invoice</button><button class="btn alt" type="button" data-formclose>Keep it</button></div></div>` : ""}
+      <h3>Items</h3><div class="tbl"><table><thead><tr><th>Item / description</th><th class="r">Sqft</th><th class="r">Rate</th><th class="r">Disc</th><th class="r">Amount</th></tr></thead><tbody>${t.lines.map((ln) => { const d = invDelInfo(ln.dkey);
+        return `<tr><td><b>${esc(ln.item)}</b><br><span class="note">${esc(ln.desc)} · HSN ${esc(ln.hsn)} · GST ${fmtN(ln.gst, 2)}%${d ? " · delivered " + fmtD(d.date) + (d.wait ? " (waiting for Excel)" : "") : ""}</span> <button class="mini" data-go="lots" data-k="${esc(ln.lot)}">${esc(ln.lot)}</button></td><td class="r num">${fmtN(ln.sqft, 2)}</td><td class="r num">${fmtN(ln.rate, 2)}</td><td class="r num">${ln.disc ? fmtN(ln.disc, 2) + "%" : ""}</td><td class="r num">${fmtN(ln.amt, 2)}</td></tr>`; }).join("")}</tbody></table></div>
+      <p class="note" style="margin:4px 2px">${fmtN(t.hides, 1)} hides${t.sides ? " + " + fmtN(t.sides, 0) + " sides" : ""}, ${fmtN(t.sqft, 2)} sqft</p>
+      ${invTotHtml(v)}
+      ${tr.length ? `<h3>Transport</h3><div class="kv">${tr.map((x) => `<div><span>${x[0]}</span><b>${esc(x[1])}</b></div>`).join("")}</div>` : ""}
+      ${v.narration ? `<h3>Narration</h3><p>${esc(v.narration)}</p>` : ""}
+      <p class="note">Ledgers used: ${esc(S.sales)}, ${t.intra ? esc(S.cgst) + ", " + esc(S.sgst) : esc(S.igst)}${t.fr ? ", " + esc(S.freight) : ""}${t.pk ? ", " + esc(S.packing) : ""}${t.ds ? ", " + esc(S.discount) : ""}${t.ro ? ", " + esc(S.round) : ""}. Change names under Orders → Invoices → Tally names.</p>`;
+  }
+  // ---- editor
+  const ivF = (id, lb, val, more) => `<label>${lb}<input id="${id}" data-iv="${id.slice(3)}" value="${esc(val ?? "")}" autocomplete="off"${more || ""}></label>`;
+  function invForm() {
+    const v = inv; if (!v) return `<p class="empty">Nothing to edit.</p>`;
+    const S = iset(), cands = v.customer ? invCands(invShowAll ? "" : v.customer, v.id).filter((c) => !v.lines.some((ln) => dkeyAlias(ln.dkey).includes(c.dkey))) : [];
+    const lotsOf = data.lots.filter((l) => (invShowAll || UP(l.customer) === UP(v.customer)) && l.state !== "DUMPED").sort((a, b) => a.grp - b.grp || b.num - a.num).slice(0, 150);
+    const items = [...new Set(Object.values(S.items).concat(rows("SELECT DISTINCT item FROM order_lines").map((r) => r.item)).filter(Boolean))].sort();
+    const t = invCalc(v);
+    return `<form class="fm" id="fm-invoice">
+      <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustomers().map((c) => `<option${c === UP(v.customer) ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+      ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}</div>
+      ${v.customer ? `<div class="two">${ivF("iv-party", "Party name as in Tally", v.party)}${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
+      ${ivF("iv-addr", "Address (optional)", v.addr)}
+      <p class="note" style="margin:0">Party name must match the ledger in Tally exactly. It is remembered for ${esc(v.customer)}.</p>
+      <h3 style="margin:10px 0 0">Lots on this invoice</h3>
+      ${v.lines.length ? v.lines.map((ln, i) => invLineHtml(ln, i)).join("") : `<p class="note" style="margin:0">No lots yet. Add a delivery below.</p>`}
+      <div class="invadd"><p style="margin:0"><b>Add a delivery</b> <button type="button" class="lnk" data-inv="showall">${invShowAll ? "Only " + esc(v.customer) : "Show all customers"}</button></p>
+      ${cands.length ? cands.slice(0, 40).map((c) => `<div class="invcand"><span><b>${esc(c.lot)}</b> · ${fmtD(c.date)} · ${fmtN(c.hides, 1)} hides${c.sides ? " + " + fmtN(c.sides, 0) + " sides" : ""} · ${fmtN(c.sqft, 2)} sqft${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? " · waiting for Excel" : ""}</span><button type="button" class="mini" data-inv="add:${esc(c.dkey)}">Add</button></div>`).join("") : `<p class="note" style="margin:0">No delivery waiting to be invoiced${invShowAll ? "" : " for " + esc(v.customer)}.</p>`}
+      <p style="margin:6px 0 0"><b>Delivery not recorded yet?</b> Pick the lot and type the delivery on its line. Saving the invoice records the delivery too.</p>
+      <div class="two"><label>Lot<select id="iv-newlot"><option value="">Pick a lot</option>${lotsOf.map((l) => `<option value="${esc(l.lot_no)}">${esc(l.lot_no)} · ${esc(l.product || "")} · ${esc(l.state === "OPEN" ? l.stage || "" : l.state)}</option>`).join("")}</select></label><label>&nbsp;<button type="button" class="btn alt" data-inv="addlot">Add lot</button></label></div></div>
+      <h3 style="margin:10px 0 0">Freight, packing, discount</h3>
+      <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
+      <h3 style="margin:10px 0 0">Transport and e-way bill</h3>
+      <div class="two">${ivF("iv-transporter", "Transporter", v.transporter)}${ivF("iv-vehicle", "Vehicle no", v.vehicle)}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
+      ${ivF("iv-narration", "Narration (optional)", v.narration)}
+      <div id="iv-tot">${invTotHtml(v)}</div>
+      <datalist id="iv-items">${items.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}
+      <p class="fmsg" id="fm-msg"></p>
+      <div class="acts" style="margin:0"><button class="btn" type="submit" id="iv-savexml">Save and make Tally file</button><button class="btn alt" type="submit" id="iv-save">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`;
+  }
+  function invLineHtml(ln, i) {
+    const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = !ln.newdel;
+    const n = (f, lb, more) => `<label>${lb}<input data-ivl="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" type="number" step="any" inputmode="decimal"${lock && ["hides", "sides", "sqft"].includes(f) ? " readonly" : ""}${more || ""}></label>`;
+    return `<div class="invline"><p style="margin:0;display:flex;justify-content:space-between;gap:8px"><span><b>${esc(ln.lot)}</b> ${ln.newdel ? "· new delivery, recorded when you save" : d ? "· delivered " + fmtD(d.date) + (d.doc ? " · " + esc(d.doc) : "") + (d.wait ? " · waiting for Excel" : "") : ""}${ln.po ? " · PO " + esc(ln.po) : ""}</span><button type="button" class="mini" data-inv="del:${i}">Remove</button></p>
+      <label>Stock item as in Tally<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" list="iv-items" autocomplete="off"></label>
+      <label>Description<input data-ivl="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
+      <div class="two">${n("hides", "Hides")}${n("sides", "Sides", ' step="1"')}${n("sqft", "Sqft")}${ln.newdel ? `<label>Delivery date<input data-ivl="${i}" data-f="ddate" type="date" value="${esc(ln.ddate || "")}"></label>` : ""}${n("rate", "Rate / sqft")}${n("disc", "Discount %")}<label>HSN<input data-ivl="${i}" data-f="hsn" value="${esc(ln.hsn)}" inputmode="numeric"></label>${n("gst", "GST %")}</div>
+      <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${lock ? " · counts come from the delivery" : ""}</p></div>`;
+  }
+  function invRedraw() { const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
+  function invInput(t) {
+    const v = inv; if (!v) return;
+    if (t.dataset.iv) {
+      const k = t.dataset.iv; v[k] = t.value;
+      if (k === "customer") { v.lines = []; invPartyFill(v); invRedraw(); return; }
+      if (k === "gstin") { const st = GST_CODE[t.value.trim().slice(0, 2)]; if (st && t.value.trim().length >= 2) { v.state = st; const s = $("#iv-state"); if (s) s.value = st; } }
+    } else if (t.dataset.ivl !== undefined) {
+      const ln = v.lines[Number(t.dataset.ivl)], f = t.dataset.f; ln[f] = t.value;
+      if (f === "desc") ln.autodesc = false;
+      if ((f === "hides" || f === "sides") && ln.autodesc) { ln.desc = descOf(ln); const di = document.querySelector(`[data-ivl="${t.dataset.ivl}"][data-f="desc"]`); if (di) di.value = ln.desc; }
+      const a = $("#ivl-amt-" + t.dataset.ivl); if (a) a.textContent = rs(r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)));
+    }
+    const box = $("#iv-tot"); if (box) box.innerHTML = invTotHtml(v);
+  }
+  function invClick(b) {
+    const a = b.dataset.inv, k = sel[tab], v = String(k).startsWith("inv:") ? invoices.find((x) => "inv:" + x.id === k) : null;
+    if (a === "showall") { invShowAll = !invShowAll; invRedraw(); return; }
+    if (a.startsWith("add:")) { const c = invCands("", inv.id).find((x) => x.dkey === a.slice(4)); if (c) inv.lines.push(invLine(c.lot, c)); invRedraw(); return; }
+    if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; } inv.lines.push(invLine(lot, null)); invRedraw(); return; }
+    if (a.startsWith("del:")) { inv.lines.splice(Number(a.slice(4)), 1); invRedraw(); return; }
+    if (!v) return;
+    if (a === "edit") { inv = JSON.parse(JSON.stringify(v)); invShowAll = false; openForm("invoice:" + v.id); return; }
+    if (a === "xml") { invExport([v], $("#invout")); return; }
+    if (a === "tally") { formOpen = "invtally"; showDetail(); return; }
+    if (a === "delete") { formOpen = "invdel"; showDetail(); return; }
+    if (a === "delsure") { b.disabled = true; store.doc("invoices/" + v.id).update({ status: "deleted", deleted_at: new Date().toISOString() }).then(() => { formOpen = null; sel[tab] = null; flash = ""; render(); showDetail(); }); return; }
+  }
+  async function invSave(f, msg, btn) {
+    const v = inv, S = iset(), bad = (t) => { msg.textContent = t; };
+    if (!v.customer) return bad("Pick the customer.");
+    if (!v.date || checkDate(v.date)) return bad(checkDate(v.date) || "Pick the invoice date.");
+    if (!String(v.party || "").trim()) return bad("Type the party name as it is in Tally.");
+    if (v.gstin && !/^\d{2}[A-Z0-9]{13}$/i.test(v.gstin.trim())) return bad("The GSTIN should be 15 characters starting with the 2-digit state code.");
+    if (!v.lines.length) return bad("Add at least one lot.");
+    for (const ln of v.lines) {
+      if (!String(ln.item || "").trim()) return bad(ln.lot + ": type the stock item name as in Tally.");
+      if (!(Number(ln.sqft) > 0)) return bad(ln.lot + ": type the sqft.");
+      if (!(Number(ln.rate) > 0)) return bad(ln.lot + ": type the rate.");
+      if (ln.newdel) { if (!(Number(ln.hides) > 0 || Number(ln.sides) > 0)) return bad(ln.lot + ": type the hides and / or sides delivered."); const dd = checkDate(ln.ddate || v.date); if (dd) return bad(ln.lot + ": " + dd); }
+    }
+    btn.disabled = true; msg.textContent = "";
+    try {
+      const temp = v.temp, now = new Date().toISOString(), ref = v.id ? store.doc("invoices/" + v.id) : store.collection("invoices").doc();
+      // deliveries typed on the invoice are recorded like Record delivery, with the invoice's app number as bill no
+      for (const ln of v.lines) {
+        if (!ln.newdel) continue;
+        const h = Number(ln.hides) || 0, s = Number(ln.sides) || 0, er = store.collection("entries").doc();
+        await writeEntry(er, { type: "delivery", lot_no: ln.lot, entry_date: ln.ddate || v.date, pcs: h + s / 2, sqft: Number(ln.sqft) || 0, doc_no: v.tally_no || temp, note: [s ? fmtN(h, 0) + " HIDES + " + fmtN(s, 0) + " SIDES" : "", "Invoice " + temp].filter(Boolean).join(" "), status: "pending", entered_by: uid, created_at: now, invoice: ref.id });
+        ln.dkey = "e:" + er.id; ln.newdel = false;
+      }
+      const body = JSON.parse(JSON.stringify(Object.assign({}, v, { status: v.status === "deleted" ? "draft" : v.status || "draft", updated_at: now, entered_by: v.entered_by || uid, created_at: v.created_at || now })));
+      delete body.id; body.total = invCalc(v).total;
+      await ref.set(body);
+      // remember party details and item names for next time
+      const parties = Object.assign({}, S.parties, { [UP(v.customer)]: { party: v.party.trim(), gstin: (v.gstin || "").trim().toUpperCase(), state: v.state, addr: v.addr || "", dest: v.dest || "" } }), its = Object.assign({}, S.items);
+      v.lines.forEach((ln) => { if (ln.poitem && ln.item) its[UP(ln.poitem)] = ln.item.trim(); });
+      await store.doc("invset/main").set(Object.assign({}, invSet, { parties, items: its }));
+      const id = ref.id, wantXml = submitter === "iv-savexml"; inv = null; invoices = invoices.filter((x) => x.id !== id).concat([Object.assign({ id }, body)]);
+      formOpen = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; stack = []; if (tab !== "orders" && sel[tab]) stack.push({ tab, k: sel[tab] }); filter.orders = "inv"; flash = "Invoice saved" + (v.lines.some((x) => String(x.dkey).startsWith("e:")) ? ". New deliveries are waiting for Excel." : ".");
+      sel.orders = "inv:" + id; if (tab !== "orders") go("orders"); else { render(); showDetail(); }
+      setTimeout(() => { flash = ""; showDetailKeep(); }, 6000);
+      if (wantXml) invExport([invoices.find((x) => x.id === id)], $("#invout"));
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  async function invTallySave(f, msg, btn) {
+    const v = invoices.find((x) => "inv:" + x.id === sel[tab]), no = $("#it-no").value.trim();
+    if (!v) return; btn.disabled = true;
+    try {
+      await store.doc("invoices/" + v.id).update({ tally_no: no, status: no ? "tally" : v.exported_at ? "exported" : "draft", tally_at: new Date().toISOString() });
+      for (const e of entries.filter((x) => x.type === "delivery" && x.status === "pending" && x.invoice === v.id)) await store.doc("entries/" + e.id).update({ doc_no: no || v.temp });
+      formOpen = null; flash = no ? "Marked as entered in Tally as " + no + "." : "Tally number removed."; showDetail(); render();
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  // ---- Tally XML (Sales, Item Invoice). No voucher number: Tally numbers it on import.
+  const xe = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  const td = (s) => String(s || "").replace(/-/g, "");
+  const am = (n) => r2(n).toFixed(2);
+  function invVoucherXml(v) {
+    const S = iset(), t = invCalc(v), u = S.unit, T = (tag, val) => val === "" || val == null ? "" : `<${tag}>${xe(val)}</${tag}>`;
+    const led = (name, amt, party) => `<LEDGERENTRIES.LIST>${T("LEDGERNAME", name)}<ISDEEMEDPOSITIVE>${amt < 0 ? "Yes" : "No"}</ISDEEMEDPOSITIVE>${party ? "<ISPARTYLEDGER>Yes</ISPARTYLEDGER>" : ""}<AMOUNT>${am(amt)}</AMOUNT></LEDGERENTRIES.LIST>`;
+    const lots = [...new Set(t.lines.map((x) => x.lot))];
+    const narr = v.narration || ["Lots " + lots.join(", "), v.eway ? "E-way bill " + v.eway : "", "App " + v.temp].filter(Boolean).join(". ");
+    const inv0 = t.lines.map((ln) => { const q = r2(ln.sqft).toFixed(2) + " " + u;
+      return `<ALLINVENTORYENTRIES.LIST>${T("STOCKITEMNAME", ln.item.trim())}<BASICUSERDESCRIPTION.LIST TYPE="String">${T("BASICUSERDESCRIPTION", ln.desc)}</BASICUSERDESCRIPTION.LIST><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>${T("GSTHSNNAME", ln.hsn)}<RATE>${xe(r2(ln.rate).toFixed(2) + "/" + u)}</RATE>${Number(ln.disc) ? `<DISCOUNT>${xe(ln.disc)}</DISCOUNT>` : ""}<AMOUNT>${am(ln.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY>`
+        + (S.godown ? `<BATCHALLOCATIONS.LIST>${T("GODOWNNAME", S.godown)}<BATCHNAME>Primary Batch</BATCHNAME><AMOUNT>${am(ln.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY></BATCHALLOCATIONS.LIST>` : "")
+        + `<ACCOUNTINGALLOCATIONS.LIST>${T("LEDGERNAME", S.sales)}<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>${am(ln.amt)}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>`; }).join("");
+    const ways = v.eway ? `<EWAYBILLDETAILS.LIST>${T("BILLDATE", td(v.ewaydate || v.date))}${T("BILLNUMBER", v.eway)}<DOCUMENTTYPE>Tax Invoice</DOCUMENTTYPE><SUBTYPE>Supply</SUBTYPE><TRANSPORTDETAILS.LIST>${T("TRANSPORTERNAME", v.transporter)}<TRANSPORTMODE>1 - Road</TRANSPORTMODE>${T("VEHICLENUMBER", String(v.vehicle || "").replace(/\s+/g, ""))}${T("DOCUMENTNUMBER", v.lr)}${T("DOCUMENTDATE", td(v.lrdate))}</TRANSPORTDETAILS.LIST></EWAYBILLDETAILS.LIST>` : "";
+    return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(S.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
+      + `<DATE>${td(v.date)}</DATE><EFFECTIVEDATE>${td(v.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", S.vtype)}${T("REFERENCE", v.temp)}${T("REFERENCEDATE", td(v.date))}`
+      + `${T("PARTYLEDGERNAME", v.party.trim())}${T("PARTYNAME", v.party.trim())}${T("BASICBUYERNAME", v.party.trim())}${T("PARTYMAILINGNAME", v.party.trim())}${T("PARTYGSTIN", (v.gstin || "").toUpperCase())}${v.gstin ? "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" : "<GSTREGISTRATIONTYPE>Unregistered/Consumer</GSTREGISTRATIONTYPE>"}${T("STATENAME", v.state)}${T("PLACEOFSUPPLY", v.state)}<COUNTRYOFRESIDENCE>India</COUNTRYOFRESIDENCE>${T("CMPGSTIN", S.gstin)}${T("CMPGSTSTATE", S.state)}`
+      + (v.addr ? `<ADDRESS.LIST TYPE="String">${String(v.addr).split(/\s*[,\n]\s*(?=\S)/).slice(0, 4).map((x) => T("ADDRESS", x)).join("")}</ADDRESS.LIST><BASICBUYERADDRESS.LIST TYPE="String">${T("BASICBUYERADDRESS", v.addr)}</BASICBUYERADDRESS.LIST>` : "")
+      + `${T("BASICSHIPPEDBY", v.transporter)}${T("BASICSHIPDOCUMENTNO", v.lr)}${T("BASICSHIPVESSELNO", v.vehicle)}${T("BASICFINALDESTINATION", v.dest)}${T("BILLOFLADINGNO", v.lr)}${T("BILLOFLADINGDATE", td(v.lrdate))}`
+      + `${T("NARRATION", narr)}<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><VCHENTRYMODE>Item Invoice</VCHENTRYMODE><ISINVOICE>Yes</ISINVOICE>`
+      + led(v.party.trim(), -t.total, true) + inv0
+      + (t.fr ? led(S.freight, t.fr) : "") + (t.pk ? led(S.packing, t.pk) : "") + (t.ds ? led(S.discount, -t.ds) : "")
+      + (t.intra ? (t.cgst ? led(S.cgst, t.cgst) + led(S.sgst, t.sgst) : "") : (t.igst ? led(S.igst, t.igst) : ""))
+      + (t.ro ? led(S.round, t.ro) : "") + ways + `</VOUCHER></TALLYMESSAGE>`;
+  }
+  function invXml(list) {
+    const S = iset();
+    return `<?xml version="1.0" encoding="UTF-8"?>\r\n<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${xe(S.company)}</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>\r\n`
+      + list.map(invVoucherXml).join("\r\n") + `\r\n</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>\r\n`;
+  }
+  async function invExport(list, out) {
+    if (!list.length) return;
+    const text = invXml(list), name = "tally-sales-" + (list.length === 1 ? list[0].temp : list.length + "-invoices") + "-" + iso(today) + ".xml";
+    const box = () => { if (out) out.innerHTML = `<p class="note">Copy this into a .xml file on the computer, then import it in Tally.</p><textarea class="copybox" readonly aria-label="Tally file">${esc(text)}</textarea>`; };
+    const dl = window.claude ? await window.claude.use("downloads") : null;
+    let ok = false;
+    if (dl) { try { await dl.save({ filename: name, data: text }); ok = true; } catch (err) { if (err.code !== "declined") box(); } } else box();
+    if (ok) { const now = new Date().toISOString(); for (const v of list) if (!v.tally_no) await store.doc("invoices/" + v.id).update({ exported_at: now, status: "exported" }).catch(() => {});
+      if (out) out.innerHTML = `<p class="okmsg">${esc(name)} made. On the computer: Gateway of Tally → Import → Transactions (Import Data → Vouchers in older Tally), pick this file. Then type the invoice number Tally gave with “Entered in Tally”.</p>`; }
+  }
+  // ---- Tally names
+  FORMS.invoice = { get title() { return inv && inv.id ? "Edit " + (inv.tally_no || inv.temp) : "New invoice"; }, html: () => invForm() };
+  FORMS.invset = { title: "Tally names for invoices", html: () => { const S = iset(), f = (k, lb) => `<label>${lb}<input id="is-${k}" value="${esc(S[k])}" autocomplete="off"></label>`;
+    const ps = Object.entries(S.parties);
+    return `<form class="fm" id="fm-invset"><p class="note" style="margin:0">These must match the names in Tally exactly, or Tally refuses the import.</p>
+      <div class="two">${f("company", "Company name in Tally")}${f("vtype", "Sales voucher type")}${f("sales", "Sales ledger")}${f("cgst", "CGST ledger")}${f("sgst", "SGST ledger")}${f("igst", "IGST ledger")}${f("freight", "Freight ledger")}${f("packing", "Packing ledger")}${f("discount", "Discount ledger")}${f("round", "Round off ledger")}${f("godown", "Godown (blank if not used)")}${f("unit", "Unit of sqft in Tally")}${f("gst", "Usual GST %")}${f("hsn", "Usual HSN")}${f("gstin", "Our GSTIN")}
+      <label>Our state<select id="is-state">${STATES.map((s) => `<option${s === S.state ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
+      <label>GST on freight / packing<select id="is-taxExtras"><option value="yes"${S.taxExtras !== "no" ? " selected" : ""}>Yes, at the goods' rate</option><option value="no"${S.taxExtras === "no" ? " selected" : ""}>No</option></select></label></div>
+      ${ps.length ? `<h3 style="margin:8px 0 0">Remembered parties</h3><div class="tbl"><table><thead><tr><th>Customer</th><th>Tally party</th><th>GSTIN</th><th>State</th></tr></thead><tbody>${ps.map(([c, p]) => `<tr><td>${esc(c)}</td><td>${esc(p.party)}</td><td>${esc(p.gstin)}</td><td>${esc(p.state)}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:0">Change a party on its next invoice; it is remembered again when saved.</p>` : ""}
+      ${formEnd}</form>`; } };
+  async function invSetSave(f, msg, btn) {
+    const next = Object.assign({}, invSet);
+    ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
+    next.gst = parseFloat($("#is-gst").value) || 0;
+    if (!next.company || !next.vtype || !next.sales) { msg.textContent = "Company, voucher type and sales ledger are needed."; return; }
+    btn.disabled = true;
+    try { await store.doc("invset/main").set(next); invSet = next; closeForm("Tally names saved."); } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  function invOfLot(lot) { return invLive().filter((v) => (v.lines || []).some((l) => l.lot === lot)); }
   function openForm(spec) {
     const i = spec.indexOf(":"), kind = i < 0 ? spec : spec.slice(0, i), arg = i < 0 ? "" : spec.slice(i + 1);
     if (kind === "order") ed = { lines: [{ d: "", q: "", r: "", h: "" }] };
@@ -2027,6 +2338,9 @@ main.solo .detail.open { display: block; }
   function submitNew(f) {
     const msg = $("#fm-msg"), btn = f.querySelector("[type=submit]"), bad = (t) => { msg.textContent = t; };
     if (f.id === "fm-update") return runUpdate(f);
+    if (f.id === "fm-invoice") return invSave(f, msg, btn);
+    if (f.id === "fm-invset") return invSetSave(f, msg, btn);
+    if (f.id === "fm-invtally") return invTallySave(f, msg, btn);
     if (f.id === "fm-page") return submitPage(f, msg, btn);
     if (f.id === "fm-audit_start") {
       if (openAudit()) return bad("An audit is already open.");
@@ -2473,6 +2787,7 @@ main.solo .detail.open { display: block; }
       d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(FORMS[kind].title)}</h2></div>${FORMS[kind].html(arg)}`;
       d.classList.add("open"); return;
     }
+    if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
     const title = isProc ? (data.processes.find((p) => p.key === k) || {}).name : isRec ? k.slice(4).split("|")[0] + " recipe" + (k.includes("@v") ? " v" + k.split("@v")[1] : "") : { lots: k, orders: (() => { const o = data.orders.find((x) => String(x.id) === String(k)); return o ? "PO " + o.po_no : ""; })(), purchases: k, chemicals: k }[tab];
     const body = isProc ? procDetail(k) : isRec ? recipeDetail(k) : { lots: lotDetail, orders: orderDetail, purchases: purchaseDetail, chemicals: chemDetail }[tab](k);
@@ -2578,6 +2893,9 @@ main.solo .detail.open { display: block; }
     if (srt) { tsort = tsort.k === srt.dataset.sort ? { k: tsort.k, dir: -tsort.dir } : { k: srt.dataset.sort, dir: 1 }; render(); return; }
     const tl = e.target.closest("[data-tlot]");
     if (tl) { stack = []; sel.lots = tl.dataset.tlot; showDetail(); return; }
+    if (e.target.closest("[data-invnew]")) { sel[tab] = null; stack = []; inv = invNew(); invShowAll = false; openForm("invoice:new"); return; }
+    if (e.target.closest("[data-invset]")) { sel[tab] = null; stack = []; openForm("invset:"); return; }
+    if (e.target.closest("[data-invxmlall]")) { invExport(invLive().filter((v) => !v.tally_no), $("#invout")); return; }
     const nb = e.target.closest("[data-new]");
     if (nb) { sel[tab] = null; stack = []; if (tab === "today" && nb.dataset.new !== "new_lot") { const k = nb.dataset.new; filter.lots = filter.lots === "table" ? "open" : filter.lots; go("lots"); openForm(k); return; } openForm(nb.dataset.new); return; }
     const hg = e.target.closest("[data-hgo]");
@@ -2599,6 +2917,8 @@ main.solo .detail.open { display: block; }
     const dm = e.target.closest("[data-dmute],[data-dunmute]");
     if (dm) { if (dm.dataset.dmute) muteLot(dm.dataset.dmute); else unmuteLot(dm.dataset.dunmute); showDetailKeep(); render(); return; }
     const pb = e.target.closest("[data-pdf]"); if (pb) { pdfAction(pb); return; }
+    const ivb = e.target.closest("[data-inv]"); if (ivb) { invClick(ivb); return; }
+    const ivl = e.target.closest("[data-invlot]"); if (ivl) { const l = data.lotBy[ivl.dataset.invlot]; inv = invNew(UP(l.customer), l.lot_no); invShowAll = false; openForm("invoice:new"); return; }
     if (e.target.closest("[data-backall]")) { const r = backRows($("#fm-skins_back").dataset.key).find((x) => String(x.id) === $("#fb-entry").value); if (r) { $("#fb-pcs").value = r.leftP; $("#fb-sqft").value = r.leftS; } return; }
     if (e.target.closest("[data-rates]")) { showRates = !showRates; showDetailKeep(); return; }
     const cd = e.target.closest("[data-cntdel]");
@@ -2697,6 +3017,7 @@ main.solo .detail.open { display: block; }
     if (ci) { const k = sel[tab], key = ci.closest("[data-costkey]").dataset.costkey; costIn[key] = costIn[key] || {}; costIn[key][ci.dataset.cost] = ci.value; const b = $("#costbox"), r = getRecipe(k); if (b && r) b.innerHTML = costBox(r); return; }
     const f = e.target.closest("form"); if (!f) return;
     delete f.dataset.warned; $("#fm-msg").textContent = "";
+    if (f.id === "fm-invoice") { invInput(e.target); return; }
     const t = e.target, row = t.closest(".er");
     if (f.id === "fm-recipe" && /^e-c-\d+-c$/.test(t.id)) { const w = $("#ewt-" + t.id.split("-")[2]); if (w) w.textContent = crustWt(t.value); }
     if (f.id === "fm-recipe" && (/^e-[cfm]-\d+-[cde]$/.test(t.id) || /^eh-(animal|pcs)$/.test(t.id))) setTimeout(edRatesRefresh, 0);
