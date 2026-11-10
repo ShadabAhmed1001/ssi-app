@@ -885,7 +885,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 88, at: "2026-11-10T15:54:36+05:30", notes: "Navigation: phone Back is always one step (never closes the app from a page); leaving the process editor keeps your changes as a draft; pull-down no longer reloads the app" };
+  const APP_BUILD = { v: 89, at: "2026-11-10T16:28:38+05:30", notes: "Joining finishing sections: joined lines keep Excel's chain formula, so weights follow the first line after saving" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -946,19 +946,27 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return sq > 0 && amt > 0 ? +(amt / sq).toFixed(2) : 0;
   }
   // finishing weights: Excel works most of them out from the first row of each batch (weight / ratio x ratio)
+  // a weight saved as the sheet's chain formula (=IFERROR($E204/$C204*C205,0)): worked out from the row above
+  const isFx = (w) => String(w ?? "").trim().charAt(0) === "=";
+  const fxOf = (i, j) => "=IFERROR($E" + j + "/$C" + j + "*C" + i + ",0)", fxRow = (w, i) => { const m = /\$?E(\d+)/.exec(String(w)); return m ? Number(m[1]) : i - 1; };
   function finRows(r) {
     const an = data.finAnchor[String(r.process).toUpperCase()], by = {}; r.finishing.forEach((f) => { by[f.i] = f; });
-    const wOf = (i, depth) => { const f = by[i]; if (!f || depth > 40) return 0; const t = Number(f.w); if (String(f.w).trim() !== "" && !isNaN(t)) return t; if (an && an["v" + i] !== undefined) return an["v" + i];
-      let a = an ? an[i] : null; if (!an) for (let j = i - 1; j >= 194; j--) if (by[j] && String(by[j].w).trim() !== "" && Number(by[j].r)) { a = j; break; }
+    const wOf = (i, depth) => { const f = by[i]; if (!f || depth > 40) return 0; const t = Number(f.w); if (String(f.w).trim() !== "" && !isFx(f.w) && !isNaN(t)) return t;
+      let a = an ? an[i] : null;
+      if (isFx(f.w)) { a = fxRow(f.w, i); if (!by[a]) a = null; }
+      else if (an && an["v" + i] !== undefined) return an["v" + i];
+      // a row the sheet has a typed number on, left without one: Excel's chain formula takes it from the row above
+      else if (an && a === undefined && by[i - 1]) a = i - 1;
+      if (!an && !isFx(f.w)) for (let j = i - 1; j >= 194; j--) if (by[j] && String(by[j].w).trim() !== "" && Number(by[j].r)) { a = j; break; }
       if (!a || !by[a]) return 0; const rt = Number(by[a].r); return rt ? wOf(a, depth + 1) / rt * (Number(f.r) || 0) : 0; };
-    return r.finishing.map((f) => Object.assign({}, f, { w: String(f.w).trim() !== "" ? f.w : (wOf(f.i, 0) ? +wOf(f.i, 0).toFixed(4) : "") }));
+    return r.finishing.map((f) => Object.assign({}, f, { w: String(f.w).trim() !== "" && !isFx(f.w) ? f.w : (wOf(f.i, 0) ? +wOf(f.i, 0).toFixed(4) : "") }));
   }
   // a section is one mix: same weight per ratio unit, no blank row between
   function finSecIds(fin, typed) {
     let id = 0, k = null, prev = null;
     return fin.map((f, n) => {
       const r = Number(f.r) || 0, w = Number(f.w) || 0, kw = r > 0 && w > 0 ? w / r : null, gap = prev !== null && f.i !== prev + 1;
-      const isTyped = String((typed[n] || {}).w || "").trim() !== "";
+      const isTyped = String((typed[n] || {}).w || "").trim() !== "" && !isFx((typed[n] || {}).w);
       if (n === 0 || gap || (kw !== null && k !== null && Math.abs(kw - k) > Math.abs(k) * 0.01) || (kw === null && isTyped)) { id++; k = null; }
       if (kw !== null && k === null) k = kw;
       prev = f.i; return id;
@@ -1775,7 +1783,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       head: { animal: r.animal || "", details: r.details || "", substance: r.substance || "", shaved_wt: r.shaved_wt ?? "", pcs: r.pcs ?? "", wb_sqft: r.wb_sqft ?? "", finish_sqft: r.finish_sqft ?? "", process_note: r.process_note || "", remarks: r.remarks || "" },
       crust: r.crust.map((x) => ({ r: x.r, c: showPct(x), d: x.d || "", f: x.f || "", nq: x.nq })),
       machinery: r.machinery.map((x) => ({ r: x.r, d: x.d, e: x.n })),
-      finishing: finRows(r).map((x, i) => ({ r: x.i, c: x.r || "", d: x.d || "", e: r.finishing[i].w || "", f: x.n || "", hint: r.finishing[i].w ? "" : String(x.w || "") })) };
+      finishing: finRows(r).map((x, i) => ({ r: x.i, c: x.r || "", d: x.d || "", e: isFx(r.finishing[i].w) ? "" : r.finishing[i].w || "", f: x.n || "", hint: r.finishing[i].w && !isFx(r.finishing[i].w) ? "" : String(x.w || "") })) };
     // a crusting section is one drum run. As on the sheets (merged DURATION cells, time in the top cell), a line with a time starts a section; so does a blank-row gap
     { let id = 0, prev = null; ed.crust.forEach((x) => { if (prev === null || x.r !== prev + 1 || String(x.f || "").trim() !== "") id++; x.sec = id; prev = x.r; }); }
     const ids = finSecIds(finRows(r), r.finishing), fr = finRows(r);
@@ -1870,10 +1878,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const finishing = placeFin(ed.finishing.filter((x) => !blank(x))).map((x) => ({ i: x.r, r: x.c.trim(), d: x.d.trim(), w: String(x.calc ? "" : x.e).trim(), n: x.f.trim(), sec: x.sec, calc: x.calc, hint: x.hint }));
     // a formula on this sheet that doesn't lead back to the section's first row can't follow it, so that weight is written
     const an = data.finAnchor[String(ed.process).toUpperCase()];
-    if (an) finishing.forEach((f) => { if (!f.calc) return; const st = finishing.find((y) => y.sec === f.sec && Number(y.r) > 0); if (!st || !(Number(f.r) > 0)) return; let c = f.i, n = 0; while (c !== st.i && an[c] && n++ < 60) c = an[c]; if (c === st.i) return;
+    if (an) finishing.forEach((f) => { if (!f.calc) return; const st = finishing.find((y) => y.sec === f.sec && Number(y.r) > 0); if (!st || !(Number(f.r) > 0)) return; const step = (c) => { const y = finishing.find((z) => z.i === c); return y && isFx(y.w) ? fxRow(y.w, c) : an[c]; };
+      let c = f.i, n = 0; while (c !== st.i && step(c) && n++ < 60) c = step(c); if (c === st.i) return;
       // the sheet's own formula may still give the same weight, and then it stays a formula
-      const root = finishing.find((y) => y.i === c), val = (y) => Number(y.w || y.hint) || 0, want = Number(f.hint) || 0, got = root && Number(root.r) ? val(root) / Number(root.r) * Number(f.r) : null;
-      if (got === null || Math.abs(got - want) > 0.0015) f.w = String(f.hint || ""); });
+      const root = finishing.find((y) => y.i === c), val = (y) => Number(isFx(y.w) ? y.hint : y.w || y.hint) || 0, want = Number(f.hint) || 0, got = root && Number(root.r) ? val(root) / Number(root.r) * Number(f.r) : null;
+      if (c !== f.i && got !== null && Math.abs(got - want) <= 0.0015) return;
+      // put Excel's chain formula back (row above / its ratio x this ratio), so the weight still follows the first line
+      const up = finishing.filter((y) => y.i < f.i && y.sec === f.sec && Number(y.r) > 0).pop(); f.w = up ? fxOf(f.i, up.i) : String(f.hint || ""); });
     finishing.forEach((f) => { delete f.sec; delete f.calc; delete f.hint; });
     const h = ed.head, num = (t) => t === "" || t === null || isNaN(t) ? null : Number(t);
     return { animal: String(h.animal || "").trim(), details: h.details.trim(), substance: h.substance.trim(), shaved_wt: num(h.shaved_wt), pcs: num(h.pcs), wb_sqft: num(h.wb_sqft), finish_sqft: num(h.finish_sqft), process_note: h.process_note.trim(), remarks: h.remarks.trim(), crust, machinery, finishing };
