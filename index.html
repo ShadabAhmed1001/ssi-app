@@ -507,6 +507,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }, () => { clearTimeout(timer); store = null; srcLine(); showDetailKeep(); render(); });
     s.collection("audits").onSnapshot((snap) => { audits = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "chemicals") render(); }, () => {});
     s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); setTimeout(invSyncTally, 500); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
+    s.collection("pdflog").onSnapshot((snap) => { pdfLog = {}; snap.docs.forEach((d) => { pdfLog[d.id] = d.data(); }); }, () => {});
     s.collection("invset").onSnapshot((snap) => { const d = snap.docs.find((x) => x.id === "main"); invSet = d ? d.data() : {}; }, () => {});
   }
   function showDetailKeep() { if (formOpen) return; const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
@@ -881,7 +882,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 85, at: "2026-11-10T00:26:55+05:30", notes: "Invoice: tap-to-pick lists for Tally parties and stock items (the phone's own suggestion box often didn't show)" };
+  const APP_BUILD = { v: 86, at: "2026-11-10T13:44:36+05:30", notes: "Mark Dispatched checks the lot's process is saved and its PDF made; lot page shows Process saved / PDF" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1122,7 +1123,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   async function savePdf(doc, name, where) {
     const dlp = window.claude ? await window.claude.use("downloads") : null;
     if (!dlp) { where.textContent = "Saving files isn't available in this view."; return; }
-    try { await dlp.save({ filename: name, data: doc.output("arraybuffer") }); } catch (e) { if (e.code !== "declined") where.textContent = "The PDF could not be saved."; }
+    try { await dlp.save({ filename: name, data: doc.output("arraybuffer") }); lastPdfOk = Date.now(); } catch (e) { if (e.code !== "declined") where.textContent = "The PDF could not be saved."; }
   }
   function pdfHead(doc, title, sub) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text(plain(title), 12, 14);
@@ -1294,7 +1295,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     try { q(src, "SELECT id, lot_no, bal_date, dest, pcs, sqft, ref_key, note, status FROM lot_balance").forEach((r) => a.run("INSERT INTO lot_balance VALUES(?,?,?,?,?,?,?,?,?)", [r.id, String(r.lot_no || "").toUpperCase(), r.bal_date, r.dest, r.pcs, r.sqft, r.ref_key, r.note, r.status])); } catch (e) { /* not in this database yet */ }
     // Tally masters read by Excel (TallyLink "Refresh from Tally", from 09-Nov-2026)
     [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
-     ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"]].forEach(([t, cols, sel]) => {
+     ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
       a.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols})`); a.run(`DELETE FROM ${t}`);
       try { const n = sel.split(",").length; q(src, `SELECT ${sel} FROM ${t}`).forEach((r) => a.run(`INSERT INTO ${t} VALUES(${Array(n).fill("?").join(",")})`, Object.values(r))); } catch (e) { /* Excel has not read Tally yet */ }
     });
@@ -1489,6 +1490,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const YIELD_MIN = 0.85, YIELD_MAX = 1.10;
   const yieldOf = (l) => { const dp = deliveredPcs(l.lot_no), ds = deliveredSqft(l.lot_no), lp = Number(l.lot_pcs) || 0, ls = Number(l.lot_sqft) || 0; if (!(dp > 0 && ds > 0 && lp > 0 && ls > 0)) return null; const exp = ls * Math.min(1, dp / lp); return exp > 0 ? ds / exp : null; };
   // process page needed from FAT on (crusting starts there)
+  // Mark Dispatched: the lot's process must be saved (a version of its own) and its PDF made (Excel's Save Process or the app's PDF)
+  const lotPdfs = (lot) => { try { return rows("SELECT file, made_at FROM lot_pdfs WHERE lot_no=? ORDER BY made_at DESC", [lot]); } catch (e) { return null; } };
+  function processSaved(l) {
+    if (l.recKey) return true;
+    return entries.some((e) => e.status === "pending" && e.type === "recipe" && String(e.lot_no || "").toUpperCase() === l.lot_no.toUpperCase());
+  }
+  function pdfMade(l) {
+    if (pdfLog[l.lot_no]) return { ok: true, how: "made in the app " + fmtD(String(pdfLog[l.lot_no].at).slice(0, 10)) };
+    const p = lotPdfs(l.lot_no);
+    if (p === null) return { ok: null };            // Excel hasn't listed the PDFs yet: nothing to check against
+    return p.length ? { ok: true, how: p[0].file } : { ok: false };
+  }
   const NEED_PROC = ["FAT", "SETTING/NAILING/DRYING", "MOLISSA/STAKING", "MILLING/TOGGLING", "FINISHING", "QC / READY FOR DISPATCH", "DISPATCHED"];
   // same as Excel's IsTrackedLot (Settings: ChemTrackFromLot = 500 on 08-Nov-2026)
   const trackedLot = (k) => /^L\d+/.test(k) && Number(String(k).slice(1).match(/^\d+/)[0]) >= 500;
@@ -2984,6 +2997,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         const { dp, sh } = notDelivered(l);
         if (dp <= 0) { msg.innerHTML = esc(l.lot_no + " can't be marked Dispatched: no delivery is recorded. Record the delivery first.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-act="delivery">Record delivery</button></span>`; return; }
         if (sh > 0) { msg.innerHTML = esc(fmtN(sh, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs were not delivered (" + fmtN(dp, 0) + " delivered). Say where they went before marking " + l.lot_no + " Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="lot_balance:${esc(l.lot_no)}">Say where they went</button></span>`; return; }
+        if (trackedLot(l.lot_no) && !processSaved(l)) { msg.innerHTML = esc(l.lot_no + "'s process isn't saved. Save it (Excel: Save Process; app: Load process or Edit recipe → Save) before marking it Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Load process</button></span>`; return; }
+        if (trackedLot(l.lot_no)) { const pm = pdfMade(l);
+          if (pm.ok === false && warnOnce(f, "No process PDF found for " + l.lot_no + ". Make it first (Excel: Save Process with PDF; app: open its recipe → PDF).")) { msg.insertAdjacentHTML("beforeend", l.recKey ? `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn alt" type="button" data-go="lots" data-k="${esc(l.recKey)}">Open its recipe</button></span>` : ""); return; } }
         const y = yieldOf(l);
         if (y !== null && (y < YIELD_MIN || y > YIELD_MAX)) {
           const yr = ($("#fs-yield") || {}).value || "";
@@ -3194,6 +3210,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="hero-stage"><span>Stage now</span><b>${niceStage(l.stage)}</b>${l.inStage !== null ? `<em>${l.inStage} d in this stage${l.maxDays ? ` · max ${l.maxDays} d` : ""}</em>` : ""}</div>${track}
       <div class="hero-nums">${nums.map(([v, t]) => `<div><b>${v}</b><span>${t}</span></div>`).join("")}</div>
       <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}</div>
+      ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const sv = processSaved(l), pm = pdfMade(l); return `<p class="note" style="margin:0">${sv ? "✓ Process saved" : `<span class="bad">Process not saved</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">no PDF yet</span>` : ""}</p>`; })() : ""}
       ${l.chem_check ? `<p class="missing" style="margin:8px 0 0">${esc(l.chem_check.replace(/^\W+/, ""))}</p>` : ""}</div>`;
   }
   // Excel remarks are one long line of dated notes: show them one under the other
@@ -3326,8 +3343,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!dlc) return box();
     try { await dlc.save({ filename: "tracker-" + iso(today) + ".csv", data: text }); } catch (err) { if (err.code !== "declined") box(); }
   }
+  // a lot's process PDF made in the app is noted, so Mark Dispatched knows it exists
+  let lastPdfOk = 0, pdfLog = {};
   async function pdfAction(btn) {
     const where = $("#pdfmsg") || btn, old = btn.textContent; btn.disabled = true; btn.textContent = "Making PDF";
+    const t0 = Date.now(), kind = btn.dataset.pdf, rk = sel[tab];
+    setTimeout(async () => { try { if (/^recipe/.test(kind) && lastPdfOk >= t0 && store && canWrite) { const r = getRecipe(rk); if (r && r.lot_no) await store.doc("pdflog/" + r.lot_no).set({ lot_no: r.lot_no, at: new Date().toISOString(), kind, recipe: r.key, by: uid }); } } catch (e) {} }, 4000);
     try { await ({ recipe: () => pdfRecipe(sel[tab], where, "plain"), recipecost: () => pdfRecipe(sel[tab], where, "cost"), recipeproc: () => pdfRecipe(sel[tab], where, "process"), recipepage2: () => pdfRecipe(sel[tab], where, "page2"), countsheet: () => pdfCountSheet(where), table: () => pdfTable(where), reorder: () => pdfReorder(where) })[btn.dataset.pdf](); } catch (err) { where.textContent = "The PDF could not be made."; }
     btn.disabled = false; btn.textContent = old;
   }
