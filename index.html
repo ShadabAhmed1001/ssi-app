@@ -128,6 +128,8 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .kv dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
 .kv div > span { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .kv div > b { font-weight: 500; overflow-wrap: anywhere; }
+html, body { overscroll-behavior-y: none; }
+#list, .detail, .side, .msheet-in, .fsheet-in { overscroll-behavior: contain; }
 .drep { display: grid; gap: 10px; padding: 8px 2px 24px; }
 .drseg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .drseg button { flex: 1; padding: 9px 4px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
@@ -754,7 +756,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function openSide() {
     if (sideOpen) return; sideOpen = true; $("#side").innerHTML = sideHtml(); document.body.classList.add("sideopen"); $("#side").setAttribute("aria-hidden", "false"); $("#menubtn").setAttribute("aria-expanded", "true");
-    try { history.pushState({ ssi: navDepth(), side: 1 }, "", location.hash || "#" + tab); } catch (e) {}
+    histPush(navDepth(), location.hash || "#" + tab);
     $("#side").focus({ preventScroll: true }); const cur = $("#side [aria-current=true]"); if (cur) cur.scrollIntoView({ block: "nearest" });
   }
   function hideSide() { sideOpen = false; document.body.classList.remove("sideopen"); $("#side").setAttribute("aria-hidden", String(!WIDE.matches)); $("#menubtn").setAttribute("aria-expanded", "false"); }
@@ -883,7 +885,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 87, at: "2026-11-10T15:36:03+05:30", notes: "Process editor: Add a machine to the machinery list (picked from the MACHINERY sheet), with its rate" };
+  const APP_BUILD = { v: 88, at: "2026-11-10T15:54:36+05:30", notes: "Navigation: phone Back is always one step (never closes the app from a page); leaving the process editor keeps your changes as a draft; pull-down no longer reloads the app" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1751,10 +1753,25 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const startSource = (l) => { const p = data.processes.find((x) => x.key === l.procKey); if (!p || p.none || !p.saved) return null;
     return p.saved.filter((r) => data.lotBy[r.lot_no] && !data.liveRecipes[r.lot_no + "|" + r.process]).sort((a, b) => String(b.saved_at).localeCompare(String(a.saved_at)))[0] || null; };
   const showPct = (x) => x.p === null || x.p === undefined ? x.t || "" : String(+(x.p * 100).toFixed(8));
-  function openEditor(k, seed) {
+  // leaving the editor without saving keeps the changes on this phone; opening it again brings them back
+  const DRAFT = (k) => "ssi-draft:" + k;
+  const edData = (e) => JSON.stringify({ head: e.head, crust: e.crust, machinery: e.machinery, finishing: e.finishing });
+  let edBase = "";
+  function edKeepDraft() {
+    if (!ed) return false;
+    try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, ed })); return true; } catch (e) { return false; }
+  }
+  const edDropDraft = (k) => { try { localStorage.removeItem(DRAFT(k)); } catch (e) {} };
+  function openEditor(k, seed, fresh) {
+    openEditor0(k, seed);
+    edBase = edData(ed);
+    if (seed || fresh) return;
+    try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); if (d && d.ed && d.ed.key === k && d.ver === ed.ver0) { const keep = { movePage: ed.movePage }; ed = Object.assign(d.ed, keep, { restored: d.at }); } else if (d) edDropDraft(k); } catch (e) {}
+  }
+  function openEditor0(k, seed) {
     const r = seed || getRecipe(k);
     const pe = data.liveRecipes[r.lot_no + "|" + r.process], pw = pe && pe.status === "pending" ? pe : {};
-    ed = { key: k, lot: r.lot_no, process: r.process, base_lot: seed ? seed.from : pw.base_lot || "", base_process: seed ? seed.base_process || "" : pw.base_process || "", base_ver: seed ? seed.base_ver : pw.load_cur !== undefined ? pw.base_version : 0, load_cur: seed ? seed.load_cur : pw.load_cur,
+    ed = { key: k, ver0: r.version || 0, lot: r.lot_no, process: r.process, base_lot: seed ? seed.from : pw.base_lot || "", base_process: seed ? seed.base_process || "" : pw.base_process || "", base_ver: seed ? seed.base_ver : pw.load_cur !== undefined ? pw.base_version : 0, load_cur: seed ? seed.load_cur : pw.load_cur,
       head: { animal: r.animal || "", details: r.details || "", substance: r.substance || "", shaved_wt: r.shaved_wt ?? "", pcs: r.pcs ?? "", wb_sqft: r.wb_sqft ?? "", finish_sqft: r.finish_sqft ?? "", process_note: r.process_note || "", remarks: r.remarks || "" },
       crust: r.crust.map((x) => ({ r: x.r, c: showPct(x), d: x.d || "", f: x.f || "", nq: x.nq })),
       machinery: r.machinery.map((x) => ({ r: x.r, d: x.d, e: x.n })),
@@ -1772,6 +1789,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const inp = (sec, i, f, x, ph, cls, extra) => `<input id="e-${sec}-${i}-${f}" data-f="${f}" value="${v(x)}" placeholder="${ph}" aria-label="${ph}" autocomplete="off"${cls ? ` class="${cls}"` : ""}${extra || ""}>`;
     const btns = `<button type="button" class="x" data-edadd aria-label="Add a line below">+</button><button type="button" class="x" data-eddel aria-label="Remove this line">×</button>`;
     return `<form class="fm" id="fm-recipe" style="background:none;border:0;padding:0"><p class="sub" style="margin:0">${esc(ed.process)}${ed.base_lot ? " · loaded from " + esc(ed.base_lot) + (ed.load_cur !== undefined ? " v" + ed.base_ver : "") + ". Check it and save." : ""}</p>
+      ${ed.restored ? `<p class="okmsg" style="margin:0">Your unsaved changes from ${esc(new Date(ed.restored).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))} are back. <button type="button" class="link" data-eddiscard>Discard them</button></p>` : ""}
       ${ed.movePage ? `<p class="note" style="margin:0"><span class="wait">Saving also moves ${esc(ed.lot)} to ${esc(ed.movePage)}.</span></p>` : ""}
       ${data.lotBy[ed.lot] ? `<p class="calc" style="margin:0">${esc(h.details)}<br><span class="note">Shaved wt ${fmtN(h.shaved_wt, 2) || "-"} · pcs ${fmtN(h.pcs, 0) || "-"} · wet blue ${fmtN(h.wb_sqft, 2) || "-"} sqft · finish ${fmtN(h.finish_sqft, 2) || "-"} sqft · substance ${esc(h.substance) || "-"}.</span><br><span class="note">Excel takes these from the lot. <button type="button" class="link" data-editlot>Edit lot</button></span></p>
       <div class="two">` : `<label>Details<input id="eh-details" data-h="details" value="${v(h.details)}" autocomplete="off"></label>
@@ -1899,7 +1917,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         const diff = lotDiff(ed.lot, next); if (diff.error) { btn.disabled = false; msg.textContent = diff.error; return; }
         await writeLotEdit(ed.lot, diff, "Process loaded from " + (ed.base_lot || ed.lot)); }
       await writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body);
-      recNext = ed.lot + "|" + ed.process; formOpen = null; ed = null; flash = ""; refresh(); showDetail();
+      recNext = ed.lot + "|" + ed.process; edDropDraft(ed.key); formOpen = null; ed = null; flash = ""; refresh(); showDetail();
     } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
   // ---------------------------------------------------------------- lot editing
@@ -3203,7 +3221,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <h3>Movements</h3>${mv.length ? `<div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th class="r">Qty</th><th>Reason</th></tr></thead><tbody>${mv.map((m) =>
         `<tr class="${m.status === "VOID" ? "void" : ""}"><td class="nw">${fmtS(m.entry_date)}</td><td class="nw">${esc(String(m.entry_type).toLowerCase())}</td><td class="nw">${data.lotBy[m.ref] ? lotLink(m.ref) : esc(m.ref)}${m.section ? " " + esc(String(m.section).toLowerCase()) : ""}</td><td class="r num">${fmtN(m.qty, 3)}</td><td>${esc(m.reason)}${store && canWrite && m.status === "OK" && ["SAMPLING", "WASTAGE", "ISSUED OTHER", "CORRECTION"].includes(String(m.entry_type).toUpperCase()) && !entries.some((e) => e.type === "chem_void" && e.status === "pending" && Number(e.data.id) === m.id) ? ` <button class="mini" data-form="chem_void:${m.id}">Void</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No movements since the ledger started.</p>`}`;
   }
-  function closeOrStay() { const y = ed; formOpen = null; ed = null; flash = ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
+  function closeOrStay() { const kept = edKeepDraft(), y = ed; formOpen = null; ed = null; flash = kept ? "Not saved. Your changes are kept: tap Edit recipe to carry on." : ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
   // ---------------------------------------------------------------- page polish: summary card, folding sections, action menus, sheets
   const SECOPEN = {}; try { Object.assign(SECOPEN, JSON.parse(localStorage.getItem("ssi-secs") || "{}")); } catch (e) {}
   const secIsOpen = (k, def) => (k in SECOPEN ? SECOPEN[k] : def);
@@ -3284,7 +3302,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const TABS = ["today", "lots", "orders", "purchases", "chemicals", "entries", "health"];
   // tab changes are history entries too (with the page depth), so the phone's Back walks back through them
   let popping = false;
-  function go(t) { route(t); if (popping) return; try { history.pushState({ ssi: navDepth() }, "", "#" + t); hDepth = navDepth(); } catch (e) { try { location.hash = t; } catch (x) {} } }
+  function go(t) { route(t); if (popping) return; histPush(navDepth(), "#" + t); }
   function closeDetail() {
     if (formOpen === "recipe") { closeOrStay(); return; }
     formOpen = null; ed = null; flash = "";
@@ -3292,7 +3310,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     sel[tab] = null;
     if (!prev) { showDetail(); render(); return; }
     sel[prev.tab] = prev.k;
-    if (prev.tab === tab) { render(); showDetail(); } else go(prev.tab);
+    if (prev.tab === tab) { render(); showDetail(); } else route(prev.tab);
   }
   function route(force) {
     const h = typeof force === "string" ? force : (location.hash || "").replace("#", "");
@@ -3302,21 +3320,42 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   window.addEventListener("hashchange", route);
   // phone back button: each open page or form gets a history entry, so Back closes it like the in-app Back button
-  var hDepth = 0; let backWarn = 0;
+  // every history entry the app adds is remembered with its page depth and tab, so Back and in-app closes stay in step
+  let hist = [{ d: 0, h: location.hash || "#today" }], hIdx = 0, histSkip = 0;
+  try { history.replaceState({ ssi: 0, i: 0 }, "", location.href); } catch (e) {}
+  window.__ssiHist = () => ({ hist: hist.map((x) => x.d + x.h), hIdx, len: history.length, state: history.state });
+  function histPush(d, url) {
+    hist = hist.slice(0, hIdx + 1); hist.push({ d, h: url.includes("#") ? url.slice(url.indexOf("#")) : "#" + tab }); hIdx++;
+    try { history.pushState({ ssi: d, i: hIdx }, "", url); } catch (e) {}
+  }
   const inlineForm = () => formOpen && formOpen !== "form" && formOpen !== "recipe";
   const navDepth = () => stack.length + (sel[tab] ? 1 : 0) + (formOpen === "recipe" || inlineForm() ? 1 : 0);
-  function syncHist() { const d = navDepth(); if (d > hDepth) { try { history.pushState({ ssi: d }, "", location.href); hDepth = d; } catch (e) {} } }
-  function backOnce() {
-    if (formOpen === "recipe") {
-      if (Date.now() - backWarn > 4000) { backWarn = Date.now(); const m = $("#fm-msg"); if (m) { m.className = "fmsg bad"; m.textContent = "Not saved yet. Press Back again to leave without saving, or press Save recipe."; } return; }
-      backWarn = 0; closeOrStay(); return;
+  function syncHist() {
+    if (popping || sideOpen) return;
+    const d = navDepth(), cur = hist[hIdx] || { d: 0 };
+    if (d > cur.d) { histPush(d, "#" + tab); return; }
+    if (d < cur.d) {
+      // step back to the newest earlier entry that fits this page (same tab if there is one)
+      let j = -1;
+      for (let x = hIdx - 1; x >= 0; x--) if (hist[x].d <= d && hist[x].h === "#" + tab) { j = x; break; }
+      if (j < 0) for (let x = hIdx - 1; x >= 0; x--) if (hist[x].d <= d) { j = x; break; }
+      if (j < 0) { hist[hIdx] = { d, h: "#" + tab }; try { history.replaceState({ ssi: d, i: hIdx }, "", "#" + tab); } catch (e) {} return; }
+      const n = hIdx - j; hIdx = j; histSkip++;
+      try { history.go(-n); } catch (e) { histSkip--; }
+      if (hist[j].d !== d || hist[j].h !== "#" + tab) { hist[j] = { d, h: "#" + tab }; }
     }
+  }
+  function backOnce() {
+    if (formOpen === "recipe") { closeOrStay(); return; }
     if (inlineForm()) { formOpen = null; flash = ""; showDetail(); return; }
     closeDetail();
   }
   window.addEventListener("popstate", (e) => {
-    if (sideOpen) { hideSide(); return; }
-    const at = e.state && typeof e.state.ssi === "number" ? e.state.ssi : 0; hDepth = at; popping = true;
+    if (sideOpen) { hideSide(); hIdx = e.state && typeof e.state.i === "number" ? e.state.i : 0; return; }
+    const i = e.state && typeof e.state.i === "number" ? e.state.i : 0;
+    if (histSkip > 0) { histSkip--; hIdx = i; const want = hist[i] && hist[i].h; if (want && location.hash !== want && hist[i].d === navDepth()) { try { history.replaceState({ ssi: hist[i].d, i }, "", want); } catch (x) {} } return; }      // our own step back after an in-app close
+    hIdx = Math.min(i, hist.length - 1);
+    const at = hist[hIdx] ? hist[hIdx].d : (e.state && typeof e.state.ssi === "number" ? e.state.ssi : 0); popping = true;
     try {
       if (navDepth() > at) { for (let n = 0; n < 8 && navDepth() > at; n++) { const before = navDepth(); backOnce(); if (navDepth() === before) break; } }
       const h = (location.hash || "").replace("#", ""), want = TABS.includes(h) ? h : "today";
@@ -3330,11 +3369,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const b = e.target.closest("[data-side]"); if (!b) return;
     const [t, k] = b.dataset.side.split("|");
     if (k) filter[t] = k;
-    if (!sideOpen) { stack = []; pick = null; formOpen = null; if (t === tab) { render(); showDetail(); } else go(t); $("#list").scrollTop = 0; return; }
-    hideSide(); stack = []; pick = null; formOpen = null; if (t !== tab) sel[t] = sel[t] || null;
-    // the menu's history entry becomes this page, so Back works as after a tab tap
-    try { history.replaceState({ ssi: navDepth() }, "", "#" + t); } catch (x) {}
+    // a page picked from the menu opens its list (nothing selected), like a tab tap
+    if (!sideOpen) { stack = []; pick = null; formOpen = null; ed = null; sel[t] = null; if (t === tab) { render(); showDetail(); histPush(navDepth(), "#" + t); } else go(t); $("#list").scrollTop = 0; return; }
+    hideSide(); stack = []; pick = null; formOpen = null; ed = null; sel[t] = null;
     if (t === tab) { render(); showDetail(); } else route(t);
+    // the menu's history entry becomes this page (set before the queued history check runs), so Back returns to where the menu was opened
+    hist[hIdx] = { d: navDepth(), h: "#" + t }; try { history.replaceState({ ssi: navDepth(), i: hIdx }, "", "#" + t); } catch (x) {}
     $("#list").scrollTop = 0;
   });
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (sideOpen) { e.stopPropagation(); closeSide(); return; } const m = $("#detail .msheet:not([hidden])"); if (m) { e.stopPropagation(); m.hidden = true; } }, true);
@@ -3447,6 +3487,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const act = e.target.closest("[data-act]");
     if (act) { flash = ""; delEdit = null; formOpen = act.dataset.act; showDetail(); $("#detail").scrollTop = 0; return; }
     const dle = e.target.closest("[data-deledit]"); if (dle) { flash = ""; delEdit = dle.dataset.deledit; formOpen = "delivery"; showDetail(); $("#detail").scrollTop = 0; return; }
+    if (e.target.closest("[data-eddiscard]")) { const k = ed.key; edDropDraft(k); openEditor(k, null, true); showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-formclose]")) { if (formOpen === "recipe") closeOrStay(); else { formOpen = null; showDetail(); } return; }
     if (e.target.closest("[data-fillall]")) { const f = e.target.closest("form"); $("#fv-pcs").value = f.dataset.pcs; $("#fv-sqft").value = f.dataset.sqft; return; }
     if (e.target.closest("[data-markdisp]")) { presetStage = "Dispatched"; flash = ""; formOpen = "stage"; showDetail(); presetStage = ""; $("#detail").scrollTop = 0; return; }
@@ -3460,7 +3501,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       writeEntry(store.collection("entries").doc(), { type: "chem_undo", lot_no: lot, data: { lot, what }, status: "pending", entered_by: uid, created_at: new Date().toISOString() }).then(() => { flash = "Undo saved. It is waiting for Excel."; refresh(); showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); }, () => { cu.disabled = false; });
       return;
     }
-    if (e.target.closest("[data-editlot]")) { const lot = ed.lot; ed = null; stack.push({ tab, k: sel[tab] }); sel.lots = lot; formOpen = "lot"; flash = ""; showDetail(); $("#detail").scrollTop = 0; return; }
+    if (e.target.closest("[data-editlot]")) { const lot = ed.lot; edKeepDraft(); ed = null; stack.push({ tab, k: sel[tab] }); sel.lots = lot; formOpen = "lot"; flash = ""; showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-recnextdone]")) { recNext = null; showDetail(); return; }
     if (e.target.closest("[data-edrec]")) { flash = ""; openEditor(sel[tab]); showDetail(); $("#detail").scrollTop = 0; return; }
     const lv = e.target.closest("[data-loadver]");
