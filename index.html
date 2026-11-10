@@ -294,6 +294,7 @@ main.solo .detail { display: none; }
 .er .ewt { font-size: 13px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .er.m2 { grid-template-columns: minmax(0, 1fr) 70px; }
 .er.m2 .erate { grid-column: 1 / -1; }
+.er.m2.m3 { grid-template-columns: minmax(0, 1fr) 70px 34px; }
 .er.fn { grid-template-columns: 44px minmax(0, 1fr) 62px 24px 24px; }
 .er input, .er textarea { font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px; width: 100%; box-sizing: border-box; min-width: 0; font-family: inherit; }
 .er input[data-f="d"] { font-size: 12px; padding: 6px 4px; }
@@ -882,7 +883,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 86, at: "2026-11-10T13:44:36+05:30", notes: "Mark Dispatched checks the lot's process is saved and its PDF made; lot page shows Process saved / PDF" };
+  const APP_BUILD = { v: 87, at: "2026-11-10T15:36:03+05:30", notes: "Process editor: Add a machine to the machinery list (picked from the MACHINERY sheet), with its rate" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1782,7 +1783,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <h3>Crusting <span id="ecost-c" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><p class="note" style="margin:4px 0 0">Each section is one drum run: its chemicals go in together, with one time on its first line.</p><div class="eh" style="grid-template-columns:42px minmax(0,1fr) 40px 46px 48px"><span>%</span><span>Chemical</span><span style="text-align:right">Weight</span><span>Time</span></div>
       ${(finNotesNorm(), crustTimeNorm(), "")}${ed.crust.map((x, i) => `${!i || x.sec !== ed.crust[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.crust.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-cjoin="${i}">Join with section above</button>` : ""}</span></div>` : ""}<div class="er cr${x.c && pctCell(x.c) === null ? " tx" : ""}" data-sec="crust" data-i="${i}">${inp("c", i, "c", x.c, "%")}${inp("c", i, "d", x.d, "Chemical or step", "", ' data-ac="chem" list="ed-chems"')}<span class="ewt" id="ewt-${i}">${crustWt(x.c)}</span>${String(x.f || "").trim() || (!i || ed.crust[i - 1].sec !== x.sec) && !ed.crust.some((y) => y.sec === x.sec && String(y.f || "").trim()) ? inp("c", i, "f", x.f, "Time") : "<span></span>"}${btns}<span class="erate" id="erate-c-${i}">${rateLine(x.d, crustWt(x.c), !!crustWt(x.c))}</span><button type="button" class="link slink" data-csplit="${i}">New section below</button></div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="crust">Add a line</button>
-      <h3>Machinery <span id="ecost-m" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3>${ed.machinery.map((x, i) => `<div class="er m2" data-sec="machinery" data-i="${i}"><span id="e-m-${i}-d" data-name="${esc(x.d)}" style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>${inp("m", i, "e", x.e, "Rounds")}<span class="erate" id="erate-m-${i}"></span></div>`).join("")}
+      <h3>Machinery <span id="ecost-m" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3>${ed.machinery.map((x, i) => `<div class="er m2${x.isNew ? " m3" : ""}" data-sec="machinery" data-i="${i}">${x.isNew ? inp("m", i, "d", x.d, "Machine", "", ' list="ed-machs"') : `<span id="e-m-${i}-d" data-name="${esc(x.d)}" style="min-width:0;overflow-wrap:anywhere">${esc(x.d)}</span>`}${inp("m", i, "e", x.e, "Rounds")}${x.isNew ? `<button type="button" class="x" data-eddel aria-label="Remove this machine">×</button>` : ""}<span class="erate" id="erate-m-${i}"></span></div>`).join("")}
+      <button type="button" class="btn alt" data-edadd="end" data-sec="machinery">Add a machine</button>
+      <datalist id="ed-machs">${Object.values(data.mach).map((m) => `<option value="${esc(m.name)}">`).join("")}</datalist>
       <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:44px minmax(0,1fr) 62px 48px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
       <p class="note" style="margin:4px 0 0">Each section is one mix. Change any weight and the rest of its section follows the ratios.</p>
       ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
@@ -1826,7 +1829,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function edRatesRefresh() {
     const f = $("#fm-recipe"); if (!f) return; const tot = { c: 0, f: 0, m: 0 }, animal = ($("#eh-animal") || {}).value || "", pcs = ($("#eh-pcs") || {}).value || (data.lotBy[ed && ed.lot] || {}).lot_pcs || 0;
     f.querySelectorAll(".erate").forEach((el) => { const [, sec, i] = el.id.split("-");
-      if (sec === "m") { const nm = ($(`#e-m-${i}-d`) || {}).dataset.name || "", rd = ($(`#e-m-${i}-e`) || {}).value || ""; el.innerHTML = String(rd).trim() ? machLine(nm, rd, animal, pcs) : ""; tot.m += machCalc(nm, rd, animal, pcs).amt; return; }
+      if (sec === "m") { const ne = $(`#e-m-${i}-d`) || {}, nm = (ne.dataset && ne.dataset.name) || ne.value || "", rd = ($(`#e-m-${i}-e`) || {}).value || ""; el.innerHTML = String(rd).trim() ? machLine(nm, rd, animal, pcs) : ""; tot.m += machCalc(nm, rd, animal, pcs).amt; return; }
       const d = ($(`#e-${sec}-${i}-d`) || {}).value || "";
       let w = ""; if (sec === "c") { w = crustWt(($(`#e-c-${i}-c`) || {}).value || ""); } else { const e = $(`#e-f-${i}-e`); w = e ? e.value || e.placeholder : ""; }
       const di = $(`#e-${sec}-${i}-d`), cut = di && d && di.scrollWidth > di.clientWidth + 1;
@@ -1843,7 +1846,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const row = { r: x.r, p, t: p === null ? x.c.trim() : "", d: x.d.trim(), q: p !== null && !x.nq ? +(p * shaved).toFixed(4) : null, f: x.f.trim() };
       if (x.nq) row.nq = 1; return row;
     });
-    const machinery = ed.machinery.map((x) => ({ r: x.r, d: x.d, n: String(x.e ?? "").trim() }));
+    // machines added in the app go on the next free rows of the machinery block (rows 170-189)
+    const machinery = placeRows(ed.machinery.filter((x) => !x.isNew || String(x.d || "").trim()), "machinery").map((x) => ({ r: x.r, d: String(x.d || "").trim(), n: String(x.e ?? "").trim() }));
+    { const seen = {}; for (const m of machinery) { const u = m.d.toUpperCase(); if (seen[u] && m.n) throw new Error(m.d + " is in the machinery list twice. Put all its rounds on one line."); if (m.n) seen[u] = 1; } }
     const finishing = placeFin(ed.finishing.filter((x) => !blank(x))).map((x) => ({ i: x.r, r: x.c.trim(), d: x.d.trim(), w: String(x.calc ? "" : x.e).trim(), n: x.f.trim(), sec: x.sec, calc: x.calc, hint: x.hint }));
     // a formula on this sheet that doesn't lead back to the section's first row can't follow it, so that weight is written
     const an = data.finAnchor[String(ed.process).toUpperCase()];
@@ -3500,7 +3505,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const typed = [...d.querySelectorAll("input[id],select[id],textarea[id]")].filter((i) => !i.closest(".er")).map((i) => [i.id, i.value]);
       if (del) { list.splice(Number(row.dataset.i), 1); if (sec === "finishing") finNorm(); }
       else if (sec === "finishing") { const at = row ? Number(row.dataset.i) : -1; list.splice(row ? at + 1 : list.length, 0, row ? { c: "", d: "", e: "", f: "", sec: list[at].sec, calc: true, hint: "" } : { c: "", d: "", e: "", f: "", sec: Math.max(0, ...list.map((x) => x.sec || 0)) + 1 }); }
-      else list.splice(row ? Number(row.dataset.i) + 1 : list.length, 0, sec === "crust" ? { c: "", d: "", f: "", sec: row ? list[Number(row.dataset.i)].sec : (list.length ? list[list.length - 1].sec : 1) } : sec === "lines" ? { d: "", q: "", r: "", h: "" } : sec === "dyes" ? { d: "", c: "", m: "", a: "", b: "", r: "" } : { c: "", d: "", e: "", f: "" });
+      else list.splice(row ? Number(row.dataset.i) + 1 : list.length, 0, sec === "crust" ? { c: "", d: "", f: "", sec: row ? list[Number(row.dataset.i)].sec : (list.length ? list[list.length - 1].sec : 1) } : sec === "lines" ? { d: "", q: "", r: "", h: "" } : sec === "dyes" ? { d: "", c: "", m: "", a: "", b: "", r: "" } : sec === "machinery" ? { d: "", e: "", isNew: true } : { c: "", d: "", e: "", f: "" });
       showDetail(); typed.forEach(([id, val]) => { const i = document.getElementById(id); if (i) i.value = val; }); d.scrollTop = y; return;
     }
     if (e.target.closest("[data-copy]")) {
