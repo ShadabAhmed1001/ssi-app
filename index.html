@@ -885,7 +885,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 89, at: "2026-11-10T16:28:38+05:30", notes: "Joining finishing sections: joined lines keep Excel's chain formula, so weights follow the first line after saving" };
+  const APP_BUILD = { v: 90, at: "2026-11-10T21:57:06+05:30", notes: "Mark Dispatched asks about the process PDF until Excel sends its PDF list" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3033,7 +3033,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (sh > 0) { msg.innerHTML = esc(fmtN(sh, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs were not delivered (" + fmtN(dp, 0) + " delivered). Say where they went before marking " + l.lot_no + " Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="lot_balance:${esc(l.lot_no)}">Say where they went</button></span>`; return; }
         if (trackedLot(l.lot_no) && !processSaved(l)) { msg.innerHTML = esc(l.lot_no + "'s process isn't saved. Save it (Excel: Save Process; app: Load process or Edit recipe → Save) before marking it Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Load process</button></span>`; return; }
         if (trackedLot(l.lot_no)) { const pm = pdfMade(l);
-          if (pm.ok === false && warnOnce(f, "No process PDF found for " + l.lot_no + ". Make it first (Excel: Save Process with PDF; app: open its recipe → PDF).")) { msg.insertAdjacentHTML("beforeend", l.recKey ? `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn alt" type="button" data-go="lots" data-k="${esc(l.recKey)}">Open its recipe</button></span>` : ""); return; } }
+          if ((pm.ok === false && warnOnce(f, "No process PDF found for " + l.lot_no + ". Make it first (Excel: Save Process with PDF; app: open its recipe → PDF). Save again to dispatch without it.")) || (pm.ok === null && warnOnce(f, "Was " + l.lot_no + "'s process PDF made? Excel hasn't sent its PDF list yet, so the app can't check. If not, make it first (app: open its recipe → PDF). Save again if it's done."))) { msg.insertAdjacentHTML("beforeend", l.recKey ? `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn alt" type="button" data-go="lots" data-k="${esc(l.recKey)}">Open its recipe</button></span>` : ""); return; } }
         const y = yieldOf(l);
         if (y !== null && (y < YIELD_MIN || y > YIELD_MAX)) {
           const yr = ($("#fs-yield") || {}).value || "";
