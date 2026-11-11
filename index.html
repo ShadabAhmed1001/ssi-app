@@ -927,7 +927,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 91, at: "2026-11-10T23:19:25+05:30", notes: "New menu: Today, Production, Orders, Dispatches, Invoices, Processes, Chemicals, Purchases, Settings, About. Dispatch PDF check now works in the app alone." };
+  const APP_BUILD = { v: 92, at: "2026-11-11T07:36:22+05:30", notes: "Skins entries on a lot can be edited: pcs, sqft and which purchase they came from" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1534,12 +1534,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!r.length && !pm.length) return `<p class="note">No skins recorded for this lot.</p>`;
     let tp = 0, ts = 0;
     const pend = pm.map((m) => { const inn = m.to === lot, sgn = inn ? 1 : -1, P = data.purchases.find((x) => x.key === (inn ? m.from : m.to)) || {}; tp += sgn * m.pcs; ts += sgn * m.sqft;
-      return `<tr class="pendrow"><td class="nw">${fmtS(m.date)}</td><td>${inn ? "from " + (/^P/.test(m.from) ? purLink(m.from) : lotLink(m.from)) : "to " + (/^P/.test(m.to) ? purLink(m.to) : lotLink(m.to))} <span class="wait">waiting for Excel</span></td>
+      return `<tr class="pendrow"><td class="nw">${fmtS(m.date)}</td><td>${inn ? "from " + (/^P/.test(m.from) ? purLink(m.from) : lotLink(m.from)) : "to " + (/^P/.test(m.to) ? purLink(m.to) : lotLink(m.to))} <span class="wait">waiting for Excel</span>${inn && m.t === "skins" && store && canWrite ? ` <button class="mini" data-form="skins_edit:${esc(lot)}|E:${esc(m.id)}">Edit</button>` : ""}</td>
         <td>${esc(P.supplier || "")}</td><td>${esc([P.animal, P.grade].filter(Boolean).join(" - "))}</td><td class="r num">${fmtN(sgn * m.pcs, 0)}</td><td class="r num">${fmtN(sgn * m.sqft, 2)}</td></tr>`; }).join("");
     const body = r.map((e) => {
       const inn = e.to_key === lot, sgn = inn ? 1 : -1, v = e.status === "VOID";
       if (!v) { tp += sgn * e.pcs; ts += sgn * e.sqft; }
-      return `<tr class="${v ? "void" : ""}"><td class="nw">${fmtS(e.entry_date)}</td><td>${inn ? "from " + purLink(e.from_key) : "to " + lotLink(e.to_key)}</td>
+      const canEd = inn && !v && store && canWrite && ["ALLOCATION", "TRANSFER"].includes(String(e.entry_type || "").toUpperCase()) && !entries.some((x) => x.status === "pending" && x.type === "skins_back" && Number(x.data.id) === e.id);
+      return `<tr class="${v ? "void" : ""}"><td class="nw">${fmtS(e.entry_date)}</td><td>${inn ? "from " + purLink(e.from_key) : "to " + lotLink(e.to_key)}${canEd ? ` <button class="mini" data-form="skins_edit:${esc(lot)}|${e.id}">Edit</button>` : ""}</td>
         <td>${esc(e.supplier || "")}</td><td>${esc([e.animal, e.grade].filter(Boolean).join(" - "))}</td>
         <td class="r num">${fmtN(sgn * e.pcs, 0)}</td><td class="r num">${fmtN(sgn * e.sqft, 2)}</td></tr>`;
     }).join("");
@@ -2131,6 +2132,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <label>To lot<input id="fk-to" list="lotlist" autocomplete="off" value="${toLot ? esc(a) : ""}"></label>${dl("lotlist", openLots().map((l) => l.lot_no))}
       <div class="two">${numF("fk-pcs", "Pcs")}${numF("fk-sqft", "Sqft")}${dateF("fk-date", "Date", today0())}</div>${txtF("fk-note", "Note")}
       <p class="note" style="margin:0">Excel adds these to the lot's pcs and sqft, and takes them off the purchase.</p>${formEnd}</form>`; } },
+    skins_edit: { title: "Edit skins entry", html: (a) => { const c = skinsEdCur(a); if (c.err) return `<p class="empty">${esc(c.err)}</p>`;
+      const isLot = /^L/i.test(c.from), q = (id, lb, val) => `<label>${lb}<input id="${id}" type="number" step="any" min="0" inputmode="decimal" value="${esc(val)}"></label>`;
+      return `<form class="fm" id="fm-skins_edit" data-a="${esc(a)}"><h3>${esc(c.lot)}: skins from ${esc(c.from)}</h3>
+      <p class="note" style="margin:0">Now ${fmtN(c.pcs, 0)} pcs, ${fmtN(c.sqft, 2)} sqft, given ${fmtS(c.date)}.${c.pend ? " This entry is still waiting for Excel, so it is changed directly." : ""}</p>
+      ${isLot ? `<p class="note" style="margin:0">These came from lot ${esc(c.from)}. Only the pcs and sqft can be lowered here (the rest go back to ${esc(c.from)}).</p><input type="hidden" id="fe2-from" value="${esc(c.from)}">`
+        : `<label>Came from<select id="fe2-from" data-pinfo="fe2-info">${purchOpts(c.from)}</select></label><p class="note" id="fe2-info" style="margin:0">${esc(purchInfo(c.from))}</p>`}
+      <div class="two">${q("fe2-pcs", "Pcs", c.pcs)}${q("fe2-sqft", "Sqft", c.sqft)}</div>${txtF("fe2-note", "Reason for the change")}
+      <p class="note" style="margin:0">Excel makes the change with its own Correct / Give / Return steps, so the lot's pcs and sqft, the purchase stock and LOT SOURCES all follow. Setting both to 0 removes the entry.</p>${formEnd}</form>`; } },
     purchase_close: { title: "Close purchase", html: (a) => { const p = data.purchases.find((x) => x.key === a); return `<form class="fm" id="fm-purchase_close" data-key="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">${p.closed_on ? "Re-open this purchase?" : `${fmtN(p.leftP, 0)} pcs and ${fmtN(p.leftS, 2)} sqft are left. Once closed, it isn't offered when giving skins.`}</p>${formEnd}</form>`; } },
     purchase_delete: { title: "Delete purchase", html: (a) => `<form class="fm" id="fm-purchase_delete" data-key="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">Nothing was given out of it. Excel cancels its receipt and removes its tracker row.</p>${formEnd}</form>` },
     purchase_split: { title: "Split purchase", html: (a) => { const p = data.purchases.find((x) => x.key === a), n = ' type="number" step="any" min="0" inputmode="decimal"';
@@ -2815,6 +2824,51 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (formOpen !== "recipe" && !ed) { flash = done; showDetail(); $("#detail").scrollTop = 0; setTimeout(() => { flash = ""; showDetailKeep(); }, 7000); }
   }
   const dbDyes = (p) => { const r = rows("SELECT rows FROM process_dyes WHERE UPPER(process)=UPPER(?)", [p])[0]; return r ? JSON.parse(r.rows) : []; };
+  // ---------------------------------------------------------------- edit a skins entry (lot <- purchase / lot)
+  // the change goes to Excel as its existing steps, in order: Return (lowers the entry) and Give (adds from a purchase),
+  // so the tracker, purchase stock and LOT SOURCES stay in step
+  function skinsEdCur(a) {
+    const [lot, id] = String(a).split("|");
+    if (/^E:/.test(id)) { const e = entries.find((x) => x.id === id.slice(2) && x.status === "pending" && x.type === "skins"); if (!e) return { err: "That entry was imported or cancelled. Open the lot again." };
+      return { lot, pend: e, from: String(e.data.from).toUpperCase(), pcs: Number(e.data.pcs) || 0, sqft: Number(e.data.sqft) || 0, date: e.data.date }; }
+    const r = rows("SELECT * FROM purchase_ledger WHERE id=?", [Number(id)])[0];
+    if (!r || String(r.status).toUpperCase() !== "OK") return { err: "That entry was cancelled in Excel. Update from Excel and look again." };
+    if (entries.some((e) => e.status === "pending" && e.type === "skins_back" && Number(e.data.id) === r.id)) return { err: "A change to this entry is already waiting for Excel. Cancel it under Phone entries, or wait for the import, then edit again." };
+    const built = String(one("SELECT value FROM meta WHERE key='built_at'") || "");
+    if (entries.some((e) => e.type === "skins_back" && e.status === "imported" && Number(e.data.id) === r.id && String(e.created_at).slice(0, 19) > built)) return { err: "This entry was changed in Excel after the app's data was made. Update from Excel, then edit again." };
+    return { lot, r, from: String(r.from_key).toUpperCase(), pcs: Number(r.pcs) || 0, sqft: Number(r.sqft) || 0, date: String(r.entry_date || "").slice(0, 10) };
+  }
+  async function saveSkinsEdit(f, msg, btn) {
+    const bad = (t) => { msg.textContent = t; }, c = skinsEdCur(f.dataset.a); if (c.err) return bad(c.err);
+    const from = need("#fe2-from").toUpperCase(), pcs = +numOf("#fe2-pcs").toFixed(4), sqft = +numOf("#fe2-sqft").toFixed(2), note = need("#fe2-note");
+    if (pcs < 0 || sqft < 0) return bad("Pcs and sqft can't be negative.");
+    if (Math.abs(pcs - c.pcs) < 0.0001 && Math.abs(sqft - c.sqft) < 0.005 && from === c.from) return bad("Nothing has changed.");
+    if (!note) return bad("Type the reason for the change.");
+    const p = data.purchases.find((x) => x.key === from), same = from === c.from;
+    // stock the purchase can give: what's left, plus this entry's own skins if they came from it
+    const roomP = p ? p.leftP + (same ? c.pcs : 0) : 0, roomS = p ? p.leftS + (same ? c.sqft : 0) : 0;
+    if (/^P/.test(from) && (pcs > roomP + 0.0001 || sqft > roomS + 1)) return bad(from + " can give only " + fmtN(roomP, 0) + " pcs and " + fmtN(roomS, 2) + " sqft here.");
+    const isLot = /^L/i.test(c.from), dp = +(pcs - c.pcs).toFixed(4), dS = +(sqft - c.sqft).toFixed(2);
+    if (isLot && (dp > 0 || dS > 0)) return bad("Skins from another lot can only be lowered here. To add more, move them from " + c.from + " with Move skins.");
+    btn.disabled = true; msg.textContent = "";
+    try {
+      if (c.pend) {
+        await store.doc("entries/" + c.pend.id).update({ data: Object.assign({}, c.pend.data, { from, pcs, sqft, note: note }, fromEntry(from)) });
+        return closeForm("Entry changed. It is waiting for Excel.");
+      }
+      const r = c.r, back = (bp, bs) => ({ type: "skins_back", lot_no: r.to_key, data: { id: r.id, from: r.from_key, to: r.to_key, pcs: bp, sqft: bs, was_pcs: r.pcs, was_sqft: r.sqft, note: "Edit: " + note, edit_of: r.id } });
+      const give = (gp, gs) => ({ type: "skins", lot_no: c.lot, data: Object.assign({ from, to: c.lot, pcs: gp, sqft: gs, date: c.date || today0(), note: "Edit: " + note, edit_of: r.id }, fromEntry(from)) });
+      let list;
+      if (same && dp <= 0 && dS <= 0) list = [back(-dp, -dS)];            // lowered: Excel corrects the entry (or removes it at 0)
+      else if (same && dp >= 0 && dS >= 0) list = [give(dp, dS)];         // raised: the extra comes from the same purchase
+      else if (same) list = [back(c.pcs, c.sqft), give(pcs, sqft)];       // pcs up, sqft down (or the other way): put it back, then give the right figures
+      else list = (pcs || sqft ? [give(pcs, sqft)] : []).concat([back(c.pcs, c.sqft)]);   // other purchase: give from it first, then send these back
+      const t0 = Date.now();
+      if (list.length > 1) list.forEach((x) => { x.data.edit_grp = "G" + t0; });
+      for (let i = 0; i < list.length; i++) await writeEntry(store.collection("entries").doc(), Object.assign(list[i], { status: "pending", entered_by: uid, created_at: new Date(t0 + i * 10).toISOString() }));
+      closeForm(list.length > 1 ? "Change saved as " + list.length + " steps. They are waiting for Excel." : "Change saved. It is waiting for Excel.");
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
   async function saveNew(body, done, msg, btn) {
     btn.disabled = true; msg.textContent = "";
     try {
@@ -2927,6 +2981,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       body.lot_no = "PO " + data.orders.find((x) => x.id === id).po_no;
       btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("Order item saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
     }
+    if (f.id === "fm-skins_edit") return saveSkinsEdit(f, msg, btn);
     if (f.id === "fm-skins_back") {
       const r = backRows(f.dataset.key).find((x) => String(x.id) === $("#fb-entry").value), pcs = numOf("#fb-pcs"), sqft = numOf("#fb-sqft");
       if (!r) return bad("Pick an entry."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft to return.");
@@ -3236,6 +3291,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (c) {
       if (!c.dataset.sure) { c.dataset.sure = "1"; c.textContent = "Tap again to cancel"; const dep = dependents(entries.find((x) => x.id === c.dataset.cancel)), row = c.parentElement; if (dep.length && row) { const w = document.createElement("p"); w.className = "missing"; w.style.cssText = "margin:6px 0 0;grid-column:1/-1"; w.textContent = "These entries were saved after this one and rely on it: " + dep.map(entryLine).join("; ") + ". If you cancel this, they will probably stop at import, so cancel them too."; row.appendChild(w); } return true; }
       c.disabled = true; await store.doc("entries/" + c.dataset.cancel).update({ status: "cancelled" });
+      // the steps of one skins edit go together: cancelling one cancels the others
+      { const e0 = entries.find((x) => x.id === c.dataset.cancel), g = e0 && e0.data && e0.data.edit_grp; if (g) for (const x of entries.filter((y) => y.id !== e0.id && y.status === "pending" && y.data && y.data.edit_grp === g)) await store.doc("entries/" + x.id).update({ status: "cancelled" }); }
       return true;
     }
     const l = b.closest("[data-lot]");
