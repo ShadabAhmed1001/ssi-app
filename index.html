@@ -100,6 +100,13 @@ body.sideopen .side { transform: none; }
 .er.chg input, .er.chg textarea, label.chg input, label.chg textarea, label.chg select { border-color: var(--warn); background: var(--warn-soft); }
 .er.chg { box-shadow: -4px 0 0 var(--warn); border-radius: 2px; }
 .chgkey { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--warn); background: var(--warn-soft); vertical-align: -1px; }
+.calcwrap { display: grid; gap: 10px; }
+.calcwrap .tbl input.cin { width: 100%; min-width: 0; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.calcwrap input.w5 { max-width: 70px; text-align: right; } .calcwrap input.w6 { max-width: 90px; text-align: right; } .calcwrap input.w7 { max-width: 120px; text-align: right; }
+.calcwrap .ctbl td, .calcwrap .ctbl th { padding: 3px 4px; vertical-align: middle; }
+.calcwrap .calchead label input, .calcwrap .calchead label select { width: 100%; }
+.calch { margin: 8px 0 0; font-size: 1rem; } .calch .num { color: var(--muted); font-weight: 500; }
+.btn.sm { padding: 6px 10px; font-size: .9rem; justify-self: start; }
 .draftbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 10px; background: var(--warn-soft); margin: 6px 0; }
 .draftbar span { flex: 1 1 100%; }
 .setlist { grid-template-columns: minmax(0, 1fr); }
@@ -774,17 +781,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     health: [],
     settings: [],
     about: [],
+    calc: [],
     entries: [["pending", "Waiting for Excel"], ["imported", "Imported"], ["cancelled", "Cancelled"], ["all", "All"]],
   };
   function chips() {
     const f = !CHIPS[tab].length ? "" : filter[tab] || CHIPS[tab][0][0];
     const p = tab === "lots" && pick ? `<button class="chip pick" data-clear="1" aria-label="Remove filter ${esc(pick.value)}">${esc(pick.value)} ×</button>` : "";
     $("#chips").innerHTML = p;
-    { const g = menuGroup(), it = g && g.items && g.items.find(([k]) => k === menuKey()); $("#viewname").textContent = it ? (["disp", "inv", "proc", "settings"].includes(g.id) ? g.label + " · " : "") + it[1] : g ? g.label : SIDE_T[tab] || ""; }
+    { const g = menuGroup(), it = g && g.items && g.items.find(([k]) => k === menuKey()); $("#viewname").textContent = it ? (["disp", "inv", "proc", "settings"].includes(g.id) && it[1] !== "Costing calculator" ? g.label + " · " : "") + it[1] : g ? g.label : SIDE_T[tab] || ""; }
     if (sideOpen || WIDE.matches) $("#side").innerHTML = sideHtml();
   }
   // ---------------------------------------------------------------- sidebar: every tab and its views
-  const SIDE_T = { today: "Today", lots: "Production", orders: "Orders", purchases: "Purchases", chemicals: "Chemicals", entries: "Phone entries", health: "Health check", settings: "Settings", about: "About" };
+  const SIDE_T = { today: "Today", lots: "Production", orders: "Orders", purchases: "Purchases", chemicals: "Chemicals", entries: "Phone entries", health: "Health check", settings: "Settings", calc: "Costing calculator", about: "About" };
   const SIDE_ICON = { entries: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>', health: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>' };
   let sideOpen = false;
   const WIDE = window.matchMedia("(min-width: 1100px)");
@@ -804,7 +812,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "drep"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
     { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
     { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
@@ -847,11 +855,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function render() {
     chips();
-    $("main").classList.toggle("solo", tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && filter.lots === "table") || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
+    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && filter.lots === "table") || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
     if (tab === "about") { $("#list").innerHTML = aboutView(); return; }
+    if (tab === "calc") { $("#list").innerHTML = calcView(); calcTotals(); return; }
     const ws = words($("#q").value);
     if (tab === "today") { $("#list").innerHTML = ws.length ? searchAll(ws) : todayView(); return; }
     if (tab === "lots" && filter.lots === "drafts") {
@@ -967,7 +977,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 102, at: "2026-11-11T23:47:14+05:30", notes: "Invoice PDF in Tally's Tax Invoice layout from any invoice; GST rounded up to the paisa like Tally; invoice address, IEC, e-mail and declaration in Tally names" };
+  const APP_BUILD = { v: 103, at: "2026-11-12T00:07:24+05:30", notes: "Costing calculator under Processes: start from any saved process or blank, change anything, make a costing PDF; nothing is saved and it clears when you leave" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1125,6 +1135,111 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <p class="note" style="margin:0">${r.shaved_wt ? "Crusting ₹" + fmtN(Math.ceil(c.crust / r.shaved_wt), 0) + " per kg. " : ""}${r.pcs ? "Machinery ₹" + fmtN(Math.ceil(c.mach / r.pcs), 0) + " per pc. " : ""}On ${fmtN(c.inSq, 0)} sqft in, ${fmtN(c.outSq, 0)} sqft finished.${r.animal ? "" : " No animal set, so machinery is ₹0."}</p>
       ${c.profit !== null ? `<p class="${c.profit < 0 ? "late" : ""}" style="margin:0">Profit ₹${fmtN(c.profit, 0)} at ₹${fmtN(c.sell, 2)} / sqft</p>` : ""}
       ${c.missing.length ? `<p class="note" style="margin:0"><span class="soon">No price for:</span> ${esc(c.missing.join(", "))}</p>` : ""}</div>`;
+  }
+  // ---------------------------------------------------------------- costing calculator: a scratch copy, never saved, gone when you leave
+  let calc = null;
+  const cNum = (x) => { const n = parseFloat(String(x ?? "").replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+  const cRate = (n) => data.rate[String(n || "").trim().toUpperCase()] || 0;
+  const cCol = (a) => ({ COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" })[String(a || "").trim().toUpperCase()];
+  const cMachRate = (d, a) => { const rw = data.mach[String(d || "").trim().toUpperCase()], c = cCol(a); return rw && c ? rw[c] || 0 : 0; };
+  function calcBlank() { return { src: "", animal: "Cow", pcs: "", wt: "", inSq: "", outSq: "", wb: "", sell: "", crust: [], fin: [], mach: [], extra: [] }; }
+  function calcLoad(key) {
+    const r = key ? getRecipe(key) : null; if (!r) { calc = calcBlank(); return; }
+    const lot = data.lotBy[r.lot_no], wb = lot ? lotBlue(r.lot_no) : 0, sell = lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : "";
+    const inSq = r.wb_sqft || (lot && lot.lot_sqft) || "";
+    calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell,
+      crust: r.crust.filter((c) => c.p !== null && c.p !== undefined && String(c.d || "").trim()).map((c) => ({ p: +(c.p * 100).toFixed(4), d: c.d, rate: cRate(c.d) })),
+      fin: finRows(r).filter((f) => String(f.d || "").trim() && Number(f.w)).map((f) => ({ r: f.r, d: f.d, w: f.w, rate: cRate(f.d) })),
+      mach: r.machinery.filter((m) => String(m.d || "").trim() && m.n !== "" && m.n !== "0").map((m) => ({ d: m.d, n: m.n, rate: cMachRate(m.d, r.animal), flat: NOT_ROUND.includes(String(m.d).toUpperCase()) })),
+      extra: [] };
+  }
+  function calcMath() {
+    const c = calc, wt = cNum(c.wt), pcs = cNum(c.pcs), out = cNum(c.outSq);
+    const cr = c.crust.map((x) => { const q = cNum(x.p) / 100 * wt; return { q, amt: q * cNum(x.rate) }; });
+    const fi = c.fin.map((x) => ({ amt: cNum(x.w) * cNum(x.rate) }));
+    const ma = c.mach.map((x) => ({ amt: (x.flat ? 1 : pcs) * cNum(x.n) * cNum(x.rate) }));
+    const ex = c.extra.map((x) => ({ amt: cNum(x.amt) }));
+    const sum = (a) => a.reduce((t, x) => t + x.amt, 0), crust = sum(cr), fin = sum(fi), mach = sum(ma), extra = sum(ex), blue = cNum(c.inSq) * cNum(c.wb), total = crust + fin + mach + extra + blue;
+    const sell = cNum(c.sell), revenue = sell * out, profit = sell && out ? revenue - total : null;
+    return { cr, fi, ma, ex, crust, fin, mach, extra, blue, total, out, perSqft: out ? total / out : 0, chemSqft: out ? (crust + fin) / out : 0, crustKg: wt ? crust / wt : 0, machPc: pcs ? mach / pcs : 0, profit, margin: profit !== null && revenue ? profit / revenue * 100 : null };
+  }
+  function calcView() {
+    if (!calc) calc = calcBlank();
+    const c = calc, n = (sec, i, f, v, ph, w) => `<input class="cin${w ? " " + w : ""}" data-c="${sec}|${i}|${f}" value="${esc(v ?? "")}"${ph ? ` placeholder="${esc(ph)}"` : ""}${f === "d" ? ` list="${sec === "mach" ? "cl-mach" : "cl-chem"}"` : ' inputmode="decimal" data-numonly'} aria-label="${esc(f)}">`;
+    const head = (k, lb, v, unit) => `<label>${lb}<input class="cin" data-c="h||${k}" value="${esc(v ?? "")}" inputmode="decimal" data-numonly>${unit ? `<small class="note">${unit}</small>` : ""}</label>`;
+    const sec = (id, title, cols, rowsHtml, add) => `<h3 class="calch">${title}<span class="num" id="ct-${id}"></span></h3><div class="tbl ctbl"><table><thead><tr>${cols.map((x) => `<th${x[1] ? ' class="r"' : ""}>${x[0]}</th>`).join("")}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="note">No lines.</td></tr>`}</tbody></table></div><button class="btn alt sm" data-cadd="${id}">+ Add ${add}</button>`;
+    const del = (id, i) => `<td><button class="m2" data-cdel="${id}|${i}" aria-label="Remove line">×</button></td>`;
+    const recs = Object.values(data.recipes).sort((a, b) => String(b.lot_no).localeCompare(String(a.lot_no), undefined, { numeric: true }));
+    return `<div class="group">Costing calculator</div>
+      <div class="calcwrap">
+      <p class="draftbar" style="margin:0"><span><b>Nothing here is saved.</b> Change anything to try prices. Leaving this page clears it. Only the PDF keeps a copy.</span></p>
+      <div class="two"><label>Start from a saved process<input id="calc-src" list="cl-src" placeholder="Type a lot or product, or leave empty for a blank sheet" value="${esc(c.srcName || "")}" autocomplete="off"></label>
+      <div class="acts" style="align-self:end;margin:0"><button class="btn alt" data-creset>Clear all</button><button class="btn" data-cpdf>Costing PDF</button></div></div>
+      <datalist id="cl-src">${recs.map((x) => `<option value="${esc(x.lot_no + " · " + (x.details || x.process))}">`).join("")}</datalist>
+      <datalist id="cl-chem">${[...data.chemNames].slice(0, 2000).map((x) => `<option value="${esc((data.chemBy[x] || {}).name || x)}">`).join("")}</datalist>
+      <datalist id="cl-mach">${Object.keys(data.mach).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+      <div class="two calchead"><label>Animal<select class="cin" data-c="h||animal">${["Cow", "Calf", "Buff", "Goat"].map((a) => `<option${UP(a) === UP(c.animal) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
+        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div>
+      ${sec("crust", "Crusting", [["%", 1], ["Chemical"], ["Qty kg", 1], ["₹ / kg", 1], ["₹", 1]], c.crust.map((x, i) => `<tr><td>${n("crust", i, "p", x.p, "", "w5")}</td><td>${n("crust", i, "d", x.d)}</td><td class="r num" id="cq-${i}"></td><td>${n("crust", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-crust-${i}"></td>${del("crust", i)}</tr>`).join(""), "chemical")}
+      ${sec("fin", "Finishing", [["Ratio", 1], ["Chemical"], ["Weight kg", 1], ["₹ / kg", 1], ["₹", 1]], c.fin.map((x, i) => `<tr><td>${n("fin", i, "r", x.r, "", "w5")}</td><td>${n("fin", i, "d", x.d)}</td><td>${n("fin", i, "w", x.w, "", "w6")}</td><td>${n("fin", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-fin-${i}"></td>${del("fin", i)}</tr>`).join(""), "chemical")}
+      ${sec("mach", "Machinery", [["Machine"], ["Rounds", 1], ["₹ / pc / round", 1], ["Per lot"], ["₹", 1]], c.mach.map((x, i) => `<tr><td>${n("mach", i, "d", x.d)}</td><td>${n("mach", i, "n", x.n, "", "w5")}</td><td>${n("mach", i, "rate", x.rate, "", "w6")}</td><td><input type="checkbox" class="cin" data-c="mach|${i}|flat"${x.flat ? " checked" : ""} aria-label="Charged per lot, not per piece"></td><td class="r num" id="ca-mach-${i}"></td>${del("mach", i)}</tr>`).join(""), "machine")}
+      ${sec("extra", "Other costs", [["What"], ["₹", 1]], c.extra.map((x, i) => `<tr><td><input class="cin" data-c="extra|${i}|d" value="${esc(x.d || "")}" placeholder="Labour, transport…" aria-label="What"></td><td>${n("extra", i, "amt", x.amt, "", "w7")}</td>${del("extra", i)}</tr>`).join(""), "cost")}
+      <div class="coststk" id="calc-sum"></div>
+      </div>`;
+  }
+  function calcTotals() {
+    if (!calc || !$("#calc-sum")) return; const m = calcMath(), f2 = (x) => fmtN(x, 2), set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    m.cr.forEach((x, i) => { set("cq-" + i, fmtN(x.q, 3)); set("ca-crust-" + i, f2(x.amt)); }); m.fi.forEach((x, i) => set("ca-fin-" + i, f2(x.amt))); m.ma.forEach((x, i) => set("ca-mach-" + i, f2(x.amt)));
+    set("ct-crust", " · ₹" + fmtN(m.crust, 0)); set("ct-fin", " · ₹" + fmtN(m.fin, 0)); set("ct-mach", " · ₹" + fmtN(m.mach, 0)); set("ct-extra", m.extra ? " · ₹" + fmtN(m.extra, 0) : "");
+    const line = (t, v) => `<tr><td>${t}</td><td class="r num">${fmtN(v, 0)}</td><td class="r num">${m.out ? fmtN(v / m.out, 2) : ""}</td></tr>`;
+    $("#calc-sum").innerHTML = `<div><span class="note">Cost per finished sqft</span><br><span class="cost-big">₹${fmtN(m.perSqft, 2)}</span></div>
+      <div class="tbl"><table><thead><tr><th>Part</th><th class="r">₹</th><th class="r">₹ / sqft</th></tr></thead><tbody>${line("Crusting", m.crust)}${line("Finishing", m.fin)}${line("Machinery", m.mach)}${line("Wet blue", m.blue)}${m.extra ? line("Other costs", m.extra) : ""}</tbody><tfoot><tr><td><b>Total</b></td><td class="r num"><b>${fmtN(m.total, 0)}</b></td><td class="r num"><b>${m.out ? fmtN(m.perSqft, 2) : ""}</b></td></tr></tfoot></table></div>
+      <p class="note" style="margin:0">Chemicals ₹${fmtN(m.chemSqft, 2)} per sqft.${m.crustKg ? " Crusting ₹" + fmtN(m.crustKg, 2) + " per kg." : ""}${m.machPc ? " Machinery ₹" + fmtN(m.machPc, 2) + " per piece." : ""}</p>
+      ${m.profit !== null ? `<p class="${m.profit < 0 ? "late" : ""}" style="margin:0"><b>${m.profit < 0 ? "Loss" : "Profit"} ₹${fmtN(Math.abs(m.profit), 0)}</b> at ₹${fmtN(cNum(calc.sell), 2)} / sqft (${fmtN(m.margin, 1)}% of sales)</p>` : `<p class="note" style="margin:0">Enter a selling rate to see profit.</p>`}`;
+  }
+  document.addEventListener("input", (e) => {
+    const t = e.target; if (!calc || tab !== "calc") return;
+    if (t.id === "calc-src") { const v = t.value.trim(), hit = Object.values(data.recipes).find((x) => x.lot_no + " · " + (x.details || x.process) === v); if (hit) { calcLoad(hit.key); render(); } return; }
+    if (!t.dataset || !t.dataset.c) return; const [secN, i, f] = t.dataset.c.split("|"), val = t.type === "checkbox" ? t.checked : t.value;
+    if (secN === "h") { calc[f] = val; if (f === "animal") calc.mach.forEach((x) => { if (!x.own) x.rate = cMachRate(x.d, val); }), render(); else calcTotals(); return; }
+    const row = calc[secN] && calc[secN][Number(i)]; if (!row) return; row[f] = val;
+    if (f === "rate") row.own = true;
+    if (f === "d" && secN !== "extra") { const nr = secN === "mach" ? cMachRate(val, calc.animal) : cRate(val); if (nr) { row.rate = nr; row.own = false; const ri = document.querySelector(`[data-c="${secN}|${i}|rate"]`); if (ri) ri.value = nr; }
+      if (secN === "mach") { const fl = NOT_ROUND.includes(UP(val)); row.flat = fl; const cb = document.querySelector(`[data-c="mach|${i}|flat"]`); if (cb) cb.checked = fl; } }
+    calcTotals();
+  });
+  document.addEventListener("change", (e) => { const t = e.target; if (calc && tab === "calc" && t.dataset && t.dataset.c && (t.type === "checkbox" || t.tagName === "SELECT")) t.dispatchEvent(new Event("input", { bubbles: true })); });
+  document.addEventListener("click", (e) => {
+    if (tab !== "calc" || !calc) return; const t = e.target;
+    const add = t.closest("[data-cadd]"); if (add) { const k = add.dataset.cadd; calc[k].push(k === "crust" ? { p: "", d: "", rate: "" } : k === "fin" ? { r: "", d: "", w: "", rate: "" } : k === "mach" ? { d: "", n: "", rate: "", flat: false } : { d: "", amt: "" }); render(); const ins = document.querySelectorAll(`[data-c^="${k}|${calc[k].length - 1}|"]`); if (ins[0]) ins[0].focus(); return; }
+    const del = t.closest("[data-cdel]"); if (del) { const [k, i] = del.dataset.cdel.split("|"); calc[k].splice(Number(i), 1); render(); return; }
+    if (t.closest("[data-creset]")) { calc = calcBlank(); render(); return; }
+    const pb = t.closest("[data-cpdf]"); if (pb) { calcPdf(pb); return; }
+  });
+  async function calcPdf(btn) {
+    const old = btn.textContent; btn.disabled = true; btn.textContent = "Making PDF";
+    try {
+      const J = await pdfLib(), doc = new J({ unit: "mm", format: "a4" }), c = calc, m = calcMath(), f2 = (x) => fmtN(x, 2), f0 = (x) => fmtN(x, 0);
+      pdfHead(doc, "Costing" + (c.srcName ? " · " + c.srcName : ""), "Quick costing made " + new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) + ". Not saved anywhere; the process itself is unchanged.");
+      let y = 26; const T = (title, head, body, foot, colR) => { doc.autoTable({ startY: y, head: [head], body, foot: foot ? [foot] : undefined, theme: "grid", styles: { fontSize: 8, cellPadding: 1.4 }, headStyles: { fillColor: [11, 92, 120] }, footStyles: { fillColor: [235, 240, 245], textColor: 20, fontStyle: "bold" }, margin: { left: 12, right: 12 },
+        columnStyles: Object.fromEntries((colR || []).map((i) => [i, { halign: "right" }])), didDrawPage: () => {}, willDrawCell: () => {}, tableLineWidth: 0.1, showHead: "everyPage",
+        startYTitle: null }); y = doc.lastAutoTable.finalY + 4; };
+      doc.setFontSize(10); doc.setFont("helvetica", "bold");
+      T("", ["Animal", "Pieces", "Shaved kg", "Wet blue sqft", "Finished sqft", "Wet blue ₹/sqft".replace("₹", "Rs"), "Selling Rs/sqft"], [[c.animal, c.pcs, c.wt, c.inSq, c.outSq, c.wb, c.sell]], null, [1, 2, 3, 4, 5, 6]);
+      if (c.crust.length) T("", ["%", "Crusting chemical", "Qty kg", "Rs / kg", "Rs"], c.crust.map((x, i) => [x.p, x.d, fmtN(m.cr[i].q, 3), x.rate, f2(m.cr[i].amt)]), ["", "Crusting", "", "", f2(m.crust)], [0, 2, 3, 4]);
+      if (c.fin.length) T("", ["Ratio", "Finishing chemical", "Weight kg", "Rs / kg", "Rs"], c.fin.map((x, i) => [x.r, x.d, x.w, x.rate, f2(m.fi[i].amt)]), ["", "Finishing", "", "", f2(m.fin)], [0, 2, 3, 4]);
+      if (c.mach.length) T("", ["Machine", "Rounds", "Rs / pc / round", "Charged", "Rs"], c.mach.map((x, i) => [x.d, x.n, x.rate, x.flat ? "per lot" : "x " + (c.pcs || 0) + " pcs", f2(m.ma[i].amt)]), ["Machinery", "", "", "", f2(m.mach)], [1, 2, 4]);
+      if (c.extra.length) T("", ["Other cost", "Rs"], c.extra.map((x, i) => [x.d, f2(m.ex[i].amt)]), ["Other costs", f2(m.extra)], [1]);
+      const per = (v) => m.out ? f2(v / m.out) : "";
+      T("", ["Summary", "Rs", "Rs / finished sqft"], [["Crusting", f0(m.crust), per(m.crust)], ["Finishing", f0(m.fin), per(m.fin)], ["Machinery", f0(m.mach), per(m.mach)], ["Wet blue", f0(m.blue), per(m.blue)]].concat(m.extra ? [["Other costs", f0(m.extra), per(m.extra)]] : []), ["Total cost", f0(m.total), per(m.total)], [1, 2]);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      const notes = ["Chemicals Rs " + f2(m.chemSqft) + " per finished sqft." + (m.crustKg ? " Crusting Rs " + f2(m.crustKg) + " per kg." : "") + (m.machPc ? " Machinery Rs " + f2(m.machPc) + " per piece." : "")];
+      if (m.profit !== null) notes.push((m.profit < 0 ? "Loss" : "Profit") + " Rs " + f0(Math.abs(m.profit)) + " at Rs " + f2(cNum(c.sell)) + " per sqft (" + fmtN(m.margin, 1) + "% of sales).");
+      notes.forEach((t) => { if (y > 280) { doc.addPage(); y = 15; } doc.text(t, 12, y); y += 5; });
+      const name = "costing-" + (c.srcName ? c.srcName.split(" · ")[0] : "blank") + "-" + iso(today) + ".pdf";
+      const w = { textContent: "" }; await savePdf(doc, name, w); if (w.textContent) btn.insertAdjacentHTML("afterend", `<span class="note bad"> ${esc(w.textContent)}</span>`);
+    } catch (e) { btn.insertAdjacentHTML("afterend", `<span class="note bad"> PDF failed: ${esc(e.message)}</span>`); }
+    btn.disabled = false; btn.textContent = old;
   }
   function costInputs(r) {
     const c = costOf(r), k = r.lot_no + "|" + r.process;
@@ -3639,7 +3754,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
 
   // ---------------------------------------------------------------- events
-  const TABS = ["today", "lots", "orders", "purchases", "chemicals", "entries", "health", "settings", "about"];
+  const TABS = ["today", "lots", "orders", "purchases", "chemicals", "entries", "health", "settings", "about", "calc"];
   // tab changes are history entries too (with the page depth), so the phone's Back walks back through them
   let popping = false;
   function go(t) { route(t); if (popping) return; histPush(navDepth(), "#" + t); }
