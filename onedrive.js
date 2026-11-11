@@ -60,16 +60,29 @@
   };
 
   // ---------- saving files on the phone ----------
+  // Share sheet first (so the file can go straight to OneDrive). Android refuses some types (.xml), so the same file is
+  // offered as .txt (Excel's Invoices > Tally reads tally-sales-*.xml.txt too). If the phone says the tap is too old to share,
+  // a "Share" button is shown and the user's tap opens the share sheet. Download is the last resort.
+  const declined = () => { const err = new Error("declined"); err.code = "declined"; return err; };
+  const tryShare = async (file) => { if (!(navigator.canShare && navigator.canShare({ files: [file] }))) return "no"; try { await navigator.share({ files: [file], title: file.name }); return "ok"; } catch (e) { return e && e.name === "AbortError" ? "abort" : e && e.name === "NotAllowedError" ? "tap" : "no"; } };
+  const tapToShare = (file) => new Promise((res) => {
+    const box = document.createElement("div");
+    box.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px");
+    box.innerHTML = '<div style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:420px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:6px">File ready</b><span style="display:block;word-break:break-all;margin-bottom:12px">' + file.name.replace(/[<>&]/g, "") + '</span><button data-a="share" style="width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent,#1b6ef3);color:var(--accent-ink,#fff);font-weight:600;font-size:16px">Share to OneDrive…</button><button data-a="dl" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line,#ccc);border-radius:10px;background:transparent;color:inherit">Download instead</button><button data-a="x" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:inherit">Cancel</button></div>';
+    document.body.appendChild(box);
+    box.addEventListener("click", async (e) => { const a = (e.target.closest("button") || {}).dataset; if (!a || !a.a) return;
+      if (a.a === "share") { const r = await tryShare(file); if (r === "ok") { box.remove(); res("ok"); } else if (r === "abort") { /* stay open */ } else { box.remove(); res("dl"); } }
+      else { box.remove(); res(a.a); } });
+  });
+  const dlFile = (file) => { const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); };
   const downloadsApi = { save: async ({ filename, data }) => {
     const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : "application/octet-stream";
     let file = new File([data], filename, { type });
-    // Android's share sheet refuses .xml files; the same file as .txt can be shared to OneDrive, and Tally imports it as XML
-    if (/\.xml$/i.test(filename) && navigator.canShare && !navigator.canShare({ files: [file] })) file = new File([data], filename + ".txt", { type: "text/plain" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: filename }); return { status: "saved" }; }
-      catch (e) { if (e && e.name === "AbortError") { const err = new Error("declined"); err.code = "declined"; throw err; } }
-    }
-    const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    let r = await tryShare(file);
+    if (r === "no" && /\.xml$/i.test(filename)) { file = new File([data], filename + ".txt", { type: "text/plain" }); r = await tryShare(file); }
+    if (r === "abort") throw declined();
+    if (r === "tap") { r = await tapToShare(file); if (r === "x") throw declined(); }
+    if (r !== "ok") dlFile(file);
     return { status: "saved" };
   } };
 

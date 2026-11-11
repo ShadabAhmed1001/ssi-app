@@ -967,7 +967,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 99, at: "2026-11-11T18:10:58+05:30", notes: "New Night theme: dark navy with the logo's orange" };
+  const APP_BUILD = { v: 100, at: "2026-11-11T21:25:13+05:30", notes: "Finishing weights saved as formulas so Excel and the app always agree; adjust asks for one Save on older recipes; invoice customer list shows Tally party, GSTIN and deliveries to bill; Tally file shares as .xml.txt with a Share button fallback" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2027,14 +2027,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const machinery = placeRows(ed.machinery.filter((x) => !x.isNew || String(x.d || "").trim()), "machinery").map((x) => ({ r: x.r, d: String(x.d || "").trim(), n: String(x.e ?? "").trim() }));
     { const seen = {}; for (const m of machinery) { const u = m.d.toUpperCase(); if (seen[u] && m.n) throw new Error(m.d + " is in the machinery list twice. Put all its rounds on one line."); if (m.n) seen[u] = 1; } }
     const finishing = placeFin(ed.finishing.filter((x) => !blank(x))).map((x) => ({ i: x.r, r: x.c.trim(), d: x.d.trim(), w: String(x.calc ? "" : x.e).trim(), n: x.f.trim(), sec: x.sec, calc: x.calc, hint: x.hint }));
-    // a formula on this sheet that doesn't lead back to the section's first row can't follow it, so that weight is written
-    const an = data.finAnchor[String(ed.process).toUpperCase()];
-    if (an) finishing.forEach((f) => { if (!f.calc) return; const st = finishing.find((y) => y.sec === f.sec && Number(y.r) > 0); if (!st || !(Number(f.r) > 0)) return; const step = (c) => { const y = finishing.find((z) => z.i === c); return y && isFx(y.w) ? fxRow(y.w, c) : an[c]; };
-      let c = f.i, n = 0; while (c !== st.i && step(c) && n++ < 60) c = step(c); if (c === st.i) return;
-      // the sheet's own formula may still give the same weight, and then it stays a formula
-      const root = finishing.find((y) => y.i === c), val = (y) => Number(isFx(y.w) ? y.hint : y.w || y.hint) || 0, want = Number(f.hint) || 0, got = root && Number(root.r) ? val(root) / Number(root.r) * Number(f.r) : null;
-      if (c !== f.i && got !== null && Math.abs(got - want) <= 0.0015) return;
-      // put Excel's chain formula back (row above / its ratio x this ratio), so the weight still follows the first line
+    // every weight the app works out goes to Excel as a formula on the line above (same mix), so Excel's sheet and the app always come to the same total,
+    // whatever formulas the sheet had left over from earlier lots
+    finishing.forEach((f) => { if (!f.calc || !(Number(f.r) > 0)) return;
       const up = finishing.filter((y) => y.i < f.i && y.sec === f.sec && Number(y.r) > 0).pop(); f.w = up ? fxOf(f.i, up.i) : String(f.hint || ""); });
     finishing.forEach((f) => { delete f.sec; delete f.calc; delete f.hint; });
     const h = ed.head, num = (t) => t === "" || t === null || isNaN(t) ? null : Number(t);
@@ -2432,6 +2427,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (k.startsWith("d:")) { const d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(k.slice(2))])[0]; return d ? { date: d.del_date, doc: d.doc_no, void: d.status === "VOID", wait: false } : null; }
     const e = entries.find((x) => x.id === k.slice(2)); return e ? { date: e.entry_date, doc: e.doc_no, void: e.status === "cancelled", wait: e.status === "pending" } : null;
   }
+  // the customer list shows each customer's Tally party, GSTIN, state and how many deliveries wait for a bill; those with deliveries come first
+  function invCustOpts(v) {
+    const S = iset(), wait = {}; try { invCands("", v.id).forEach((d) => { const c = UP((data.lotBy[d.lot] || {}).customer); if (c) wait[c] = (wait[c] || 0) + 1; }); } catch (e) {}
+    const one = (c) => { const p0 = S.parties[c] || {}, tp = p0.party ? tParty(p0.party) : null, n = wait[c] || 0;
+      const bits = [tp ? tp.name : p0.party, (tp && tp.gstin) || p0.gstin, (tp && tp.state) || p0.state, n ? n + (n === 1 ? " delivery to bill" : " deliveries to bill") : ""].filter(Boolean);
+      return `<option value="${esc(c)}"${c === UP(v.customer) ? " selected" : ""}>${esc(c + (bits.length ? " — " + bits.join(" · ") : ""))}</option>`; };
+    const all = invCustomers(), has = all.filter((c) => wait[c]), rest = all.filter((c) => !wait[c]);
+    return (has.length ? `<optgroup label="Deliveries waiting for a bill">${has.map(one).join("")}</optgroup>` : "") + (rest.length ? `<optgroup label="${has.length ? "Other customers" : "Customers"}">${rest.map(one).join("")}</optgroup>` : "");
+  }
   const invCustomers = () => [...new Set(data.lots.map((l) => UP(l.customer)).filter(Boolean))].sort();
   function invPoLine(lot) {
     const p = rows("SELECT ol.item, ol.rate, ol.hsn, o.po_no FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [lot])[0];
@@ -2540,7 +2544,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const items = [...new Set(Object.values(S.items).concat(rows("SELECT DISTINCT item FROM order_lines").map((r) => r.item)).filter(Boolean))].sort();
     const t = invCalc(v);
     return `<form class="fm" id="fm-invoice">
-      <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustomers().map((c) => `<option${c === UP(v.customer) ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+      <div class="two"><label>Customer<select id="iv-customer" data-iv="customer"><option value="">Pick the customer</option>${invCustOpts(v)}</select></label>
       ${ivF("iv-date", "Invoice date", v.date, ' type="date"')}${ivF("iv-vno", "Tally invoice no", v.vno || "", ' placeholder="' + esc(nextVno(v.id)) + '"')}</div>
       ${v.customer ? `<div class="two"><div class="pickw">${ivF("iv-party", "Party (Tally ledger)", v.party, ' placeholder="Type to search Tally parties"')}<div class="sugg" id="sg-party"></div></div>${ivF("iv-gstin", "Party GSTIN", v.gstin, ' maxlength="15"')}<label>State<select id="iv-state" data-iv="state">${STATES.map((s) => `<option${UP(s) === UP(v.state) ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label></div>
       ${ivF("iv-addr", "Address (optional)", v.addr)}
@@ -3039,6 +3043,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const l = data.lotBy[f.dataset.lot], p = chemPlan(l, f.dataset.what);
       if (p.secs.includes("CRUSTING") && !(Number(l.weight) > 0)) return bad(l.lot_no + " has no weight. Enter the shaved weight (Edit lot) before adjusting crusting chemicals.");
       if (!p.lines.length) return bad("This recipe has no quantities to deduct.");
+      if (p.secs.includes("FINISHING")) { const rr = getRecipe(l.recKey), loose = ((rr && rr.finishing) || []).filter((x) => Number(x.r) > 0 && String(x.w ?? "").trim() === "");
+        if (loose.length) return bad(`Open ${l.lot_no}'s process and press Save once first (no changes needed). ${loose.length} finishing line${loose.length === 1 ? " has" : "s have"} no weight of ${loose.length === 1 ? "its" : "their"} own, and saving gives Excel the same weights the app shows, so the totals match.`); }
       if (p.short.length && warnOnce(f, p.short.length + (p.short.length === 1 ? " chemical goes" : " chemicals go") + " negative. Save again to go ahead.")) return;
       const tot = (s) => { const i = p.secs.indexOf(s); return i < 0 ? "" : p.parts[i].total; };
       return saveNew({ type: "chem_adjust", lot_no: l.lot_no, lines: p.lines.map((x) => ({ n: x.n, q: x.q })), data: { lot: l.lot_no, crust: p.secs.includes("CRUSTING") ? "1" : "0", fin: p.secs.includes("FINISHING") ? "1" : "0", crust_total: tot("CRUSTING"), fin_total: tot("FINISHING") } }, "Stock adjustment saved. It is waiting for Excel.", msg, btn);
