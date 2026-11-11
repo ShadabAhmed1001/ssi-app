@@ -927,7 +927,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 92, at: "2026-11-11T07:36:22+05:30", notes: "Skins entries on a lot can be edited: pcs, sqft and which purchase they came from" };
+  const APP_BUILD = { v: 93, at: "2026-11-11T11:28:47+05:30", notes: "Finishing ratio and weight boxes open the number keyboard and take numbers only" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1876,7 +1876,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <datalist id="ed-machs">${Object.values(data.mach).map((m) => `<option value="${esc(m.name)}">`).join("")}</datalist>
       <h3>Finishing <span id="ecost-f" class="note" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h3><div class="eh" style="grid-template-columns:44px minmax(0,1fr) 62px 48px"><span>Ratio</span><span>Chemical</span><span>Weight</span></div>
       <p class="note" style="margin:4px 0 0">Each section is one mix. Change any weight and the rest of its section follows the ratios.</p>
-      ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio")}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "")}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
+      ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio", "", ' inputmode="decimal" data-numonly="1"')}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "", ' inputmode="decimal" data-numonly="1"')}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="finishing">Add a section</button>
       
       <div class="ebar"><p class="fmsg" id="fm-msg"></p><div class="acts"><button class="btn" type="submit">Save recipe</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></div></form>`;
@@ -3492,6 +3492,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     } finally { popping = false; }
     queueMicrotask(syncHist);
   });
+  // number-only boxes (finishing ratio and weight): number keyboard, and anything else typed or pasted is dropped
+  document.addEventListener("input", (e) => { const t = e.target; if (!t.matches || !t.matches("input[data-numonly]")) return;
+    const v0 = t.value; let v = v0.replace(/,/g, ".").replace(/[^0-9.]/g, ""); const d = v.indexOf("."); if (d >= 0) v = v.slice(0, d + 1) + v.slice(d + 1).replace(/\./g, "");
+    if (v !== v0) { const pos = Math.max(0, (t.selectionStart || v.length) - (v0.length - v.length)); t.value = v; try { t.setSelectionRange(pos, pos); } catch (x) {} } }, true);
   function menuAct(a) {
     const wasOpen = sideOpen; if (sideOpen) hideSide();
     filter.orders = "inv"; pick = null; stack = []; formOpen = null; ed = null; sel.orders = null;
