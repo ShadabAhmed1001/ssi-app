@@ -40,6 +40,13 @@
 :root[data-theme="leather"] header.top { background: #4a2c18; color: #fbefe0; border-bottom-color: #3a2213; }
 :root[data-theme="leather"] .brand h1 { color: #f6dcb8; }
 :root[data-theme="leather"] .brand h1 small, :root[data-theme="leather"] .brand .src { color: #d9bf9f; }
+:root[data-theme="night"] {
+  --bg: #0b1424; --surface: #12203a; --ink: #e8edf6; --muted: #9aa8bf; --line: #22314d;
+  --accent: #ff9a2e; --accent-ink: #1a0f02; --accent-soft: #3a2810;
+  --ok: #5fd08d; --ok-soft: #10301f; --warn: #ffc457; --warn-soft: #3b2c0c;
+  --bad: #ff7b70; --bad-soft: #3e1714; --idle: #98a5ba; --idle-soft: #1b2942; color-scheme: dark; }
+:root[data-theme="night"] header.top { background: #0e1a30; border-bottom-color: #22314d; }
+:root[data-theme="night"] .brand h1 { color: #ffb55e; }
 :root[data-theme="dark"] {
   --bg: #0e1519; --surface: #162127; --ink: #e4ecef; --muted: #93a4ad; --line: #26343c;
   --accent: #91a9ff; --accent-ink: #0b1433; --accent-soft: #1b2547;
@@ -484,8 +491,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const brandLogo = () => lsGet("ssi-logo") || LOGO0, brandName = () => lsGet("ssi-name") || NAME0, logoOnPdf = () => lsGet("ssi-logo-pdf") !== "off";
   function applyTheme() {
     const t = lsGet("ssi-theme"), h = document.documentElement;
-    if (["light", "dark", "leather"].includes(t)) h.dataset.theme = t; else delete h.dataset.theme;
-    const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = t === "leather" ? "#4a2c18" : t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches) ? "#162127" : "#ffffff";
+    if (["light", "dark", "leather", "night"].includes(t)) h.dataset.theme = t; else delete h.dataset.theme;
+    const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = t === "leather" ? "#4a2c18" : t === "night" ? "#0e1a30" : t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches) ? "#162127" : "#ffffff";
   }
   function applyBrand() { const i = document.getElementById("brandlogo"), n = document.getElementById("brandname"); if (i) i.src = brandLogo(); if (n) n.textContent = brandName(); document.title = brandName(); }
   applyTheme(); applyBrand();
@@ -960,7 +967,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 98, at: "2026-11-11T18:07:11+05:30", notes: "New Leather theme; Settings now has Theme (Auto, Light, Dark, Leather) and Logo and name, with the logo on app PDFs" };
+  const APP_BUILD = { v: 99, at: "2026-11-11T18:10:58+05:30", notes: "New Night theme: dark navy with the logo's orange" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1010,7 +1017,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<div class="group">Settings</div>
       <div class="setlist">
       <div class="alert" style="display:block"><b>Look</b><br><span class="lookpick" role="group" aria-label="Look"><button data-look="classic" aria-pressed="${document.documentElement.dataset.look === "cards" ? "false" : "true"}">Classic</button><button data-look="cards" aria-pressed="${document.documentElement.dataset.look === "cards" ? "true" : "false"}">Compact cards</button></span></div>
-      <div class="alert" style="display:block"><b>Theme</b><br><span class="lookpick" role="group" aria-label="Theme">${[["", "Auto"], ["light", "Light"], ["dark", "Dark"], ["leather", "Leather"]].map(([v, t]) => `<button data-theme-set="${v}" aria-pressed="${lsGet("ssi-theme") === v}">${t}</button>`).join("")}</span><br><small class="note">Auto follows the phone's light or dark mode.</small></div>
+      <div class="alert" style="display:block"><b>Theme</b><br><span class="lookpick" role="group" aria-label="Theme">${[["", "Auto"], ["light", "Light"], ["dark", "Dark"], ["leather", "Leather"], ["night", "Night"]].map(([v, t]) => `<button data-theme-set="${v}" aria-pressed="${lsGet("ssi-theme") === v}">${t}</button>`).join("")}</span><br><small class="note">Auto follows the phone's light or dark mode.</small></div>
       <div class="alert" style="display:block"><b>Logo and name</b>
         <div class="brandset"><img src="${esc(brandLogo())}" alt="Current logo"><span class="acts" style="margin:0"><button class="btn alt" data-logo-pick>Choose logo…</button>${lsGet("ssi-logo") ? `<button class="btn alt" data-logo-reset>Use SSI logo</button>` : ""}</span><input type="file" accept="image/*" id="logofile" hidden></div>
         <div class="brandset"><input type="text" id="brandnm" maxlength="40" value="${esc(brandName())}" aria-label="Name shown next to the logo"><button class="btn alt" data-name-save>Save name</button></div>
