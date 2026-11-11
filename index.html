@@ -82,6 +82,9 @@ body.sideopen .side { transform: none; }
 .shead .chev { margin-left: auto; color: var(--muted); font-size: 12px; }
 .shead[aria-expanded="true"] { color: var(--accent); }
 .setlist { display: grid; gap: 8px; margin-top: 10px; }
+.er.chg input, .er.chg textarea, label.chg input, label.chg textarea, label.chg select { border-color: var(--warn); background: var(--warn-soft); }
+.er.chg { box-shadow: -4px 0 0 var(--warn); border-radius: 2px; }
+.chgkey { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--warn); background: var(--warn-soft); vertical-align: -1px; }
 .draftbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 10px; background: var(--warn-soft); margin: 6px 0; }
 .draftbar span { flex: 1 1 100%; }
 .setlist { grid-template-columns: minmax(0, 1fr); }
@@ -934,7 +937,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 96, at: "2026-11-11T13:49:15+05:30", notes: "Processes menu has Unsaved processes, listing every process with unsaved editor changes on this phone" };
+  const APP_BUILD = { v: 97, at: "2026-11-11T14:04:15+05:30", notes: "Process editor marks lines changed since the last save in orange; marks clear once saved. Drafts are kept on every change" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1834,7 +1837,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // leaving the editor without saving keeps the changes on this phone; opening it again brings them back
   const DRAFT = (k) => "ssi-draft:" + k;
   const edData = (e) => JSON.stringify({ head: e.head, crust: e.crust, machinery: e.machinery, finishing: e.finishing });
-  let edBase = "";
+  let edBase = "", edRows = null;
+  // what each line held when the editor opened, by sheet row, so lines changed since the last save can be marked
+  const ED_F = { crust: ["c", "d", "f"], machinery: ["d", "e"], finishing: ["c", "d", "e", "f"] };
+  const edSig = (sec, x) => ED_F[sec].map((f) => String(x[f] ?? "").trim()).join("\u0001");
+  function edRowMap(e) { const m = { head: Object.assign({}, e.head) }; Object.keys(ED_F).forEach((sec) => { m[sec] = {}; e[sec].forEach((x) => { if (x.r) m[sec][x.r] = edSig(sec, x); }); }); return JSON.parse(JSON.stringify(m)); }
+  function edChanged(sec, x) { if (!edRows) return false; const b = x.r ? edRows[sec][x.r] : undefined; if (b === undefined) return ED_F[sec].some((f) => String(x[f] ?? "").trim()); return b !== edSig(sec, x); }
+  function edMarkChanges() {
+    const f = $("#fm-recipe"); if (!f || !ed || !edRows) return; let n = 0;
+    f.querySelectorAll(".er[data-sec]").forEach((el) => { const x = (ed[el.dataset.sec] || [])[Number(el.dataset.i)]; const c = !!x && !!ED_F[el.dataset.sec] && edChanged(el.dataset.sec, x); el.classList.toggle("chg", c); if (c) n++; });
+    f.querySelectorAll("[data-h]").forEach((el) => { const c = String(ed.head[el.dataset.h] ?? "").trim() !== String(edRows.head[el.dataset.h] ?? "").trim(); (el.closest("label") || el).classList.toggle("chg", c); if (c) n++; });
+    let gone = 0; Object.keys(ED_F).forEach((sec) => { const have = new Set(ed[sec].map((x) => x.r).filter(Boolean)); Object.entries(edRows[sec]).forEach(([r, sig]) => { if (!have.has(Number(r)) && sig.replace(/\u0001/g, "")) gone++; }); });
+    const note = $("#ed-chg"); if (note) { note.style.display = n || gone ? "" : "none"; note.innerHTML = n || gone ? `<span class="chgkey"></span> ${n ? `${n} changed line${n === 1 ? "" : "s"} not saved yet` : ""}${n && gone ? " · " : ""}${gone ? `${gone} line${gone === 1 ? "" : "s"} removed` : ""}. The marks go once you save.` : ""; }
+  }
   function edKeepDraft() {
     if (!ed) return false;
     try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, ed })); return true; } catch (e) { return false; }
@@ -1848,10 +1863,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function draftOf(k) { try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"), r = d && getRecipe(k); return d && d.ed && r && d.ver === (r.version || 0) ? d : null; } catch (e) { return null; } }
   let draftT = null;
-  const draftSoon = () => { clearTimeout(draftT); draftT = setTimeout(() => { if (formOpen === "recipe" && ed) edKeepDraft(); }, 500); };
+  const draftSoon = () => { clearTimeout(draftT); if (formOpen === "recipe" && ed) edKeepDraft(); };
+  // keep the draft before any tap leaves the editor, and again after taps that add, remove or join lines
+  document.addEventListener("click", (e) => { if (formOpen === "recipe" && ed && !e.target.closest("#fm-recipe [type=submit]")) { edKeepDraft(); setTimeout(() => { if (formOpen === "recipe" && ed) edKeepDraft(); }, 0); } }, true);
   function openEditor(k, seed, fresh) {
     openEditor0(k, seed);
-    edBase = edData(ed);
+    finNotesNorm(); crustTimeNorm();
+    edBase = edData(ed); edRows = edRowMap(ed);
     if (seed || fresh) return;
     try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); if (d && d.ed && d.ed.key === k && d.ver === ed.ver0) { const keep = { movePage: ed.movePage }; ed = Object.assign(d.ed, keep, { restored: d.at }); } else if (d) edDropDraft(k); } catch (e) {}
   }
@@ -1877,6 +1895,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const btns = `<button type="button" class="x" data-edadd aria-label="Add a line below">+</button><button type="button" class="x" data-eddel aria-label="Remove this line">×</button>`;
     return `<form class="fm" id="fm-recipe" style="background:none;border:0;padding:0"><p class="sub" style="margin:0">${esc(ed.process)}${ed.base_lot ? " · loaded from " + esc(ed.base_lot) + (ed.load_cur !== undefined ? " v" + ed.base_ver : "") + ". Check it and save." : ""}</p>
       ${ed.restored ? `<p class="okmsg" style="margin:0">Your unsaved changes from ${esc(new Date(ed.restored).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))} are back. <button type="button" class="link" data-eddiscard>Discard them</button></p>` : ""}
+      <p class="note" id="ed-chg" style="margin:0;display:none"></p>
       ${ed.movePage ? `<p class="note" style="margin:0"><span class="wait">Saving also moves ${esc(ed.lot)} to ${esc(ed.movePage)}.</span></p>` : ""}
       ${data.lotBy[ed.lot] ? `<p class="calc" style="margin:0">${esc(h.details)}<br><span class="note">Shaved wt ${fmtN(h.shaved_wt, 2) || "-"} · pcs ${fmtN(h.pcs, 0) || "-"} · wet blue ${fmtN(h.wb_sqft, 2) || "-"} sqft · finish ${fmtN(h.finish_sqft, 2) || "-"} sqft · substance ${esc(h.substance) || "-"}.</span><br><span class="note">Excel takes these from the lot. <button type="button" class="link" data-editlot>Edit lot</button></span></p>
       <div class="two">` : `<label>Details<input id="eh-details" data-h="details" value="${v(h.details)}" autocomplete="off"></label>
@@ -1896,7 +1915,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${ed.finishing.map((x, i) => `${!i || x.sec !== ed.finishing[i - 1].sec ? `<div class="fsec"><span>Section ${[...new Set(ed.finishing.slice(0, i + 1).map((y) => y.sec))].length}${i ? ` <button type="button" class="link" style="font-size:12px;font-weight:500" data-fjoin="${i}">Join with section above</button>` : ""}</span><span>Total <span id="fsec-${x.sec}" class="num">${fmtN(ed.finishing.filter((y) => y.sec === x.sec).reduce((a, y) => a + (Number(y.calc ? y.hint : y.e || y.hint) || 0), 0), 3)}</span></span></div>` : ""}<div class="er fn" data-sec="finishing" data-i="${i}">${inp("f", i, "c", x.c, "Ratio", "", ' inputmode="decimal" data-numonly="1"')}${inp("f", i, "d", x.d, "Chemical", "", ' data-ac="chem" list="ed-chems"')}${inp("f", i, "e", x.calc ? x.hint : x.e, x.hint || "Weight", x.calc ? "calc" : "", ' inputmode="decimal" data-numonly="1"')}${btns}<span class="erate" id="erate-f-${i}">${rateLine(x.d, x.calc ? x.hint : x.e || x.hint, true)}</span>${!i || x.sec !== ed.finishing[i - 1].sec ? `<textarea id="e-f-${i}-f" class="wide" data-f="f" placeholder="Application notes for this section" aria-label="Application notes for this section">${esc(x.f)}</textarea>` : ""}${i && x.sec === ed.finishing[i - 1].sec ? `<button type="button" class="link wide" style="font-size:12px;font-weight:500" data-fsplit="${i}">Start new section here</button>` : ""}</div>`).join("")}
       <button type="button" class="btn alt" data-edadd="end" data-sec="finishing">Add a section</button>
       
-      <div class="ebar"><p class="fmsg" id="fm-msg"></p><div class="acts"><button class="btn" type="submit">Save recipe</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></div></form>`;
+      ${(setTimeout(edMarkChanges, 0), "")}<div class="ebar"><p class="fmsg" id="fm-msg"></p><div class="acts"><button class="btn" type="submit">Save recipe</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></div></form>`;
   }
   const SECS = { crust: [4, 101], machinery: [170, 189], finishing: [194, 231] };
   function placeRows(list, sec) {
@@ -3761,7 +3780,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }
     if (t.dataset.h) ed.head[t.dataset.h] = t.value;
     else if (row) { ed[row.dataset.sec][Number(row.dataset.i)][t.dataset.f] = t.value; if (row.dataset.sec === "finishing" && ["e", "c"].includes(t.dataset.f)) finSync(Number(row.dataset.i), t.dataset.f); }
-    if (ed && formOpen === "recipe" && (t.dataset.h || row)) draftSoon();
+    if (ed && formOpen === "recipe" && (t.dataset.h || row)) { draftSoon(); edMarkChanges(); }
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#detail").classList.contains("open") && window.innerWidth < 880) closeDetail(); });
 
