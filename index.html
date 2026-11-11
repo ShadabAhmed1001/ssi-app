@@ -967,7 +967,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 100, at: "2026-11-11T21:25:13+05:30", notes: "Finishing weights saved as formulas so Excel and the app always agree; adjust asks for one Save on older recipes; invoice customer list shows Tally party, GSTIN and deliveries to bill; Tally file shares as .xml.txt with a Share button fallback" };
+  const APP_BUILD = { v: 101, at: "2026-11-11T23:09:57+05:30", notes: "Settings has Back up app data: one file with all phone entries, invoices, audits and PDF records for checking on the PC" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1023,6 +1023,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <div class="brandset"><input type="text" id="brandnm" maxlength="40" value="${esc(brandName())}" aria-label="Name shown next to the logo"><button class="btn alt" data-name-save>Save name</button></div>
         <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="logopdf" ${logoOnPdf() ? "checked" : ""}> Put the logo on PDFs made in the app</label>
         <small class="note">Shown at the top of the app, in the menu and on the PDFs. Kept on this phone.</small></div>
+      ${row('data-backup="1"', "Back up app data", "Saves all phone entries, invoices, audits and PDF records from this phone as one file. Put it in OneDrive › SSI › Phone entries so it can be checked on the PC.")}
       ${row('data-menuact="invset"', "Tally names for invoices", "Company, sales ledger, GST ledgers, number series")}
       ${store ? row('data-jump="entries" data-f="pending"', "Phone entries", data.pending.length + " waiting for Excel") : ""}
       ${row('data-jump="health" data-f=""', "Health check", hc ? hc + " to look at" : "nothing to look at")}
@@ -1252,6 +1253,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }; im.onerror = () => alert("That file is not a picture the phone can read."); im.src = fr.result; };
     fr.readAsDataURL(e.target.files[0]);
   });
+  // everything this phone holds that Excel doesn't (entries of every status, invoices, audits, PDF log, Tally names), for checking on the PC
+  async function appBackup(btn) {
+    const sm = btn.querySelector("small"), old = sm ? sm.textContent : "";
+    const body = { kind: "ssi-app-backup", app_version: appVer(), made_at: new Date().toISOString(), data_as_of: data.asOf || "", by: uid,
+      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length },
+      entries, invoices, audits, pdflog: pdfLog, invset: invSet };
+    const name = "ssi-app-backup-" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "") + ".json";
+    const dl = window.claude ? await window.claude.use("downloads") : null;
+    if (!dl) { if (sm) sm.textContent = "Saving files isn't available here."; return; }
+    try { await dl.save({ filename: name, data: JSON.stringify(body) }); if (sm) sm.textContent = name + " made (" + entries.length + " entries, " + invoices.length + " invoices). Put it in OneDrive › SSI › Phone entries."; }
+    catch (err) { if (sm) sm.textContent = err.code === "declined" ? old : "The backup could not be saved."; }
+  }
   function pdfLogo(doc) {
     if (!logoOnPdf()) return;
     try { const src = brandLogo(), pr = doc.getImageProperties(src), h = 10, w = Math.min(36, h * pr.width / pr.height); doc.addImage(src, "PNG", doc.internal.pageSize.getWidth() - 12 - w, 4, w, h); } catch (e) {}
@@ -3665,6 +3678,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-backup]")) { appBackup(e.target.closest("[data-backup]")); return; }
     { const th = e.target.closest("button[data-theme-set]"); if (th) { lsSet("ssi-theme", th.dataset.themeSet); applyTheme(); render(); return; } }
     if (e.target.closest("[data-logo-pick]")) { const f = $("#logofile"); if (f) f.click(); return; }
     if (e.target.closest("[data-logo-reset]")) { lsSet("ssi-logo", ""); applyBrand(); render(); return; }

@@ -76,10 +76,10 @@
   });
   const dlFile = (file) => { const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); };
   const downloadsApi = { save: async ({ filename, data }) => {
-    const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : "application/octet-stream";
+    const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : /\.json$/i.test(filename) ? "application/json" : "application/octet-stream";
     let file = new File([data], filename, { type });
     let r = await tryShare(file);
-    if (r === "no" && /\.xml$/i.test(filename)) { file = new File([data], filename + ".txt", { type: "text/plain" }); r = await tryShare(file); }
+    if (r === "no" && /\.(xml|json)$/i.test(filename)) { file = new File([data], filename + ".txt", { type: "text/plain" }); r = await tryShare(file); }
     if (r === "abort") throw declined();
     if (r === "tap") { r = await tapToShare(file); if (r === "x") throw declined(); }
     if (r !== "ok") dlFile(file);
