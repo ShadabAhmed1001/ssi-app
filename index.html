@@ -977,7 +977,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 103, at: "2026-11-12T00:07:24+05:30", notes: "Costing calculator under Processes: start from any saved process or blank, change anything, make a costing PDF; nothing is saved and it clears when you leave" };
+  const APP_BUILD = { v: 104, at: "2026-11-12T00:11:24+05:30", notes: "Saving a process no longer moves crusting times or finishing notes that are still where they were saved" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1108,12 +1108,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // one time per crusting section, kept on its first line (the top of the sheet's merged DURATION cell); times from other lines are joined
   function crustTimeNorm() {
     const by = {}; ed.crust.forEach((x) => (by[x.sec] = by[x.sec] || []).push(x));
-    Object.values(by).forEach((l) => { const t = [...new Set(l.map((x) => String(x.f || "").trim()).filter(Boolean))].join(" + "); l.forEach((x) => { x.f = ""; }); const has = l.filter((x) => String(x.c || "").trim() || String(x.d || "").trim()); (has.length ? has[0] : l[0]).f = t; });
+    Object.values(by).forEach((l) => {
+      // a section whose only time is still where the saved process had it is left alone, so an unchanged save sends nothing
+      const holders = l.filter((x) => String(x.f || "").trim()); if (holders.length === 1 && holders[0].r && holders[0].f0 !== undefined && String(holders[0].f).trim() === holders[0].f0) return;
+      const t = [...new Set(l.map((x) => String(x.f || "").trim()).filter(Boolean))].join(" + "); l.forEach((x) => { x.f = ""; }); const has = l.filter((x) => String(x.c || "").trim() || String(x.d || "").trim()); (has.length ? has[0] : l[0]).f = t; });
   }
   // one application note per finishing section: notes typed on other lines of the section are added to the first line's
   function finNotesNorm() {
-    const seen = {};
-    ed.finishing.forEach((x) => { const st = seen[x.sec]; if (!st) { seen[x.sec] = x; return; } const t = String(x.f || "").trim(); if (t) { const cur = String(st.f || "").trim(); if (!cur.split("\n").includes(t)) st.f = cur ? cur + "\n" + t : t; } x.f = ""; });
+    const seen = {}, same = {};
+    // a section whose notes are all still as saved is left alone, so an unchanged save sends nothing
+    ed.finishing.forEach((x) => { const ok = x.r && x.f0 !== undefined && String(x.f || "").trim() === x.f0; same[x.sec] = (same[x.sec] ?? true) && !!ok; });
+    ed.finishing.forEach((x) => { if (same[x.sec]) return; const st = seen[x.sec]; if (!st) { seen[x.sec] = x; return; } const t = String(x.f || "").trim(); if (t) { const cur = String(st.f || "").trim(); if (!cur.split("\n").includes(t)) st.f = cur ? cur + "\n" + t : t; } x.f = ""; });
   }
   function finNorm() { [...new Set(ed.finishing.map((x) => x.sec))].forEach((sec) => { const st = finStart(sec); if (st && st.calc) { st.calc = false; st.e = st.hint || ""; } }); }
   function costOf(r) {
@@ -2049,6 +2054,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   document.addEventListener("click", (e) => { if (formOpen === "recipe" && ed && !e.target.closest("#fm-recipe [type=submit]")) { edKeepDraft(); setTimeout(() => { if (formOpen === "recipe" && ed) edKeepDraft(); }, 0); } }, true);
   function openEditor(k, seed, fresh) {
     openEditor0(k, seed);
+    if (ed && !seed) ed.crust.concat(ed.finishing).forEach((x) => { if (x.r) x.f0 = String(x.f || "").trim(); }); // where each saved time or note already sits
     finNotesNorm(); crustTimeNorm();
     edBase = edData(ed); edRows = edRowMap(ed);
     if (seed || fresh) return;
