@@ -82,6 +82,8 @@ body.sideopen .side { transform: none; }
 .shead .chev { margin-left: auto; color: var(--muted); font-size: 12px; }
 .shead[aria-expanded="true"] { color: var(--accent); }
 .setlist { display: grid; gap: 8px; margin-top: 10px; }
+.draftbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 10px; background: var(--warn-soft); margin: 6px 0; }
+.draftbar span { flex: 1 1 100%; }
 .setlist { grid-template-columns: minmax(0, 1fr); }
 .setlist > * { box-sizing: border-box; min-width: 0; margin: 0; }
 .setlist .alert { align-items: center; }
@@ -927,7 +929,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 94, at: "2026-11-11T11:41:08+05:30", notes: "Number keyboards for ratio, weight, rounds, dye amounts, crust %/time, HSN and lot weight; headings move from Ratio to Chemical; machinery lines can be renamed and removed" };
+  const APP_BUILD = { v: 95, at: "2026-11-11T12:11:01+05:30", notes: "Unsaved process changes are kept as you type and shown on the lot and recipe with Continue editing" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1725,7 +1727,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const frow = (f, n) => `${f.n ? `<tr class="ins${n && fids[n] !== fids[n - 1] ? " fstart" : ""}"><td colspan="${showRates ? 5 : 3}">${esc(f.n)}</td></tr>` : ""}${f.r || f.d || f.w ? `<tr${!f.n && n && fids[n] !== fids[n - 1] ? ' class="fstart"' : ""}><td class="pc">${esc(f.r)}</td><td>${esc(f.d)}</td><td class="r num">${isNaN(f.w) ? esc(f.w) : fmtN(f.w, 3)}</td>${showRates ? `<td class="r num">${fmtN(rateOf(f.d), 2)}</td><td class="r num">${fmtN((Number(f.w) || 0) * rateOf(f.d), 0)}</td>` : ""}</tr>` : ""}`;
     return `<p class="sub">${esc(r.details || (lot ? lot.customer + " " + lot.product : ""))}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
-      <div class="acts">${canEd ? `<button class="btn" data-edrec>Edit recipe</button>` : ""}${canEd && lot && !lot.isNew ? `<button class="btn alt" data-form="process:${esc(r.lot_no)}">Process</button>` : ""}${old && store && canWrite && lot && lot.state !== "ARCHIVED" && !lot.isNew ? `<button class="btn" data-loadver="${esc(k)}">Load this version</button>` : ""}<button class="btn alt" data-form="compare:${esc(k)}">Compare</button>${canEd && !r.phone ? `<button class="btn alt" data-form="recipe_delete:${esc(r.lot_no)}|${esc(r.process)}">Delete saved process</button>` : ""}<button class="btn alt" data-pdf="recipe">Save PDF</button><button class="btn alt" data-pdf="recipecost">PDF with cost</button><button class="btn alt" data-pdf="recipeproc">Process PDF</button><button class="btn alt" data-pdf="recipepage2">Page 2 PDF</button><button class="btn alt" data-rates>${showRates ? "Hide rates" : "Show rates"}</button></div><div id="pdfmsg" class="fmsg"></div>
+      ${canEd && draftOf(k) ? `<div class="draftbar"><span><b>Unsaved changes</b> from ${esc(new Date(draftOf(k).at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))}</span><button class="btn" data-edrec>Continue editing</button><button class="btn alt" data-draftdrop="${esc(k)}">Discard</button></div>` : ""}
+      <div class="acts">${canEd ? `<button class="btn${draftOf(k) ? " alt" : ""}" data-edrec>Edit recipe</button>` : ""}${canEd && lot && !lot.isNew ? `<button class="btn alt" data-form="process:${esc(r.lot_no)}">Process</button>` : ""}${old && store && canWrite && lot && lot.state !== "ARCHIVED" && !lot.isNew ? `<button class="btn" data-loadver="${esc(k)}">Load this version</button>` : ""}<button class="btn alt" data-form="compare:${esc(k)}">Compare</button>${canEd && !r.phone ? `<button class="btn alt" data-form="recipe_delete:${esc(r.lot_no)}|${esc(r.process)}">Delete saved process</button>` : ""}<button class="btn alt" data-pdf="recipe">Save PDF</button><button class="btn alt" data-pdf="recipecost">PDF with cost</button><button class="btn alt" data-pdf="recipeproc">Process PDF</button><button class="btn alt" data-pdf="recipepage2">Page 2 PDF</button><button class="btn alt" data-rates>${showRates ? "Hide rates" : "Show rates"}</button></div><div id="pdfmsg" class="fmsg"></div>
       ${recNextPanel(r)}
       ${r.phone ? `<p class="note"><span class="wait">Edited on the phone, not in Excel yet.</span></p>` : ""}
       ${old ? `<p class="missing">Older version. <button class="link" data-go="lots" data-k="${esc(base)}">Open the latest</button></p>` : ""}
@@ -1832,6 +1835,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, ed })); return true; } catch (e) { return false; }
   }
   const edDropDraft = (k) => { try { localStorage.removeItem(DRAFT(k)); } catch (e) {} };
+  // unsaved changes kept on this phone for a process (only while they still fit the saved version)
+  function draftOf(k) { try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"), r = d && getRecipe(k); return d && d.ed && r && d.ver === (r.version || 0) ? d : null; } catch (e) { return null; } }
+  let draftT = null;
+  const draftSoon = () => { clearTimeout(draftT); draftT = setTimeout(() => { if (formOpen === "recipe" && ed) edKeepDraft(); }, 500); };
   function openEditor(k, seed, fresh) {
     openEditor0(k, seed);
     edBase = edData(ed);
@@ -3361,7 +3368,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<div class="hero"><div class="hero-top"><span class="pill ${l.flag}">${esc(l.flagText)}</span>${l.due_date ? `<span class="hero-due">Due ${fmtD(l.due_date)}${due ? " · " + due : ""}</span>` : ""}</div>
       <div class="hero-stage"><span>Stage now</span><b>${niceStage(l.stage)}</b>${l.inStage !== null ? `<em>${l.inStage} d in this stage${l.maxDays ? ` · max ${l.maxDays} d` : ""}</em>` : ""}</div>${track}
       <div class="hero-nums">${nums.map(([v, t]) => `<div><b>${v}</b><span>${t}</span></div>`).join("")}</div>
-      <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}</div>
+      <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}${l.recKey && draftOf(l.recKey) ? ` <b style="color:var(--warn)">· unsaved changes</b>` : ""}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}</div>
       ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const sv = processSaved(l), pm = pdfMade(l); return `<p class="note" style="margin:0">${sv ? "✓ Process saved" : `<span class="bad">Process not saved</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>`; })() : ""}
       ${l.chem_check ? `<p class="missing" style="margin:8px 0 0">${esc(l.chem_check.replace(/^\W+/, ""))}</p>` : ""}</div>`;
   }
@@ -3634,6 +3641,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const act = e.target.closest("[data-act]");
     if (act) { flash = ""; delEdit = null; formOpen = act.dataset.act; showDetail(); $("#detail").scrollTop = 0; return; }
     const dle = e.target.closest("[data-deledit]"); if (dle) { flash = ""; delEdit = dle.dataset.deledit; formOpen = "delivery"; showDetail(); $("#detail").scrollTop = 0; return; }
+    { const dd = e.target.closest("[data-draftdrop]"); if (dd) { if (!dd.dataset.sure) { dd.dataset.sure = "1"; dd.textContent = "Tap again to discard"; return; } edDropDraft(dd.dataset.draftdrop); showToast("Unsaved changes discarded."); showDetailKeep(); return; } }
     if (e.target.closest("[data-eddiscard]")) { const k = ed.key; edDropDraft(k); openEditor(k, null, true); showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-formclose]")) { if (formOpen === "recipe") closeOrStay(); else { formOpen = null; showDetail(); } return; }
     if (e.target.closest("[data-fillall]")) { const f = e.target.closest("form"); $("#fv-pcs").value = f.dataset.pcs; $("#fv-sqft").value = f.dataset.sqft; return; }
@@ -3743,6 +3751,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }
     if (t.dataset.h) ed.head[t.dataset.h] = t.value;
     else if (row) { ed[row.dataset.sec][Number(row.dataset.i)][t.dataset.f] = t.value; if (row.dataset.sec === "finishing" && ["e", "c"].includes(t.dataset.f)) finSync(Number(row.dataset.i), t.dataset.f); }
+    if (ed && formOpen === "recipe" && (t.dataset.h || row)) draftSoon();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#detail").classList.contains("open") && window.innerWidth < 880) closeDetail(); });
 
