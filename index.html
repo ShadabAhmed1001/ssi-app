@@ -734,7 +734,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const smallBal = (o) => o.status === "PART IN PRODUCTION" && o.left > 0 && (o.left <= 300 || o.left <= o.qty_sqft * 0.05);
   const CHIPS = {
     today: [],
-    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["ready", "Ready to dispatch"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
+    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
     orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["drep", "Delivery report"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
@@ -767,11 +767,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const chipItems = (t, skip) => CHIPS[t].filter(([k]) => !(skip || []).includes(k)).map(([k, l]) => [t + "|" + k, l]);
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
-    { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "ready"]) },
+    { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready"]) },
     { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "drep"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
     { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
     { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
@@ -821,6 +821,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "about") { $("#list").innerHTML = aboutView(); return; }
     const ws = words($("#q").value);
     if (tab === "today") { $("#list").innerHTML = ws.length ? searchAll(ws) : todayView(); return; }
+    if (tab === "lots" && filter.lots === "drafts") {
+      const ds = allDrafts().filter((d) => match((d.r.lot_no + " " + d.r.process + " " + (d.r.details || "")).toLowerCase(), ws));
+      $("#list").innerHTML = `<div class="count"><span>${ds.length} unsaved process${ds.length === 1 ? "" : "es"} on this phone</span></div>` + (ds.length ? ds.map((d) => recCard(d.r).replace('<span class="m">', `<span class="m"><b style="color:var(--warn)">Unsaved · ${esc(new Date(d.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))}</b>`)).join("") : `<p class="empty">No unsaved process changes. Changes you make in the process editor and leave without saving show up here.</p>`);
+      return;
+    }
     if (tab === "lots" && filter.lots === "proc") {
       const ps = data.processes.filter((p) => match(p.hay, ws)).sort((a, b) => (b.open > 0) - (a.open > 0) || a.pageNo - b.pageNo);
       const rh = ws.length ? recipeHits(ws) : [];
@@ -929,7 +934,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 95, at: "2026-11-11T12:11:01+05:30", notes: "Unsaved process changes are kept as you type and shown on the lot and recipe with Continue editing" };
+  const APP_BUILD = { v: 96, at: "2026-11-11T13:49:15+05:30", notes: "Processes menu has Unsaved processes, listing every process with unsaved editor changes on this phone" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1836,6 +1841,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   const edDropDraft = (k) => { try { localStorage.removeItem(DRAFT(k)); } catch (e) {} };
   // unsaved changes kept on this phone for a process (only while they still fit the saved version)
+  function allDrafts() {
+    const out = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const n = localStorage.key(i); if (!n || n.indexOf("ssi-draft:") !== 0) continue; const k = n.slice(10), d = draftOf(k), r = d && getRecipe(k); if (r) out.push({ k, at: d.at, r: Object.assign({ key: k }, r) }); } } catch (e) {}
+    return out.sort((a, b) => b.at - a.at);
+  }
   function draftOf(k) { try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"), r = d && getRecipe(k); return d && d.ed && r && d.ver === (r.version || 0) ? d : null; } catch (e) { return null; } }
   let draftT = null;
   const draftSoon = () => { clearTimeout(draftT); draftT = setTimeout(() => { if (formOpen === "recipe" && ed) edKeepDraft(); }, 500); };
