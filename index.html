@@ -967,7 +967,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 101, at: "2026-11-11T23:09:57+05:30", notes: "Settings has Back up app data: one file with all phone entries, invoices, audits and PDF records for checking on the PC" };
+  const APP_BUILD = { v: 102, at: "2026-11-11T23:47:14+05:30", notes: "Invoice PDF in Tally's Tax Invoice layout from any invoice; GST rounded up to the paisa like Tally; invoice address, IEC, e-mail and declaration in Tally names" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2392,7 +2392,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   };
   // ---------------------------------------------------------------- invoices (apps only; Tally makes the real invoice from the XML file)
   // names as read from Tally on 9 Nov 2026 (company S. S. International, FY from 1-Apr-26)
-  const INV_DEF = { company: "S. S. International", vtype: "SALE", sales: "Sales", cgst: "Output CGST", sgst: "Output SGST", igst: "Output IGST", freight: "Freight & Packaging @12%", packing: "Packing Charges", sampling: "SAMPLING CHARGE", discount: "", round: "Rounding Off", vnoFmt: "{n}/26-27", lastNo: 79, godown: "Main Location", unit: "SQF", gst: 5, hsn: "4107", state: "West Bengal", gstin: "19AOLPA8927M1ZB", taxExtras: "yes", parties: {}, items: {} };
+  const INV_DEF = { company: "S. S. International", vtype: "SALE", sales: "Sales", cgst: "Output CGST", sgst: "Output SGST", igst: "Output IGST", freight: "Freight & Packaging @12%", packing: "Packing Charges", sampling: "SAMPLING CHARGE", discount: "", round: "Rounding Off", vnoFmt: "{n}/26-27", lastNo: 79, godown: "Main Location", unit: "SQF", gst: 5, hsn: "4107", state: "West Bengal", gstin: "19AOLPA8927M1ZB", taxExtras: "yes", caddr: "4A G J Khan Road\nKolkata 700039", iec: "0216501954", cemail: "", declare: "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", parties: {}, items: {} };
   const STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
   // GSTIN starts with the state code
   const GST_CODE = { "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" };
@@ -2497,7 +2497,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const byRate = {}; lines.forEach((x) => { const g = Number(x.gst) || 0; byRate[g] = r2((byRate[g] || 0) + x.amt); });
     const main = lines.slice().sort((a, b) => b.amt - a.amt)[0], mr = main ? Number(main.gst) || 0 : Number(S.gst) || 0;
     if (S.taxExtras !== "no" && extra) byRate[mr] = r2((byRate[mr] || 0) + extra);
-    let cgst = 0, igst = 0; Object.entries(byRate).forEach(([g, base]) => { if (intra) cgst += r2(base * Number(g) / 200); else igst += r2(base * Number(g) / 100); });
+    const up2 = (x) => Math.ceil(Math.round(x * 1e6) / 1e4) / 100;
+    let cgst = 0, igst = 0; Object.entries(byRate).forEach(([g, base]) => { if (intra) cgst += up2(base * Number(g) / 200); else igst += up2(base * Number(g) / 100); });
     cgst = r2(cgst); igst = r2(igst);
     const exact = r2(goods + extra + cgst * 2 + igst), total = Math.round(exact), ro = r2(total - exact);
     return { intra, lines, goods, fr, pk, sm, ds, taxable: r2(Object.values(byRate).reduce((t, x) => t + x, 0)), cgst, sgst: cgst, igst, ro, total, byRate, hides: lines.reduce((t, x) => t + (Number(x.hides) || 0), 0), sides: lines.reduce((t, x) => t + (Number(x.sides) || 0), 0), sqft: r2(lines.reduce((t, x) => t + (Number(x.sqft) || 0), 0)) };
@@ -2536,7 +2537,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${warn.length ? `<p class="fmsg bad">${esc(warn.join(" "))}</p>` : ""}
       <div class="kv"><div><span>Status</span><b>${v.tally_no ? "In Tally as " + esc(v.tally_no) : v.exported_at ? "Tally file made " + esc(fmtS(v.exported_at)) + ", not marked in Tally yet" : "Draft"}</b></div><div><span>App number</span><b>${esc(v.temp)}</b></div><div><span>Tally invoice no</span><b>${esc(v.tally_no || v.vno || "—")}</b></div><div><span>Date</span><b>${fmtD(v.date)}</b></div>
       <div><span>Party (Tally)</span><b>${esc(v.party)}</b></div><div><span>GSTIN</span><b>${esc(v.gstin || "—")}</b></div><div><span>State</span><b>${esc(v.state)}${t.intra ? " (CGST + SGST)" : " (IGST)"}</b></div></div>
-      ${store && canWrite ? `<div class="acts lotacts"><button class="btn" data-inv="xml">Make Tally file</button>${!v.tally_no ? `<button class="btn alt" data-inv="edit">Edit</button>` : ""}<button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>` : ""}
+      ${store && canWrite ? `<div class="acts lotacts"><button class="btn" data-inv="xml">Make Tally file</button><button class="btn alt" data-inv="pdf">Invoice PDF</button>${!v.tally_no ? `<button class="btn alt" data-inv="edit">Edit</button>` : ""}<button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>` : ""}
       <div id="invout"></div>
       ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || v.vno || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
       ${formOpen === "invdel" ? `<div class="fm"><p style="margin:0">Delete ${esc(invName(v))}? Its deliveries stay recorded and can go on another invoice.</p><div class="acts" style="margin:0"><button class="btn" data-inv="delsure">Delete invoice</button><button class="btn alt" type="button" data-formclose>Keep it</button></div></div>` : ""}
@@ -2638,6 +2639,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; } inv.lines.push(invLine(lot, null)); invRedraw(); return; }
     if (a.startsWith("del:")) { inv.lines.splice(Number(a.slice(4)), 1); invRedraw(); return; }
     if (!v) return;
+    if (a === "pdf") { pdfInvoice(v, b); return; }
     if (a === "edit") { inv = JSON.parse(JSON.stringify(v)); invShowAll = false; openForm("invoice:" + v.id); return; }
     if (a === "xml") { invExport([v], $("#invout")); return; }
     if (a === "tally") { formOpen = "invtally"; showDetail(); return; }
@@ -2750,16 +2752,117 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<form class="fm" id="fm-invset"><p class="note" style="margin:0">These must match the names in Tally exactly, or Tally refuses the import.</p>
       <div class="two">${f("company", "Company name in Tally")}${f("vtype", "Sales voucher type")}${f("sales", "Sales ledger")}${f("cgst", "CGST ledger")}${f("sgst", "SGST ledger")}${f("igst", "IGST ledger")}${f("freight", "Freight ledger")}${f("packing", "Packing ledger")}${f("sampling", "Sampling ledger")}${f("discount", "Discount ledger (none in Tally yet)")}${f("vnoFmt", "Invoice no pattern ({n} = number)")}${f("lastNo", "Last invoice no used")}${f("round", "Round off ledger")}${f("godown", "Godown (blank if not used)")}${f("unit", "Unit of sqft in Tally")}${f("gst", "Usual GST %")}${f("hsn", "Usual HSN")}${f("gstin", "Our GSTIN")}
       <label>Our state<select id="is-state">${STATES.map((s) => `<option${s === S.state ? " selected" : ""}>${esc(s)}</option>`).join("")}</select></label>
+      <h3 style="grid-column:1/-1;margin:8px 0 0">On the invoice PDF</h3>
+      <label>Our address<textarea id="is-caddr" rows="2">${esc(S.caddr)}</textarea></label>${f("iec", "IEC")}${f("cemail", "E-Mail")}
+      <label style="grid-column:1/-1">Declaration<textarea id="is-declare" rows="2">${esc(S.declare)}</textarea></label>
       <label>GST on freight / packing<select id="is-taxExtras"><option value="yes"${S.taxExtras !== "no" ? " selected" : ""}>Yes, at the goods' rate</option><option value="no"${S.taxExtras === "no" ? " selected" : ""}>No</option></select></label></div>
       ${ps.length ? `<h3 style="margin:8px 0 0">Remembered parties</h3><div class="tbl"><table><thead><tr><th>Customer</th><th>Tally party</th><th>GSTIN</th><th>State</th></tr></thead><tbody>${ps.map(([c, p]) => `<tr><td>${esc(c)}</td><td>${esc(p.party)}</td><td>${esc(p.gstin)}</td><td>${esc(p.state)}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:0">Change a party on its next invoice; it is remembered again when saved.</p>` : ""}
       ${formEnd}</form>`; } };
   async function invSetSave(f, msg, btn) {
     const next = Object.assign({}, invSet);
-    ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "sampling", "vnoFmt", "lastNo", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
+    ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "sampling", "vnoFmt", "lastNo", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras", "caddr", "iec", "cemail", "declare"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
     next.gst = parseFloat($("#is-gst").value) || 0;
     if (!next.company || !next.vtype || !next.sales) { msg.textContent = "Company, voucher type and sales ledger are needed."; return; }
     btn.disabled = true;
     try { await store.doc("invset/main").set(next); invSet = next; closeForm("Tally names saved."); } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  // ---- invoice PDF in Tally's "Tax Invoice" layout, from the app's own invoice
+  const WORDS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"], TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  function inWords(n) {
+    const two = (x) => x < 20 ? WORDS[x] : TENS[Math.floor(x / 10)] + (x % 10 ? " " + WORDS[x % 10] : ""), three = (x) => (x >= 100 ? WORDS[Math.floor(x / 100)] + " Hundred" + (x % 100 ? " " : "") : "") + two(x % 100);
+    let r = Math.floor(n), out = []; const cr = Math.floor(r / 1e7); r %= 1e7; const lk = Math.floor(r / 1e5); r %= 1e5; const th = Math.floor(r / 1000); r %= 1000;
+    if (cr) out.push(inWords(cr).replace(/^INR | Only$/g, "") + " Crore"); if (lk) out.push(two(lk) + " Lakh"); if (th) out.push(two(th) + " Thousand"); if (r) out.push(three(r));
+    const p = Math.round((n - Math.floor(n)) * 100);
+    return "INR " + (out.join(" ") || "Zero") + (p ? " and " + two(p) + " paise" : "") + " Only";
+  }
+  const inr = (n) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dmy = (d) => { const x = new Date(String(d || "").slice(0, 10) + "T00:00:00"); return isNaN(x) ? String(d || "") : x.getDate() + "-" + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][x.getMonth()] + "-" + String(x.getFullYear()).slice(2); };
+  async function pdfInvoice(v, btn) {
+    const old = btn.textContent; btn.disabled = true; btn.textContent = "Making PDF";
+    try {
+      const J = await pdfLib(), doc = new J({ unit: "mm", format: "a4" }), S = iset(), t = invCalc(v), u = S.unit;
+      const L = 10, R = 200, M = 105, C2 = 152.5, line = (x1, y1, x2, y2) => doc.line(x1, y1, x2, y2), box = (x, y, w, h) => doc.rect(x, y, w, h);
+      const txt = (x, y, s, o = {}) => { doc.setFont("helvetica", o.b ? (o.i ? "bolditalic" : "bold") : o.i ? "italic" : "normal"); doc.setFontSize(o.f || 8.5); doc.text(String(s ?? ""), x, y, o.a ? { align: o.a } : undefined); };
+      const wrap = (s, w, f) => { doc.setFontSize(f || 8.5); return doc.splitTextToSize(String(s || ""), w); };
+      const code = (st) => (Object.entries(GST_CODE).find(([, n]) => UP(n) === UP(st)) || [""])[0];
+      const no = v.tally_no || v.vno || v.temp;
+      doc.setLineWidth(0.2);
+      txt(105, 11, "Tax Invoice", { b: true, f: 12, a: "center" });
+      const top = 14;
+      // left: company, consignee, buyer
+      let y = top + 4;
+      txt(L + 1.5, y, S.company, { b: true, f: 9.5 }); y += 4.2;
+      String(S.caddr || "").split(/\n/).filter(Boolean).forEach((x) => { txt(L + 1.5, y, x); y += 3.8; });
+      if (S.iec) { txt(L + 1.5, y, "IEC: " + S.iec); y += 3.8; }
+      txt(L + 1.5, y, "GSTIN/UIN: " + S.gstin); y += 3.8;
+      txt(L + 1.5, y, "State Name : " + S.state + ", Code : " + code(S.state)); y += 3.8;
+      if (S.cemail) { txt(L + 1.5, y, "E-Mail : " + S.cemail); y += 3.8; }
+      const party = (lbl, oneLine) => { line(L, y - 2.6, M, y - 2.6); txt(L + 1.5, y + 0.6, lbl, { f: 7.5 }); y += 4.4; txt(L + 1.5, y, v.party, { b: true, f: 9 }); y += 4;
+        if (oneLine) { if (v.addr) wrap(String(v.addr).replace(/\s*\n\s*/g, ", "), 91, 7).forEach((w) => { txt(L + 1.5, y, w, { f: 7 }); y += 3; }); y += 0.8; }
+        else String(v.addr || "").split(/\s*[,\n]\s*(?=\S)/).filter(Boolean).forEach((x) => { wrap(x, 90).forEach((w) => { txt(L + 1.5, y, w); y += 3.6; }); });
+        if (v.gstin) { txt(L + 1.5, y, "GSTIN/UIN"); txt(L + 26, y, ":  " + UP(v.gstin)); y += 3.6; }
+        const st = v.state || S.state; txt(L + 1.5, y, "State Name"); txt(L + 26, y, ":  " + st + ", Code : " + code(st)); y += 4.6; };
+      party("Consignee (Ship to)", true); party("Buyer (Bill to)");
+      // right: the boxes Tally prints
+      const pos = [...new Set((v.lines || []).map((x) => x.po).filter(Boolean))].join(", ");
+      const cells = [["Invoice No.", no, v.eway ? "e-Way Bill No." : "Dated", v.eway ? v.eway : dmy(v.date)], ["Delivery Note", "", "Mode/Terms of Payment", ""], ["Reference No. & Date.", v.temp + " dt. " + dmy(v.date), "Other References", v.eway ? "Dated " + dmy(v.date) : ""], ["Buyer's Order No.", pos, "Dated", ""], ["Dispatch Doc No.", v.lr || "", "Delivery Note Date", v.lrdate ? dmy(v.lrdate) : ""], ["Dispatched through", [v.transporter, v.vehicle].filter(Boolean).join(" · "), "Destination", v.dest || ""]];
+      let ry = top; cells.forEach(([a, av, b2, bv]) => { line(M, ry, R, ry); line(C2, ry, C2, ry + 8.5); txt(M + 1.2, ry + 3, a, { f: 7.5 }); txt(C2 + 1.2, ry + 3, b2, { f: 7.5 }); txt(M + 1.2, ry + 7, av, { b: true, f: 8.5 }); txt(C2 + 1.2, ry + 7, bv, { b: true, f: 8.5 }); ry += 8.5; });
+      line(M, ry, R, ry); txt(M + 1.2, ry + 3, "Terms of Delivery", { f: 7.5 });
+      const hb = Math.max(y - 1, ry + 14);
+      box(L, top, R - L, hb - top); line(M, top, M, hb);
+      // items table
+      const X = [L, L + 8, L + 88, L + 104, L + 127, L + 143, L + 152, L + 160, R], head = ["Sl\nNo.", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc. %", "Amount"];
+      let ty = hb; const th = 7; box(L, ty, R - L, th); head.forEach((h, i) => { const parts = h.split("\n"); parts.forEach((p, k) => txt(i === 0 ? X[0] + 1 : (X[i] + X[i + 1]) / 2, ty + 3 + k * 3, p, { f: 7.5, a: i === 0 ? undefined : "center" })); });
+      ty += th; const bodyTop = ty, bottomLimit = 205;
+      let by = ty + 4.5;
+      const newPage = () => { doc.addPage(); by = 18; };
+      t.lines.forEach((ln, i) => {
+        if (by > bottomLimit - 10) newPage();
+        txt(X[0] + 6.5, by, String(i + 1), { a: "right" }); txt(X[1] + 1.2, by, ln.item, { b: true, f: 9 }); txt(X[2] + 1.2, by, ln.hsn || "");
+        txt(X[4] - 1.2, by, inr(ln.sqft) + " " + u, { b: true, a: "right" }); txt(X[5] - 1.2, by, inr(ln.rate), { a: "right" }); txt(X[5] + 1.2, by, u);
+        if (Number(ln.disc)) txt(X[7] - 1.2, by, String(ln.disc), { a: "right" }); txt(R - 1.2, by, inr(ln.amt), { b: true, f: 9, a: "right" });
+        by += 3.8; const d = (ln.desc || descOf(ln)); if (d) { wrap(d, 76, 8).forEach((w) => { txt(X[1] + 5, by, w, { i: true, f: 8 }); by += 3.4; }); } by += 1.6; });
+      by += 1; line(X[7] + 2, by, R - 1, by); by += 3.6; txt(R - 1.2, by, inr(t.goods), { a: "right" }); by += 5;
+      const extra = (name, amt, less) => { if (!amt) return; if (less) txt(X[1] + 1.2, by, "Less :", { i: true }); txt(X[2] - 1.5, by, name, { b: true, i: true, a: "right" }); txt(R - 1.2, by, (amt < 0 ? "(-)" : "") + inr(Math.abs(amt)), { b: true, a: "right" }); by += 4; };
+      extra(S.freight, t.fr); extra(S.packing, t.pk); extra(S.sampling, t.sm); if (t.ds) extra(S.discount || "Discount", -t.ds, true);
+      if (t.intra) { extra(S.cgst, t.cgst); extra(S.sgst, t.sgst); } else extra(S.igst, t.igst);
+      if (t.ro) extra(S.round, t.ro, t.ro < 0);
+      const tblBottom = Math.max(by + 2, bottomLimit - 40);
+      [1, 2, 3, 4, 5, 6, 7].forEach((i) => line(X[i], doc.getNumberOfPages() > 1 ? 14 : bodyTop, X[i], tblBottom));
+      box(L, doc.getNumberOfPages() > 1 ? 14 : bodyTop, R - L, tblBottom - (doc.getNumberOfPages() > 1 ? 14 : bodyTop));
+      // total row
+      let fy = tblBottom; box(L, fy, R - L, 6); txt(X[2] - 1.5, fy + 4.2, "Total", { a: "right" }); txt(X[4] - 1.2, fy + 4.2, inr(t.sqft) + " " + u, { b: true, a: "right" }); txt(R - 1.2, fy + 4.4, "Rs. " + inr(t.total), { b: true, f: 10, a: "right" });
+      [2, 3, 4, 5, 6].forEach((i) => line(X[i], fy, X[i], fy + 6)); fy += 6;
+      txt(L + 1.2, fy + 3.4, "Amount Chargeable (in words)", { f: 7.5 }); txt(R - 1.2, fy + 3.4, "E. & O.E", { i: true, f: 7.5, a: "right" });
+      const w1 = wrap(inWords(t.total), 120, 9.5); w1.forEach((w, k) => txt(L + 1.2, fy + 7.6 + k * 4, w, { b: true, f: 9.5 })); fy += 6 + w1.length * 4 + 2;
+      // HSN tax summary
+      const byH = {}; t.lines.forEach((ln) => { const h = ln.hsn || S.hsn; byH[h] = byH[h] || { val: 0, g: Number(ln.gst) || 0 }; byH[h].val = r2(byH[h].val + ln.amt); });
+      const extraAmt = r2(t.taxable - t.lines.reduce((a, x) => a + x.amt, 0)); if (extraAmt) { const main = Object.keys(byH).sort((a, b) => byH[b].val - byH[a].val)[0]; if (main) byH[main].val = r2(byH[main].val + extraAmt); }
+      const up2 = (x) => Math.ceil(Math.round(x * 1e6) / 1e4) / 100;
+      const hx = t.intra ? [L, L + 78, L + 100, L + 112, L + 134, L + 146, L + 168, R] : [L, L + 100, L + 124, L + 138, L + 164, R];
+      box(L, fy, R - L, 9); const grp = t.intra ? [[2, "CGST"], [4, "SGST/UTGST"]] : [[2, "IGST"]], inG = new Set(grp.map(([i]) => i + 1));
+      hx.slice(1, -1).forEach((x, k) => line(x, inG.has(k + 1) ? fy + 4.5 : fy, x, fy + 9));
+      grp.forEach(([i, lb]) => { line(hx[i], fy + 4.5, hx[i + 2], fy + 4.5); txt((hx[i] + hx[i + 2]) / 2, fy + 3.4, lb, { f: 7.5, a: "center" }); txt((hx[i] + hx[i + 1]) / 2, fy + 7.6, "Rate", { f: 7.5, a: "center" }); txt((hx[i + 1] + hx[i + 2]) / 2, fy + 7.6, "Amount", { f: 7.5, a: "center" }); });
+      const hh = t.intra ? [[0, "HSN/SAC"], [1, "Taxable", "Value"], [6, "Total", "Tax Amount"]] : [[0, "HSN/SAC"], [1, "Taxable", "Value"], [4, "Total", "Tax Amount"]];
+      hh.forEach(([i, ...ps]) => ps.forEach((p, k) => txt((hx[i] + hx[i + 1]) / 2, fy + (ps.length === 1 ? 5.5 : 3.4 + k * 3.6), p, { f: 7.5, a: "center" }))); fy += 9;
+      let tv = 0, ta = 0;
+      Object.entries(byH).forEach(([h, o]) => { const half = t.intra ? up2(o.val * o.g / 200) : 0, ig = t.intra ? 0 : up2(o.val * o.g / 100), tot = t.intra ? r2(half * 2) : ig; tv += o.val; ta += tot;
+        const vals = t.intra ? [h, inr(o.val), (o.g / 2).toFixed(2) + "%", inr(half), (o.g / 2).toFixed(2) + "%", inr(half), inr(tot)] : [h, inr(o.val), o.g + "%", inr(ig), inr(tot)];
+        box(L, fy, R - L, 5); hx.slice(1, -1).forEach((x) => line(x, fy, x, fy + 5)); vals.forEach((x, i) => txt(i === 0 ? hx[0] + 1.2 : hx[i + 1] - 1.2, fy + 3.6, x, { a: i === 0 ? undefined : "right" })); fy += 5; });
+      const tvals = t.intra ? ["Total", inr(tv), "", inr(t.cgst), "", inr(t.sgst), inr(r2(t.cgst + t.sgst))] : ["Total", inr(tv), "", inr(t.igst), inr(t.igst)];
+      box(L, fy, R - L, 5); hx.slice(1, -1).forEach((x) => line(x, fy, x, fy + 5)); tvals.forEach((x, i) => txt(i === 0 ? hx[1] - 1.2 : hx[i + 1] - 1.2, fy + 3.6, x, { b: true, a: "right" })); fy += 5;
+      const taxTot = t.intra ? r2(t.cgst + t.sgst) : t.igst;
+      txt(L + 1.2, fy + 4.5, "Tax Amount (in words) :"); txt(L + 34, fy + 4.5, inWords(taxTot), { b: true }); fy += 8;
+      txt(L + 1.2, fy, "Company's PAN"); txt(L + 34, fy, ":  " + String(S.gstin || "").slice(2, 12), { b: true }); fy += 4;
+      const dy = fy; txt(L + 1.2, fy, "Declaration", { f: 8 }); doc.line(L + 1.2, fy + 0.6, L + 17, fy + 0.6); fy += 3.6; wrap(S.declare, 90, 8).forEach((w) => { txt(L + 1.2, fy, w, { f: 8 }); fy += 3.4; });
+      const sb = Math.max(fy + 1, dy + 16); box(M, dy - 3.4, R - M, sb - dy + 3.4); txt(R - 1.5, dy + 0.6, "for " + S.company, { b: true, a: "right" }); txt(R - 1.5, sb - 1.5, "Authorised Signatory", { f: 8, a: "right" });
+      box(L, top, R - L, sb - top);
+      txt(105, sb + 5, "This is a Computer Generated Invoice", { f: 8, a: "center" });
+      const n = doc.getNumberOfPages(); if (n > 1) for (let i = 1; i <= n; i++) { doc.setPage(i); txt(R, 290, "Page " + i + " of " + n, { f: 7, a: "right" }); }
+      const name = String(no).replace(/[\/\\:*?"<>|]+/g, "-") + "_" + String(v.party || v.customer).replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ")[0] + "_" + Math.round(t.total) + ".pdf";
+      const w = { textContent: "" }; await savePdf(doc, name, w); if (w.textContent && btn.parentElement) btn.parentElement.insertAdjacentHTML("afterend", `<p class="note bad">${esc(w.textContent)}</p>`);
+    } catch (e) { const m = btn.parentElement; if (m) m.insertAdjacentHTML("afterend", `<p class="note bad">The PDF could not be made: ${esc(e.message)}</p>`); }
+    btn.disabled = false; btn.textContent = old;
   }
   function invOfLot(lot) { return invLive().filter((v) => (v.lines || []).some((l) => l.lot === lot)); }
   // ---------------------------------------------------------------- delivery corrections
