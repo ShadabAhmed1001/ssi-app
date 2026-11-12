@@ -64,6 +64,7 @@ button { cursor: pointer; }
 .app { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); height: 100%; }
 header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); color: var(--ink); border-bottom: 1px solid var(--line); box-shadow: 0 1px 3px rgb(0 0 0 / .04);
   padding-block: 10px 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 8px; }
+header.top { grid-template-columns: minmax(0, 1fr); }
 .brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .brand { align-items: center; }
 .brand h1 { margin: 0; font-family: var(--f-display); font-weight: 700; font-size: 20px; letter-spacing: .02em; display: flex; align-items: center; gap: 9px; color: var(--accent); }
@@ -463,7 +464,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 .tour { position: fixed; inset: 0; z-index: 400; }
 .tour-hole { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(10,14,20,.62); outline: 3px solid var(--accent); outline-offset: 2px; transition: all .25s ease; pointer-events: none; }
 .tour-hole.none { box-shadow: 0 0 0 9999px rgba(10,14,20,.62); outline: none; width: 0 !important; height: 0 !important; left: 50% !important; top: 40% !important; }
-.tour-card { position: fixed; width: min(360px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); transition: top .25s ease, left .25s ease; }
+.tour-card { box-sizing: border-box; position: fixed; width: min(360px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); transition: top .25s ease, left .25s ease; }
 .tour-card h3 { margin: 0 0 6px; font-size: 1.05rem; }
 .tour-card p { margin: 0 0 8px; line-height: 1.45; }
 .tour-card ul { margin: 0 0 8px; padding-left: 18px; line-height: 1.45; }
@@ -473,6 +474,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 .tour-dots { display: flex; gap: 4px; margin-bottom: 10px; }
 .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); }
 .tour-dots i.on { background: var(--accent); }
+.bkcard { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
+.bkcard .setlist { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .tour-hole, .tour-card { transition: none; } }
 </style>
 
@@ -993,7 +996,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 105, at: "2026-11-12T09:08:35+05:30", notes: "First-run app tour: walks a new user through the menu, search and each page. Replay from Settings › App tour." };
+  const APP_BUILD = { v: 106, at: "2026-11-12T21:05:16+05:30", notes: "Backup and restore: Settings › Restore from a backup (file or OneDrive), daily OneDrive backup per phone (last 30 kept), backup reminder on Today, Settings page fits narrow phones." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1013,6 +1016,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const una = data.lots.filter((l) => l.state === "DISPATCHED" && trackedLot(l.lot_no) && notDelivered(l).dp > 0 && notDelivered(l).sh > 0);
       if (una.length) checks.push([`data-go="lots" data-k="${esc(una[0].lot_no)}"`, una.length + (una.length === 1 ? " dispatched lot has" : " dispatched lots have") + " pieces not delivered and not accounted for (" + una.slice(0, 6).map((l) => l.lot_no).join(", ") + (una.length > 6 ? "…" : "") + "). They can't be archived until you say where they went."]); }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
+    if (bkOverdue()) checks.push(["data-jump=\"settings\" data-f=\"\"", lastBackup() ? "This phone's last backup was " + bkAgo(lastBackup()) + ". Back it up in Settings" : "This phone has never been backed up. Back it up in Settings"]);
     const hc = healthItems().length;
     if (hc) checks.push(["data-jump=\"health\" data-f=\"\"", "Health check: " + hc + (hc === 1 ? " item" : " items") + " to look at"]);
     if (data.pending.length) checks.push(["data-jump=\"entries\" data-f=\"pending\"", data.pending.length + (data.pending.length === 1 ? " phone entry is" : " phone entries are") + " waiting for Excel"]);
@@ -1112,6 +1116,127 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }, true);
   window.addEventListener("popstate", () => { if (tourAt >= 0) { const o = document.querySelector(".tour"); if (o) o.remove(); tourAt = -1; lsSet("ssi-tour", "done"); } });
   window.__tour = { start: () => tourStart(), at: () => tourAt };
+  // ---------------------------------------------------------------- backup and restore
+  // a backup holds this phone's entries, invoices, audits, PDF records, Tally names, and its look settings and unsaved drafts.
+  // never the device id or sign-in data. Restore adds what is missing and newer copies; it never deletes or renumbers anything,
+  // so an entry Excel already imported keeps its id and Excel's import log skips it.
+  const BK_SKIP_LS = ["ssi-device", "ssi-last-backup"];
+  function bkSettings() {
+    const o = {};
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^ssi-/.test(k) && !BK_SKIP_LS.includes(k)) o[k] = localStorage.getItem(k); } } catch (e) {}
+    return o;
+  }
+  function bkBody() {
+    return { kind: "ssi-app-backup", build: APP_BUILD.v, app_version: appVer(), made_at: new Date().toISOString(), data_as_of: data.asOf || "", by: uid,
+      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length },
+      entries, invoices, audits, pdflog: pdfLog, invset: invSet, settings: bkSettings() };
+  }
+  const bkStamp = (d) => String((d && (d._at || d.updated_at || d.imported_at || d.created_at || d.made_at)) || "");
+  const BK_NAMES = { entries: "phone entries", invoices: "invoices", audits: "audits", pdflog: "PDF records", invset: "Tally names" };
+  function bkPlan(body) {
+    if (!body || body.kind !== "ssi-app-backup") return { err: "This is not an app backup file." };
+    const bb = Number(body.build) || Number((String(body.app_version || "").match(/Version (\d+)/) || [])[1]) || 0;
+    if (bb > APP_BUILD.v) return { err: `This backup was made by app version ${bb}. This phone has version ${APP_BUILD.v}. Update the app first (OneDrive settings › Check for updates), then restore.` };
+    const byId = (a) => Object.fromEntries((a || []).map((x) => [x.id, x]));
+    const have = { entries: byId(entries), invoices: byId(invoices), audits: byId(audits), pdflog: pdfLog || {}, invset: invSet && Object.keys(invSet).length ? { main: invSet } : {} };
+    const src = (c) => { const v = body[c]; if (c === "invset") return v && Object.keys(v).length ? [["main", v]] : []; return Array.isArray(v) ? v.filter((x) => x && x.id).map((x) => [x.id, x]) : Object.entries(v || {}); };
+    const writes = [], n = {};
+    Object.keys(BK_NAMES).forEach((c) => {
+      n[c] = { add: 0, newer: 0, same: 0 };
+      src(c).forEach(([id, v]) => {
+        const cur = have[c][id], doc = Object.assign({}, v); delete doc.id;
+        if (!cur) { writes.push([c, id, doc]); n[c].add++; }
+        else if (bkStamp(v) > bkStamp(cur)) { writes.push([c, id, doc]); n[c].newer++; }
+        else n[c].same++;
+      });
+    });
+    const ls = Object.entries(body.settings || {}).filter(([k, v]) => /^ssi-/.test(k) && !BK_SKIP_LS.includes(k) && v != null && !lsGet(k));
+    return { body, writes, n, ls, made: body.made_at, who: body.who || "", device: body.device || "" };
+  }
+  const bkWhen = (iso) => { const d = new Date(iso); return isNaN(d) ? "unknown date" : d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }); };
+  function bkPlanHtml(p) {
+    const rowsH = Object.keys(BK_NAMES).filter((c) => p.n[c].add + p.n[c].newer + p.n[c].same).map((c) => `<tr><td>${BK_NAMES[c]}</td><td class="r num">${p.n[c].add}</td><td class="r num">${p.n[c].newer}</td><td class="r num">${p.n[c].same}</td></tr>`).join("");
+    const nothing = !p.writes.length && !p.ls.length;
+    return `<p>Backup made ${esc(bkWhen(p.made))}${p.who ? " by " + esc(p.who) : ""}${p.device ? " (phone " + esc(p.device) + ")" : ""}.</p>
+      ${rowsH ? `<div class="tbl"><table><thead><tr><th></th><th class="r">New</th><th class="r">Newer</th><th class="r">Already here</th></tr></thead><tbody>${rowsH}</tbody></table></div>` : ""}
+      ${p.ls.length ? `<p class="note">Also brings back ${p.ls.length} look setting${p.ls.length > 1 ? "s" : ""} or unsaved draft${p.ls.length > 1 ? "s" : ""} this phone does not have.</p>` : ""}
+      <p class="note">${nothing ? "Everything in this backup is already on this phone." : "Nothing on this phone is deleted. Entries keep their numbers, so Excel will not import any of them twice."}</p>`;
+  }
+  async function bkApply(p) {
+    let done = 0;
+    for (const [c, id, v] of p.writes) { if (store.put) await store.put(c, id, v); else await writeEntry(store.doc(c + "/" + id), v); done++; }
+    p.ls.forEach(([k, v]) => lsSet(k, v));
+    if (p.ls.length) { applyTheme(); applyBrand(); }
+    refresh();
+    return done;
+  }
+  // the restore sheet: from a file, or (standalone, signed in) from a OneDrive snapshot
+  let bkBusy = false;
+  function bkSheet(inner) {
+    let o = document.querySelector(".bksheet");
+    if (!o) {
+      o = document.createElement("div"); o.className = "tour bksheet"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true"); o.setAttribute("aria-labelledby", "bk-t");
+      o.innerHTML = '<div class="tour-hole none"></div><div class="tour-card bkcard" tabindex="-1"></div>';
+      document.body.appendChild(o);
+      o.addEventListener("click", bkClick);
+    }
+    o.querySelector(".bkcard").innerHTML = inner;
+    requestAnimationFrame(() => { const c = o.querySelector(".bkcard"); c.style.left = Math.max(16, (window.innerWidth - c.offsetWidth) / 2) + "px"; c.style.top = Math.max(16, (window.innerHeight - c.offsetHeight) / 2) + "px"; });
+  }
+  const bkClose = () => { if (bkBusy) return; const o = document.querySelector(".bksheet"); if (o) o.remove(); bkPending = null; };
+  let bkPending = null;
+  const bkFoot = (btns) => `<div class="tour-foot"><span class="sp"></span>${btns}</div>`;
+  async function bkOpen() {
+    if (!store || !canWrite) { bkSheet(`<h3 id="bk-t">Restore</h3><p>This app is view-only here, so nothing can be restored.</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); return; }
+    const od = window.__ssiOD && window.__ssiOD.ready();
+    bkSheet(`<h3 id="bk-t">Restore from a backup</h3><p>Brings back entries, invoices and settings saved from this phone or another one. Nothing on this phone is deleted.</p>
+      ${od ? `<div class="group" style="margin-top:4px">OneDrive backups</div><div id="bk-od"><p class="note">Looking in OneDrive…</p></div>` : `<p class="note">${window.SSI_STANDALONE ? "Sign in to OneDrive (top bar) to restore from the daily OneDrive backups. " : ""}Or pick a backup file made with Back up app data.</p>`}
+      ${bkFoot('<button class="btn alt" data-bk="close">Cancel</button><button class="btn alt" data-bk="file">Pick a backup file…</button>')}<input type="file" id="bk-file" accept=".json,.txt,application/json,text/plain" hidden>`);
+    if (od) {
+      try {
+        const list = await window.__ssiOD.list(), box = document.querySelector("#bk-od"); if (!box) return;
+        box.innerHTML = list.length ? `<div class="setlist">${list.slice(0, 12).map((b) => `<button class="alert" data-bk="od" data-n="${esc(b.name)}"><span>${esc(b.day)} · ${esc(b.who || "phone " + b.device)}${b.mine ? " (this phone)" : ""}<br><small class="note">${esc(bkWhen(b.at))}</small></span><span aria-hidden="true">›</span></button>`).join("")}</div>` : `<p class="note">No OneDrive backups yet. The app makes one each day after it syncs.</p>`;
+        bkSheet(document.querySelector(".bkcard").innerHTML);
+      } catch (e) { const box = document.querySelector("#bk-od"); if (box) box.innerHTML = `<p class="note bad">${esc(e.message || String(e))}</p>`; }
+    }
+  }
+  function bkShowPlan(body, from) {
+    const p = bkPlan(body);
+    if (p.err) { bkSheet(`<h3 id="bk-t">Can't restore this</h3><p>${esc(p.err)}</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); return; }
+    bkPending = p;
+    const nothing = !p.writes.length && !p.ls.length;
+    bkSheet(`<h3 id="bk-t">Restore ${esc(from)}?</h3>${bkPlanHtml(p)}<p class="note" id="bk-msg"></p>${bkFoot(nothing ? '<button class="btn" data-bk="close">Close</button>' : '<button class="btn alt" data-bk="close">Cancel</button><button class="btn" data-bk="go">Restore</button>')}`);
+  }
+  async function bkClick(e) {
+    const o = document.querySelector(".bksheet"); if (e.target === o) { bkClose(); return; }
+    const b = e.target.closest("[data-bk]"); if (!b) return;
+    const a = b.dataset.bk;
+    if (a === "close") { bkClose(); return; }
+    if (a === "file") { const f = document.querySelector("#bk-file"); f.onchange = async () => { const file = f.files && f.files[0]; if (!file) return; try { bkShowPlan(JSON.parse(await file.text()), "this backup file"); } catch (err) { bkSheet(`<h3 id="bk-t">Can't read this file</h3><p>It is not an app backup file.</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); } }; f.click(); return; }
+    if (a === "od") { b.disabled = true; try { bkShowPlan(await window.__ssiOD.get(b.dataset.n), "the OneDrive backup of " + b.dataset.n.slice(0, 10)); } catch (err) { b.disabled = false; bkSheet(`<h3 id="bk-t">Can't open this backup</h3><p>${esc(err.message || String(err))}</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); } return; }
+    if (a === "go" && bkPending && !bkBusy) {
+      const msg = document.querySelector("#bk-msg"); bkBusy = true; b.disabled = true;
+      try {
+        // with OneDrive sync on, fetch what other phones have first, so an older copy from the backup never wins over a newer one
+        if (window.__ssiOD && window.__ssiOD.ready()) { msg.textContent = "Syncing with OneDrive first…"; await window.__ssiOD.syncNow(); bkPending = bkPlan(bkPending.body); }
+        msg.textContent = "Restoring…";
+        const n = await bkApply(bkPending); bkBusy = false;
+        bkSheet(`<h3 id="bk-t">Restored</h3><p>${n} item${n === 1 ? "" : "s"} brought back${bkPending.ls.length ? ", plus " + bkPending.ls.length + " setting" + (bkPending.ls.length > 1 ? "s" : "") : ""}.</p><p class="note">Entries waiting for Excel go with the next Send to Excel or OneDrive sync.</p>${bkFoot('<button class="btn" data-bk="close">Done</button>')}`);
+      } catch (err) { bkBusy = false; b.disabled = false; msg.textContent = "Restore stopped: " + (err.message || String(err)) + ". Nothing already restored is lost; try again."; }
+    }
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".bksheet")) { e.stopPropagation(); bkClose(); } }, true);
+  // ask Chrome to keep the app's storage when the phone runs low on space (does not survive uninstall or Clear data)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then((p) => p || navigator.storage.persist()).catch(() => {}); } catch (e) {}
+  const lastBackup = () => lsGet("ssi-last-backup");
+  const bkAgo = (iso) => { if (!iso) return ""; const h = (Date.now() - new Date(iso)) / 36e5; return h < 1 ? "less than an hour ago" : h < 48 ? Math.round(h) + " h ago" : Math.round(h / 24) + " days ago"; };
+  // standalone only (inside Claude the entries are kept by Claude): this phone has entries newer than its last backup, and that backup is over 3 days old
+  function bkOverdue() {
+    if (!window.SSI_STANDALONE || !store) return false;
+    const lb = lastBackup();
+    if (lb && Date.now() - new Date(lb) < 3 * 864e5) return false;
+    return entries.some((e) => String(e.created_at || "") > (lb || "") && (!e.entered_by || e.entered_by === uid));
+  }
   // ---------------------------------------------------------------- settings and about
   function settingsView() {
     const row = (attrs, t, sub) => `<button class="alert" ${attrs}><span>${t}${sub ? `<br><small class="note">${sub}</small>` : ""}</span><span aria-hidden="true">›</span></button>`;
@@ -1126,7 +1251,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="logopdf" ${logoOnPdf() ? "checked" : ""}> Put the logo on PDFs made in the app</label>
         <small class="note">Shown at the top of the app, in the menu and on the PDFs. Kept on this phone.</small></div>
       ${row('data-tour-replay="1"', "App tour", "A short walk through the app's pages. Shown once when the app is first opened on a phone.")}
-      ${row('data-backup="1"', "Back up app data", "Saves all phone entries, invoices, audits and PDF records from this phone as one file. Put it in OneDrive › SSI › Phone entries so it can be checked on the PC.")}
+      ${row('data-backup="1"', "Back up app data", "Saves all phone entries, invoices, audits, PDF records and settings from this phone as one file. Put it in OneDrive › SSI › Phone entries. " + (lastBackup() ? "Last backup: " + bkWhen(lastBackup()) + " (" + bkAgo(lastBackup()) + ")." : "No backup made on this phone yet."))}
+      ${row('data-restore="1"', "Restore from a backup", "After a reinstall or on a new phone: brings back entries, invoices and settings from a backup file" + (window.SSI_STANDALONE ? " or a OneDrive backup" : "") + ". Nothing is deleted.")}
       ${row('data-menuact="invset"', "Tally names for invoices", "Company, sales ledger, GST ledgers, number series")}
       ${store ? row('data-jump="entries" data-f="pending"', "Phone entries", data.pending.length + " waiting for Excel") : ""}
       ${row('data-jump="health" data-f=""', "Health check", hc ? hc + " to look at" : "nothing to look at")}
@@ -1469,13 +1595,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // everything this phone holds that Excel doesn't (entries of every status, invoices, audits, PDF log, Tally names), for checking on the PC
   async function appBackup(btn) {
     const sm = btn.querySelector("small"), old = sm ? sm.textContent : "";
-    const body = { kind: "ssi-app-backup", app_version: appVer(), made_at: new Date().toISOString(), data_as_of: data.asOf || "", by: uid,
-      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length },
-      entries, invoices, audits, pdflog: pdfLog, invset: invSet };
+    const body = bkBody();
     const name = "ssi-app-backup-" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "") + ".json";
     const dl = window.claude ? await window.claude.use("downloads") : null;
     if (!dl) { if (sm) sm.textContent = "Saving files isn't available here."; return; }
-    try { await dl.save({ filename: name, data: JSON.stringify(body) }); if (sm) sm.textContent = name + " made (" + entries.length + " entries, " + invoices.length + " invoices). Put it in OneDrive › SSI › Phone entries."; }
+    try { await dl.save({ filename: name, data: JSON.stringify(body) }); lsSet("ssi-last-backup", body.made_at); if (sm) sm.textContent = name + " made (" + entries.length + " entries, " + invoices.length + " invoices). Put it in OneDrive › SSI › Phone entries."; }
     catch (err) { if (sm) sm.textContent = err.code === "declined" ? old : "The backup could not be saved."; }
   }
   function pdfLogo(doc) {
@@ -1713,6 +1837,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     pending: () => data.pending.length,
     chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
     exportCsv: () => exportCsv(),
+    backupBody: () => bkBody(),
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
     autoUpdate: async (xb, dbb) => {
       if (!window.XLSX) await loadJs("xlsx.mini.min.js");
@@ -3996,6 +4121,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
+    if (e.target.closest("[data-restore]")) { bkOpen(); return; }
     if (e.target.closest("[data-backup]")) { appBackup(e.target.closest("[data-backup]")); return; }
     { const th = e.target.closest("button[data-theme-set]"); if (th) { lsSet("ssi-theme", th.dataset.themeSet); applyTheme(); render(); return; } }
     if (e.target.closest("[data-logo-pick]")) { const f = $("#logofile"); if (f) f.click(); return; }

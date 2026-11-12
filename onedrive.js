@@ -49,6 +49,7 @@
   const dbApi = {
     collection: (c) => ({ doc: (id) => ref(c, id || newId()), onSnapshot: (f) => { (subs[c] = subs[c] || []).push(f); ready.then(() => f(snap(c))); return () => {}; } }),
     doc: (p) => { const i = p.lastIndexOf("/"); return ref(p.slice(0, i), p.slice(i + 1)); },
+    put: async (c, id, v) => write(c, id, Object.assign({ _at: new Date().toISOString(), _by: me.id }, JSON.parse(JSON.stringify(v)))),
   };
 
   // ---------- who is using it ----------
@@ -95,7 +96,7 @@
   async function initAuth() {
     if (!configured()) return;
     msalApp = new window.msal.PublicClientApplication({
-      auth: { clientId: cfg().clientId, authority: cfg().authority || "https://login.microsoftonline.com/consumers", redirectUri: location.origin + location.pathname },
+      auth: { clientId: cfg().clientId, authority: cfg().authority || "https://login.microsoftonline.com/common", redirectUri: location.origin + location.pathname },
       cache: { cacheLocation: "localStorage" },
     });
     await msalApp.initialize();
@@ -144,6 +145,39 @@
     if (!r.ok) throw new Error("Download failed " + r.status);
     return r;
   }
+
+  // ---------- backups in OneDrive ----------
+  const slug = (t) => String(t || "").normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "phone";
+  const snapName = (day) => day + "_" + device + "_" + slug(me.name) + ".json";
+  const snapParse = (n) => { const m = /^(\d{4}-\d{2}-\d{2})_([a-z0-9]+)_(.*)\.json$/i.exec(n); return m ? { day: m[1], device: m[2], who: m[3].replace(/-/g, " ") } : null; };
+  // files over 4 MB need an upload session; small ones go in one PUT
+  async function upload(path, text, tok) {
+    const blob = new Blob([text], { type: "application/json" });
+    if (blob.size < 3.9e6) return g("PUT", itemUrl(path) + ":/content", blob, "application/json", tok);
+    const ses = await g("POST", itemUrl(path) + ":/createUploadSession", JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "replace" } }), "application/json", tok);
+    const step = 320 * 1024 * 10;
+    for (let i = 0; i < blob.size; i += step) {
+      const part = blob.slice(i, Math.min(blob.size, i + step));
+      const r = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${i}-${i + part.size - 1}/${blob.size}` }, body: part });
+      if (!r.ok) throw new Error("OneDrive upload " + r.status);
+    }
+  }
+  window.__ssiOD = {
+    ready: () => configured() && !!account && !needLogin,
+    syncNow: async () => { await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300)); },
+    list: async () => {
+      const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
+      const items = await listFolder(cfg().entriesFolder + "/app/backups", tok);
+      return items.filter((it) => it.file && snapParse(it.name)).map((it) => Object.assign(snapParse(it.name), { name: it.name, at: it.lastModifiedDateTime, size: it.size, mine: snapParse(it.name).device === device }))
+        .sort((a, b) => b.name.slice(0, 10).localeCompare(a.name.slice(0, 10)) || String(b.at).localeCompare(String(a.at)));
+    },
+    get: async (name) => {
+      const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
+      const it = await g("GET", itemUrl(cfg().entriesFolder + "/app/backups/" + name), null, "", tok);
+      if (!it) throw new Error("That backup is no longer in OneDrive.");
+      return (await download(it, tok)).json();
+    },
+  };
 
   // ---------- sync ----------
   let syncing = false, again = false, kickT = null, lastErr = "";
@@ -203,6 +237,18 @@
           const there = text === meta.lastCsv ? await g("GET", itemUrl(name), null, "", tok) : null;
           if (text !== meta.lastCsv || !there) { await g("PUT", itemUrl(name) + ":/content", text, "text/csv", tok); await setMeta("lastCsv", text); }
         } else if (meta.lastCsv) { await g("DELETE", itemUrl(name), null, "", tok); await setMeta("lastCsv", undefined); }
+      }
+      // 5. this phone's daily backup: <entries folder>/app/backups/<day>_<phone>_<name>.json, the last 30 kept per phone
+      if (H && H.backupBody) {
+        const day = new Date().toLocaleDateString("en-CA");
+        if (meta.snapDay !== day) {
+          const body = Object.assign(H.backupBody(), { device, who: me.name || "" }), txt = JSON.stringify(body);
+          await upload(app + "/backups/" + snapName(day), txt, tok);
+          await setMeta("snapDay", day);
+          try { localStorage.setItem("ssi-last-backup", body.made_at); } catch (e) {}
+          const mine = (await listFolder(app + "/backups", tok)).filter((it) => it.file && snapParse(it.name) && snapParse(it.name).device === device).sort((a, b) => b.name.localeCompare(a.name));
+          for (const it of mine.slice(30)) await g("DELETE", itemUrl(app + "/backups/" + it.name), null, "", tok);
+        }
       }
       await setMeta("syncAt", new Date().toISOString());
       lastErr = "";
