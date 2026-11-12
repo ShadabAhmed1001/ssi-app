@@ -459,6 +459,21 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 @media (prefers-reduced-motion: reduce) { .msheet-in, .fsheet-in { animation: none; } #toast { animation: none; } }
 .okmsg.toast { display: none; }
 #toast[hidden] { display: none; }
+/* first-run tour */
+.tour { position: fixed; inset: 0; z-index: 400; }
+.tour-hole { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(10,14,20,.62); outline: 3px solid var(--accent); outline-offset: 2px; transition: all .25s ease; pointer-events: none; }
+.tour-hole.none { box-shadow: 0 0 0 9999px rgba(10,14,20,.62); outline: none; width: 0 !important; height: 0 !important; left: 50% !important; top: 40% !important; }
+.tour-card { position: fixed; width: min(360px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); transition: top .25s ease, left .25s ease; }
+.tour-card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.tour-card p { margin: 0 0 8px; line-height: 1.45; }
+.tour-card ul { margin: 0 0 8px; padding-left: 18px; line-height: 1.45; }
+.tour-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.tour-foot .sp { flex: 1; color: var(--muted); font-size: .85rem; }
+.tour-skip { background: none; border: 0; color: var(--muted); padding: 8px 4px; text-decoration: underline; }
+.tour-dots { display: flex; gap: 4px; margin-bottom: 10px; }
+.tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); }
+.tour-dots i.on { background: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .tour-hole, .tour-card { transition: none; } }
 </style>
 
 <div class="app">
@@ -540,6 +555,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     load();
     route();
     if (!connected) { connected = true; connectEntries(); }
+    tourAuto();
   }
   function srcLine() { $("#src").textContent = "Data of " + data.asOf + (store && canWrite ? "" : " · view only"); }
   async function connectEntries() {
@@ -977,7 +993,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 104, at: "2026-11-12T00:11:24+05:30", notes: "Saving a process no longer moves crusting times or finishing notes that are still where they were saved" };
+  const APP_BUILD = { v: 105, at: "2026-11-12T09:08:35+05:30", notes: "First-run app tour: walks a new user through the menu, search and each page. Replay from Settings › App tour." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1020,6 +1036,82 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <p class="note" style="margin-top:12px">Red bars include a late lot. Data is from ${data.asOf}, so anything entered in Excel after that is not shown. ${store ? `<button class="link" data-jump="entries" data-f="pending">Phone entries</button>` : ""}</p>
       `;
   }
+  // ---------------------------------------------------------------- first-run tour: shown once on each phone, replay from Settings
+  const TOUR = [
+    { t: "Welcome to the SSI production app", b: "<p>This app shows the tannery's lots, orders, skins and chemicals from the Excel master, and lets you add entries from the floor.</p><p>This short tour shows where everything is. It takes about a minute.</p>" },
+    { el: ["#menubtn", "#side"], t: "The menu", b: "<p>Every page is here: production, orders, dispatches, invoices, processes, chemicals, purchases and settings.</p><p>Each item opens into its pages, for example Production › Open, Late, Dispatched. On a phone, the button shows which page you are on.</p>" },
+    { el: ["#q"], t: "Search", b: "<p>Type a lot number, customer, product, process, PO or chemical. The list below narrows as you type.</p>" },
+    { tab: "today", el: ['.tab[data-tab="today"]', '#side [data-side="today|"]', "#list"], t: "Today", b: "<p>Start here each day. It shows lots that are late or need a check, things to do, and how long lots have been in each stage.</p>" },
+    { tab: "lots", el: ['.tab[data-tab="lots"]', '#side [data-mgrp="lots"]', "#list"], t: "Production", b: "<p>Every lot. Tap a lot to see its stage, process, deliveries and costing, and to make entries for it: move stage, deliver, adjust chemicals, edit the process.</p><p>Pick Open, Late or Dispatched lots from the menu.</p>" },
+    { tab: "lots", el: ['[data-new="new_lot"]'], t: "Adding something new", b: "<p>Buttons like <b>New lot</b>, <b>New PO</b> and <b>New purchase</b> start a new entry. They are at the top of the list on each page.</p>" },
+    { tab: "orders", el: ['.tab[data-tab="orders"]', '#side [data-mgrp="orders"]', "#list"], t: "Orders", b: "<p>PO items and what is left to make. Dispatches and invoices are in the menu.</p>" },
+    { tab: "purchases", el: ['.tab[data-tab="purchases"]', '#side [data-mgrp="purchases"]', "#list"], t: "Purchases", b: "<p>Skins bought, and how many are still left to put into lots.</p>" },
+    { tab: "chemicals", el: ['.tab[data-tab="chemicals"]', '#side [data-mgrp="chemicals"]', "#list"], t: "Chemicals", b: "<p>Chemical stock, what to reorder, and stock audits.</p>" },
+    { t: "How your entries reach Excel", b: "<ul><li>Everything you enter is saved as a <b>phone entry</b>.</li><li>On the PC, Excel's <b>Import from phone</b> brings the entries in.</li><li>Excel stays the master. The app shows data as of the last <b>Update from Excel</b>.</li></ul><p>Entries still waiting are under Menu › Settings › Phone entries waiting.</p>" },
+    { tab: "settings", el: ["[data-tour-replay]"], t: "Settings", b: "<p>Change the look, theme and logo, back up app data, and replay this tour any time from here.</p>" },
+    { t: "You're ready", b: "<p>Tap <b>Today</b> to begin. If you get lost, open the menu or search for what you need.</p>" },
+  ];
+  let tourAt = -1, tourAsked = false;
+  const tourVis = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden"; };
+  function tourAuto() {
+    if (tourAsked) return; tourAsked = true;
+    if (lsGet("ssi-tour")) return;
+    setTimeout(() => { if (!formOpen && !document.querySelector(".tour")) tourStart(); }, 700);
+  }
+  function tourStart() {
+    if (sideOpen) closeSide();
+    tourAt = 0; let o = document.querySelector(".tour");
+    if (!o) {
+      o = document.createElement("div"); o.className = "tour"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true"); o.setAttribute("aria-labelledby", "tour-t");
+      o.innerHTML = '<div class="tour-hole"></div><div class="tour-card" tabindex="-1"></div>';
+      document.body.appendChild(o);
+      o.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-tgo]"); if (!b) return;
+        const g = b.dataset.tgo; if (g === "end") tourEnd(); else tourShow(tourAt + Number(g));
+      });
+    }
+    tourShow(0);
+  }
+  function tourShow(i) {
+    if (i < 0) i = 0; if (i >= TOUR.length) { tourEnd(); return; }
+    tourAt = i; const st = TOUR[i], o = document.querySelector(".tour"); if (!o) return;
+    if (st.tab && tab !== st.tab) { sel[st.tab] = null; stack = []; if (st.tab === "lots" && ["proc", "noproc", "ready", "drafts", "table"].includes(filter.lots)) filter.lots = "open"; go(st.tab); }
+    const el = (st.el || []).map((q) => document.querySelector(q)).find(tourVis) || null;
+    if (st.el && !el && i > 0 && i < TOUR.length - 1) { tourShow(i + (tourAt0 > i ? -1 : 1)); return; } // nothing to point at (e.g. no New button in view-only): skip
+    tourAt0 = i;
+    const last = i === TOUR.length - 1, n = TOUR.length;
+    o.querySelector(".tour-card").innerHTML = `<div class="tour-dots" aria-hidden="true">${TOUR.map((_, k) => `<i class="${k <= i ? "on" : ""}"></i>`).join("")}</div><h3 id="tour-t">${st.t}</h3>${st.b}
+      <div class="tour-foot">${last ? `<span class="sp"></span>` : `<button class="tour-skip" data-tgo="end">Skip tour</button><span class="sp">${i + 1} of ${n}</span>`}${i > 0 ? `<button class="btn alt" data-tgo="-1">Back</button>` : ""}<button class="btn" data-tgo="${last ? "end" : "1"}">${last ? "Finish" : i ? "Next" : "Start tour"}</button></div>`;
+    if (el) el.scrollIntoView({ block: "nearest" });
+    requestAnimationFrame(() => tourPlace(el));
+    const nb = o.querySelector('.tour-card .btn:last-child'); if (nb) nb.focus({ preventScroll: true });
+  }
+  let tourAt0 = 0;
+  function tourPlace(el) {
+    const o = document.querySelector(".tour"); if (!o) return;
+    const h = o.querySelector(".tour-hole"), c = o.querySelector(".tour-card"), vw = window.innerWidth, vh = window.innerHeight, pad = 6, cw = c.offsetWidth, ch = c.offsetHeight;
+    if (!el) { h.classList.add("none"); c.style.left = Math.max(16, (vw - cw) / 2) + "px"; c.style.top = Math.max(16, (vh - ch) / 2) + "px"; return; }
+    h.classList.remove("none");
+    const r = el.getBoundingClientRect(), x = Math.max(4, r.left - pad), y = Math.max(4, r.top - pad), w = Math.min(vw - 8, r.width + pad * 2), hh = Math.min(vh - 8, r.height + pad * 2);
+    Object.assign(h.style, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px" });
+    let top = y + hh + 12, left = Math.max(16, Math.min(vw - cw - 16, r.left + r.width / 2 - cw / 2));
+    if (top + ch > vh - 12) top = y - ch - 12;
+    if (top < 12) { top = Math.max(12, Math.min(vh - ch - 12, r.top + r.height / 2 - ch / 2)); if (vw - (x + w) >= cw + 32) left = x + w + 16; else if (x >= cw + 32) left = x - cw - 16; }
+    c.style.left = left + "px"; c.style.top = top + "px";
+  }
+  function tourEnd() {
+    const o = document.querySelector(".tour"); if (o) o.remove();
+    const was = tourAt; tourAt = -1; lsSet("ssi-tour", "done");
+    if (was >= 0) { sel.today = null; stack = []; go("today"); }
+  }
+  window.addEventListener("resize", () => { if (tourAt >= 0) tourShow(tourAt); });
+  document.addEventListener("keydown", (e) => {
+    if (tourAt < 0) return;
+    if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); tourEnd(); }
+    else if (e.key === "ArrowRight") tourShow(tourAt + 1); else if (e.key === "ArrowLeft") tourShow(tourAt - 1);
+  }, true);
+  window.addEventListener("popstate", () => { if (tourAt >= 0) { const o = document.querySelector(".tour"); if (o) o.remove(); tourAt = -1; lsSet("ssi-tour", "done"); } });
+  window.__tour = { start: () => tourStart(), at: () => tourAt };
   // ---------------------------------------------------------------- settings and about
   function settingsView() {
     const row = (attrs, t, sub) => `<button class="alert" ${attrs}><span>${t}${sub ? `<br><small class="note">${sub}</small>` : ""}</span><span aria-hidden="true">›</span></button>`;
@@ -1033,6 +1125,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <div class="brandset"><input type="text" id="brandnm" maxlength="40" value="${esc(brandName())}" aria-label="Name shown next to the logo"><button class="btn alt" data-name-save>Save name</button></div>
         <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="logopdf" ${logoOnPdf() ? "checked" : ""}> Put the logo on PDFs made in the app</label>
         <small class="note">Shown at the top of the app, in the menu and on the PDFs. Kept on this phone.</small></div>
+      ${row('data-tour-replay="1"', "App tour", "A short walk through the app's pages. Shown once when the app is first opened on a phone.")}
       ${row('data-backup="1"', "Back up app data", "Saves all phone entries, invoices, audits and PDF records from this phone as one file. Put it in OneDrive › SSI › Phone entries so it can be checked on the PC.")}
       ${row('data-menuact="invset"', "Tally names for invoices", "Company, sales ledger, GST ledgers, number series")}
       ${store ? row('data-jump="entries" data-f="pending"', "Phone entries", data.pending.length + " waiting for Excel") : ""}
@@ -3902,6 +3995,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
     if (e.target.closest("[data-backup]")) { appBackup(e.target.closest("[data-backup]")); return; }
     { const th = e.target.closest("button[data-theme-set]"); if (th) { lsSet("ssi-theme", th.dataset.themeSet); applyTheme(); render(); return; } }
     if (e.target.closest("[data-logo-pick]")) { const f = $("#logofile"); if (f) f.click(); return; }
