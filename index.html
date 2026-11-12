@@ -996,7 +996,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 106, at: "2026-11-12T21:05:16+05:30", notes: "Backup and restore: Settings › Restore from a backup (file or OneDrive), daily OneDrive backup per phone (last 30 kept), backup reminder on Today, Settings page fits narrow phones." };
+  const APP_BUILD = { v: 107, at: "2026-11-12T23:25:31+05:30", notes: "Backups now include the Excel data, so a restored phone shows every lot, order and chemical without loading Excel. Who is signed in is no longer copied by a restore." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1120,16 +1120,21 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // a backup holds this phone's entries, invoices, audits, PDF records, Tally names, and its look settings and unsaved drafts.
   // never the device id or sign-in data. Restore adds what is missing and newer copies; it never deletes or renumbers anything,
   // so an entry Excel already imported keeps its id and Excel's import log skips it.
-  const BK_SKIP_LS = ["ssi-device", "ssi-last-backup"];
+  const BK_SKIP_LS = ["ssi-device", "ssi-last-backup", "ssi-me"];   // device id and who is signed in belong to the phone, not the backup
   function bkSettings() {
     const o = {};
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (/^ssi-/.test(k) && !BK_SKIP_LS.includes(k)) o[k] = localStorage.getItem(k); } } catch (e) {}
     return o;
   }
-  function bkBody() {
+  // the Excel data too: the whole database the app built from the workbook and the .db file, gzipped, so a restored phone
+  // shows every lot, order and chemical without loading Excel again
+  const bkBuilt = () => { try { return db ? String(one("SELECT value FROM meta WHERE key='built_at'") || "") : ""; } catch (e) { return ""; } };
+  async function bkBody() {
+    let excel = null;
+    if (db && bkBuilt()) { const { text, gz } = await pack(db.export()); excel = { built_at: bkBuilt(), as_of: data.asOf || "", gz, text }; }
     return { kind: "ssi-app-backup", build: APP_BUILD.v, app_version: appVer(), made_at: new Date().toISOString(), data_as_of: data.asOf || "", by: uid,
-      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length },
-      entries, invoices, audits, pdflog: pdfLog, invset: invSet, settings: bkSettings() };
+      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length, excel_built: excel ? excel.built_at : "" },
+      entries, invoices, audits, pdflog: pdfLog, invset: invSet, settings: bkSettings(), excel };
   }
   const bkStamp = (d) => String((d && (d._at || d.updated_at || d.imported_at || d.created_at || d.made_at)) || "");
   const BK_NAMES = { entries: "phone entries", invoices: "invoices", audits: "audits", pdflog: "PDF records", invset: "Tally names" };
@@ -1150,20 +1155,30 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         else n[c].same++;
       });
     });
+    const bx = body.excel && body.excel.text ? body.excel : null, mine = bkBuilt();
+    const excel = !bx ? null : { bx, mode: !mine ? "add" : String(bx.built_at) > mine ? "newer" : "same" };
     const ls = Object.entries(body.settings || {}).filter(([k, v]) => /^ssi-/.test(k) && !BK_SKIP_LS.includes(k) && v != null && !lsGet(k));
-    return { body, writes, n, ls, made: body.made_at, who: body.who || "", device: body.device || "" };
+    return { body, writes, n, ls, excel, made: body.made_at, who: body.who || "", device: body.device || "" };
   }
   const bkWhen = (iso) => { const d = new Date(iso); return isNaN(d) ? "unknown date" : d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }); };
   function bkPlanHtml(p) {
     const rowsH = Object.keys(BK_NAMES).filter((c) => p.n[c].add + p.n[c].newer + p.n[c].same).map((c) => `<tr><td>${BK_NAMES[c]}</td><td class="r num">${p.n[c].add}</td><td class="r num">${p.n[c].newer}</td><td class="r num">${p.n[c].same}</td></tr>`).join("");
-    const nothing = !p.writes.length && !p.ls.length;
+    const nothing = !p.writes.length && !p.ls.length && !(p.excel && p.excel.mode !== "same");
+    const xr = p.excel ? `<tr><td>Excel data${p.excel.bx.as_of ? " (" + esc(p.excel.bx.as_of) + ")" : ""}</td><td class="r num">${p.excel.mode === "add" ? 1 : 0}</td><td class="r num">${p.excel.mode === "newer" ? 1 : 0}</td><td class="r num">${p.excel.mode === "same" ? 1 : 0}</td></tr>` : "";
     return `<p>Backup made ${esc(bkWhen(p.made))}${p.who ? " by " + esc(p.who) : ""}${p.device ? " (phone " + esc(p.device) + ")" : ""}.</p>
-      ${rowsH ? `<div class="tbl"><table><thead><tr><th></th><th class="r">New</th><th class="r">Newer</th><th class="r">Already here</th></tr></thead><tbody>${rowsH}</tbody></table></div>` : ""}
+      ${rowsH || xr ? `<div class="tbl"><table><thead><tr><th></th><th class="r">New</th><th class="r">Newer</th><th class="r">Already here</th></tr></thead><tbody>${xr}${rowsH}</tbody></table></div>` : `<p class="note">This backup has no Excel data (made before version 107).</p>`}
+      ${p.excel && p.excel.mode === "same" ? `<p class="note">This phone already has the same or newer Excel data, so it is kept.</p>` : ""}
       ${p.ls.length ? `<p class="note">Also brings back ${p.ls.length} look setting${p.ls.length > 1 ? "s" : ""} or unsaved draft${p.ls.length > 1 ? "s" : ""} this phone does not have.</p>` : ""}
       <p class="note">${nothing ? "Everything in this backup is already on this phone." : "Nothing on this phone is deleted. Entries keep their numbers, so Excel will not import any of them twice."}</p>`;
   }
   async function bkApply(p) {
     let done = 0;
+    if (p.excel && p.excel.mode !== "same") {
+      if (p.excel.bx.gz && !window.DecompressionStream) throw new Error("this phone's browser is too old to open the Excel data");
+      const bytes = await unpack(p.excel.bx.text, p.excel.bx.gz);
+      try { await publishSnapshot(bytes, () => {}); } catch (e) { /* view-only inside Claude: shown for this visit only */ }
+      useBytes(bytes); done++;
+    }
     for (const [c, id, v] of p.writes) { if (store.put) await store.put(c, id, v); else await writeEntry(store.doc(c + "/" + id), v); done++; }
     p.ls.forEach(([k, v]) => lsSet(k, v));
     if (p.ls.length) { applyTheme(); applyBrand(); }
@@ -1189,7 +1204,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   async function bkOpen() {
     if (!store || !canWrite) { bkSheet(`<h3 id="bk-t">Restore</h3><p>This app is view-only here, so nothing can be restored.</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); return; }
     const od = window.__ssiOD && window.__ssiOD.ready();
-    bkSheet(`<h3 id="bk-t">Restore from a backup</h3><p>Brings back entries, invoices and settings saved from this phone or another one. Nothing on this phone is deleted.</p>
+    bkSheet(`<h3 id="bk-t">Restore from a backup</h3><p>Brings back the Excel data, entries, invoices and settings saved from this phone or another one. Nothing on this phone is deleted.</p>
       ${od ? `<div class="group" style="margin-top:4px">OneDrive backups</div><div id="bk-od"><p class="note">Looking in OneDrive…</p></div>` : `<p class="note">${window.SSI_STANDALONE ? "Sign in to OneDrive (top bar) to restore from the daily OneDrive backups. " : ""}Or pick a backup file made with Back up app data.</p>`}
       ${bkFoot('<button class="btn alt" data-bk="close">Cancel</button><button class="btn alt" data-bk="file">Pick a backup file…</button>')}<input type="file" id="bk-file" accept=".json,.txt,application/json,text/plain" hidden>`);
     if (od) {
@@ -1204,7 +1219,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const p = bkPlan(body);
     if (p.err) { bkSheet(`<h3 id="bk-t">Can't restore this</h3><p>${esc(p.err)}</p>${bkFoot('<button class="btn" data-bk="close">Close</button>')}`); return; }
     bkPending = p;
-    const nothing = !p.writes.length && !p.ls.length;
+    const nothing = !p.writes.length && !p.ls.length && !(p.excel && p.excel.mode !== "same");
     bkSheet(`<h3 id="bk-t">Restore ${esc(from)}?</h3>${bkPlanHtml(p)}<p class="note" id="bk-msg"></p>${bkFoot(nothing ? '<button class="btn" data-bk="close">Close</button>' : '<button class="btn alt" data-bk="close">Cancel</button><button class="btn" data-bk="go">Restore</button>')}`);
   }
   async function bkClick(e) {
@@ -1221,7 +1236,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (window.__ssiOD && window.__ssiOD.ready()) { msg.textContent = "Syncing with OneDrive first…"; await window.__ssiOD.syncNow(); bkPending = bkPlan(bkPending.body); }
         msg.textContent = "Restoring…";
         const n = await bkApply(bkPending); bkBusy = false;
-        bkSheet(`<h3 id="bk-t">Restored</h3><p>${n} item${n === 1 ? "" : "s"} brought back${bkPending.ls.length ? ", plus " + bkPending.ls.length + " setting" + (bkPending.ls.length > 1 ? "s" : "") : ""}.</p><p class="note">Entries waiting for Excel go with the next Send to Excel or OneDrive sync.</p>${bkFoot('<button class="btn" data-bk="close">Done</button>')}`);
+        bkSheet(`<h3 id="bk-t">Restored</h3><p>${n} item${n === 1 ? "" : "s"} brought back${bkPending.excel && bkPending.excel.mode !== "same" ? ", including the Excel data" : ""}${bkPending.ls.length ? ", plus " + bkPending.ls.length + " setting" + (bkPending.ls.length > 1 ? "s" : "") : ""}.</p><p class="note">Entries waiting for Excel go with the next Send to Excel or OneDrive sync.</p>${bkFoot('<button class="btn" data-bk="close">Done</button>')}`);
       } catch (err) { bkBusy = false; b.disabled = false; msg.textContent = "Restore stopped: " + (err.message || String(err)) + ". Nothing already restored is lost; try again."; }
     }
   }
@@ -1251,8 +1266,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="logopdf" ${logoOnPdf() ? "checked" : ""}> Put the logo on PDFs made in the app</label>
         <small class="note">Shown at the top of the app, in the menu and on the PDFs. Kept on this phone.</small></div>
       ${row('data-tour-replay="1"', "App tour", "A short walk through the app's pages. Shown once when the app is first opened on a phone.")}
-      ${row('data-backup="1"', "Back up app data", "Saves all phone entries, invoices, audits, PDF records and settings from this phone as one file. Put it in OneDrive › SSI › Phone entries. " + (lastBackup() ? "Last backup: " + bkWhen(lastBackup()) + " (" + bkAgo(lastBackup()) + ")." : "No backup made on this phone yet."))}
-      ${row('data-restore="1"', "Restore from a backup", "After a reinstall or on a new phone: brings back entries, invoices and settings from a backup file" + (window.SSI_STANDALONE ? " or a OneDrive backup" : "") + ". Nothing is deleted.")}
+      ${row('data-backup="1"', "Back up app data", "Saves the Excel data, all phone entries, invoices, audits, PDF records and settings on this phone as one file. Put it in OneDrive › SSI › Phone entries. " + (lastBackup() ? "Last backup: " + bkWhen(lastBackup()) + " (" + bkAgo(lastBackup()) + ")." : "No backup made on this phone yet."))}
+      ${row('data-restore="1"', "Restore from a backup", "After a reinstall or on a new phone: brings back the Excel data, entries, invoices and settings from a backup file" + (window.SSI_STANDALONE ? " or a OneDrive backup" : "") + ". Nothing is deleted.")}
       ${row('data-menuact="invset"', "Tally names for invoices", "Company, sales ledger, GST ledgers, number series")}
       ${store ? row('data-jump="entries" data-f="pending"', "Phone entries", data.pending.length + " waiting for Excel") : ""}
       ${row('data-jump="health" data-f=""', "Health check", hc ? hc + " to look at" : "nothing to look at")}
@@ -1595,7 +1610,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // everything this phone holds that Excel doesn't (entries of every status, invoices, audits, PDF log, Tally names), for checking on the PC
   async function appBackup(btn) {
     const sm = btn.querySelector("small"), old = sm ? sm.textContent : "";
-    const body = bkBody();
+    const body = await bkBody();
     const name = "ssi-app-backup-" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "") + ".json";
     const dl = window.claude ? await window.claude.use("downloads") : null;
     if (!dl) { if (sm) sm.textContent = "Saving files isn't available here."; return; }

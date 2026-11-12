@@ -242,7 +242,7 @@
       if (H && H.backupBody) {
         const day = new Date().toLocaleDateString("en-CA");
         if (meta.snapDay !== day) {
-          const body = Object.assign(H.backupBody(), { device, who: me.name || "" }), txt = JSON.stringify(body);
+          const body = Object.assign(await H.backupBody(), { device, who: me.name || "" }), txt = JSON.stringify(body);
           await upload(app + "/backups/" + snapName(day), txt, tok);
           await setMeta("snapDay", day);
           try { localStorage.setItem("ssi-last-backup", body.made_at); } catch (e) {}
