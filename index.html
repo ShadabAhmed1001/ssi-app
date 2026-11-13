@@ -199,6 +199,10 @@ tr.tot td { border-top: 2px solid var(--ink); }
 label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .rwc { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
 .rwc .tbl { margin-top: 6px; }
+.ipc { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.ipr { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-top: 1px solid var(--line); font-weight: 400; margin: 0; }
+.ipr:first-child { border-top: 0; }
+.ipr input { width: 20px; height: 20px; flex: none; margin-top: 2px; }
 .rwsteps { margin-top: 8px; border-left: 3px solid var(--line); padding-left: 10px; }
 .rws { margin: 0 0 10px; }
 .rws.pend { opacity: .85; }
@@ -812,7 +816,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["drep", "Delivery report"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -846,9 +850,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "drep"]) },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
+    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -893,7 +897,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function render() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
@@ -916,6 +920,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
     if (tab === "lots" && filter.lots === "rework") { $("#list").innerHTML = rwView(); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
+    if (tab === "orders" && filter.orders === "invpend") { $("#list").innerHTML = invPendView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cost") { $("#list").innerHTML = costView(ws); return; }
@@ -1015,7 +1020,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 108, at: "2026-11-13T10:06:17+05:30", notes: "Rework: spoiled leather processed again, with steps, chemicals, machines and costs; part split to its own lot and merged back" };
+  const APP_BUILD = { v: 109, at: "2026-11-13T10:21:18+05:30", notes: "Pending invoicing: every delivery not billed yet, make an invoice or mark as invoiced, part billing of a delivery" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2792,6 +2797,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<form class="fm" id="fm-order_close" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.closed_on ? "This opens the item again." : "The item leaves the open list. You can reopen it later."}</p>${o.closed_on ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
     order_short: { title: "Close short", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
       return `<form class="fm" id="fm-order_short" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.short ? `This puts the ${fmtN(o.left, 2)} sqft balance back as still to start.` : `${fmtN(o.left, 2)} sqft of ${fmtN(o.qty_sqft, 2)} will not be made. The item counts as all in production, and is delivered once ${fmtN(o.sqf, 2)} sqft in its lots is delivered. The order quantity stays the same.`}</p>${o.short ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
+    invmark: { title: "Mark as invoiced", html: (a) => { const ks = a.split(","), cs = invCands("", null, true).filter((c) => ks.includes(c.dkey)), cu = cs.length ? UP((data.lotBy[cs[0].lot] || {}).customer) : "";
+      return `<form class="fm" id="fm-invmark" data-cu="${esc(cu)}"><h3>${esc(cu)}: ${cs.length} ${cs.length === 1 ? "delivery" : "deliveries"}</h3><p class="note" style="margin:0">For deliveries billed outside the app (in Tally or by hand), or not to be billed at all. Lower the sqft to mark only part of a delivery; the rest stays pending.</p>
+      <div class="tbl"><table><thead><tr><th>Delivery</th><th class="r">Sqft billed</th></tr></thead><tbody>${cs.map((c) => `<tr><td><b>${esc(c.lot)}</b> · ${c.date ? fmtD(c.date) : "no date"}${c.doc ? " · " + esc(c.doc) : ""}<br><span class="note">${fmtN(c.sqft, 2)} sqft to bill</span></td><td class="r"><input class="imq" data-k="${esc(c.dkey)}" data-max="${c.sqft}" value="${c.sqft}" inputmode="decimal" data-numonly="1" style="width:96px;text-align:right" aria-label="Sqft billed for ${esc(c.lot)}"></td></tr>`).join("")}</tbody></table></div>
+      <label>What happened<select id="im-kind"><option value="bill">Invoiced outside the app</option><option value="nobill">Not to be billed (sample, replacement, free)</option></select></label>
+      <div class="two"><label>Invoice no (optional)<input id="im-no" autocomplete="off" value="${esc((() => { const ds = [...new Set(cs.map((c) => String(c.doc || "").trim()))]; return ds.length === 1 ? ds[0] : ""; })())}"></label>${dateF("im-date", "Invoice date (optional)", "")}${numF("im-amt", "Amount ₹ (optional)")}</div>${txtF("im-note", "Note (optional)")}${formEnd}</form>`; } },
     rework: { title: "Rework", html: (a) => { const l = data.lotBy[a], nl = rwNewLot(a), src = rwSrc(l), n = ' type="number" step="any" min="0" inputmode="decimal"', stg = data.stages.filter((s) => !/^(purchase|dispatched|dumped|on hold)$/i.test(s.name)), cur = String(l.stage || "").toUpperCase();
       return `<form class="fm" id="fm-rework" data-lot="${esc(a)}" data-new="${esc(nl)}"><h3>${esc(a)} at ${esc(l.stage || "no stage")}: ${fmtN(l.lot_pcs, 0)} pcs, ${fmtN(l.lot_sqft, 2)} sqft</h3>
       <p class="note" style="margin:0">For leather spoiled here that has to be processed again. Afterwards record the chemicals, machine passes and other costs of the rework on it; they are added to ${esc(src.lot_no)}'s costing.</p>
@@ -2919,7 +2929,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const r2 = (n) => Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100;
   const UP = (s) => String(s || "").trim().toUpperCase();
   const invLive = () => invoices.filter((x) => x.status !== "deleted");
-  const invName = (v) => v.tally_no ? "Invoice " + v.tally_no : "Draft " + v.temp;
+  const isMark = (v) => v && v.kind === "mark";
+  const invName = (v) => isMark(v) ? (v.nobill ? "Not to be billed" : v.ext_no ? "Invoice " + v.ext_no + " (outside the app)" : "Marked invoiced") : v.tally_no ? "Invoice " + v.tally_no : "Draft " + v.temp;
+  const invRef = (v) => isMark(v) ? (v.nobill ? "not billed" : v.ext_no || "marked") : v.tally_no || v.temp;
   // phone deliveries become lot_deliveries rows once Excel imports them; match them up so a delivery is invoiced only once
   function dkeyAlias(k) {
     if (!String(k).startsWith("e:")) return [k];
@@ -2930,26 +2942,41 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function invUsed(exceptId) {
     const s = {}; invLive().forEach((v) => { if (v.id === exceptId) return; (v.lines || []).forEach((ln) => { if (ln.dkey) dkeyAlias(ln.dkey).forEach((k) => { s[k] = v; }); }); }); return s;
   }
+  // sqft already billed per delivery key (invoices and marks), each line counted under all of its delivery's keys
+  function invBilled(exceptId) {
+    const s = {}; invLive().forEach((v) => { if (v.id === exceptId) return; (v.lines || []).forEach((ln) => { if (ln.dkey) dkeyAlias(ln.dkey).forEach((k) => { s[k] = (s[k] || 0) + (Number(ln.sqft) || 0); }); }); }); return s;
+  }
+  // one delivery's share: billing less than all of it leaves the rest pending, with hides and sides in proportion
+  function invPart(o, billed) {
+    const done = billed || 0, full = Number(o.sqft) || 0, rem = r2(full - done); if (rem <= Math.max(1, full * 0.002)) return null; if (!done) return o;
+    const f = full ? rem / full : 1, rd = (x) => Math.round((Number(x) || 0) * f * 10) / 10;
+    return Object.assign({}, o, { sqft: rem, full, billed: r2(done), hides: rd(o.hides), sides: Math.round((Number(o.sides) || 0) * f), pcs: rd(o.pcs), part: true });
+  }
   function sidesOf(note, pcs) {
     const m = String(note || "").match(/([\d.]+)\s*HIDES\s*\+\s*([\d.]+)\s*SIDES/i);
     return m ? { hides: Number(m[1]), sides: Number(m[2]) } : { hides: Number(pcs) || 0, sides: 0 };
   }
   // deliveries that can go on an invoice: recorded in Excel or waiting from the phone, not on another invoice
-  function invCands(cust, exceptId) {
-    const used = invUsed(exceptId), out = [], c = UP(cust);
-    rows("SELECT d.id, d.lot_no, d.del_date, d.pcs, d.sqft, d.doc_no, d.note FROM lot_deliveries d WHERE d.status='OK' AND d.entry_type='DELIVERY' ORDER BY d.del_date DESC, d.id DESC").forEach((d) => {
-      const l = data.lotBy[d.lot_no] || {}; if (c && UP(l.customer) !== c) return;
-      if (used["d:" + d.id]) return; if (entries.some((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id)) return;
-      out.push(Object.assign({ dkey: "d:" + d.id, lot: d.lot_no, date: d.del_date, pcs: d.pcs, sqft: d.sqft, doc: d.doc_no, wait: false }, sidesOf(d.note, d.pcs)));
+  // deliveries that can still be billed: recorded in Excel (deliveries and opening rows) or waiting from the phone, less what is already billed;
+  // dispatched lots whose delivered quantity is only on the tracker (no delivery rows) count as one delivery each; archived ones only when asked
+  function invCands(cust, exceptId, arch) {
+    const billed = invBilled(exceptId), out = [], c = UP(cust), dated = {}, push = (o) => { const x = invPart(o, billed[o.dkey]); if (x) out.push(x); };
+    rows("SELECT d.id, d.lot_no, d.del_date, d.pcs, d.sqft, d.doc_no, d.note, d.entry_type FROM lot_deliveries d WHERE d.status='OK' AND d.entry_type IN ('DELIVERY','OPENING') ORDER BY d.del_date DESC, d.id DESC").forEach((d) => {
+      dated[d.lot_no] = 1; const l = data.lotBy[d.lot_no] || {}; if (c && UP(l.customer) !== c) return;
+      if (entries.some((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id)) return;
+      push(Object.assign({ dkey: "d:" + d.id, lot: d.lot_no, date: d.del_date, pcs: d.pcs, sqft: d.sqft, doc: d.doc_no, wait: false, opening: d.entry_type === "OPENING" }, sidesOf(d.note, d.pcs)));
     });
     entries.filter((e) => e.type === "delivery" && e.status === "pending").forEach((e) => {
-      const l = data.lotBy[e.lot_no] || {}; if (c && UP(l.customer) !== c) return; if (used["e:" + e.id]) return;
-      out.push(Object.assign({ dkey: "e:" + e.id, lot: e.lot_no, date: e.entry_date, pcs: e.pcs, sqft: e.sqft, doc: e.doc_no, wait: true }, sidesOf(e.note, e.pcs)));
+      dated[e.lot_no] = 1; const l = data.lotBy[e.lot_no] || {}; if (c && UP(l.customer) !== c) return;
+      push(Object.assign({ dkey: "e:" + e.id, lot: e.lot_no, date: e.entry_date, pcs: e.pcs, sqft: e.sqft, doc: e.doc_no, wait: true }, sidesOf(e.note, e.pcs)));
     });
+    data.lots.forEach((l) => { if (dated[l.lot_no] || !(l.state === "DISPATCHED" || (arch && l.state === "ARCHIVED")) || !(Number(l.delivered_est) > 0)) return; if (c && UP(l.customer) !== c) return;
+      push({ dkey: "lot:" + l.lot_no, lot: l.lot_no, date: l.stage_since || l.archived_on || "", pcs: l.lot_pcs || 0, hides: l.lot_pcs || 0, sides: 0, sqft: r2(Number(l.delivered_est)), doc: "", wait: false, tracker: true, arch: l.state === "ARCHIVED" }); });
     return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
   function invDelInfo(k) {
     if (!k) return null;
+    if (k.startsWith("lot:")) { const l = data.lotBy[k.slice(4)]; return l ? { date: l.stage_since || "", doc: "", void: false, wait: false } : null; }
     if (k.startsWith("d:")) { const d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(k.slice(2))])[0]; return d ? { date: d.del_date, doc: d.doc_no, void: d.status === "VOID", wait: false } : null; }
     const e = entries.find((x) => x.id === k.slice(2)); return e ? { date: e.entry_date, doc: e.doc_no, void: e.status === "cancelled", wait: e.status === "pending" } : null;
   }
@@ -2980,7 +3007,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   let invSyncing = false;
   async function invSyncTally() {
     if (invSyncing || !store || !canWrite) return; invSyncing = true;
-    try { for (const v of invLive()) { if (v.tally_no) continue; const t = tSale(v); if (t) await store.doc("invoices/" + v.id).update({ tally_no: t.vno, status: "tally", tally_at: new Date().toISOString(), tally_by: "Excel" }); } } catch (e) {} finally { invSyncing = false; }
+    try { for (const v of invLive()) { if (v.tally_no || isMark(v)) continue; const t = tSale(v); if (t) await store.doc("invoices/" + v.id).update({ tally_no: t.vno, status: "tally", tally_at: new Date().toISOString(), tally_by: "Excel" }); } } catch (e) {} finally { invSyncing = false; }
   }
   // Tally's own series ("79/26-27") isn't applied to imported vouchers, so the app puts the number in the file
   function vnoNum(t) { const S = iset(), re = new RegExp("^" + String(S.vnoFmt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{n\\}", "(\\d+)") + "$"), m = String(t || "").trim().match(re); return m ? Number(m[1]) : 0; }
@@ -3023,9 +3050,39 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <tr><td>Taxable value</td><td class="r num">${rs(t.taxable)}</td></tr>${t.intra ? `<tr><td>CGST</td><td class="r num">${rs(t.cgst)}</td></tr><tr><td>SGST</td><td class="r num">${rs(t.sgst)}</td></tr>` : `<tr><td>IGST</td><td class="r num">${rs(t.igst)}</td></tr>`}
       ${t.ro ? `<tr><td>Round off</td><td class="r num">${t.ro < 0 ? "−" : ""}${rs(Math.abs(t.ro))}</td></tr>` : ""}<tr class="grand"><td><b>Invoice total</b></td><td class="r num"><b>${rs(t.total)}</b></td></tr></tbody></table>`;
   }
+  // ---- Orders → Invoices → Pending invoicing: everything delivered and not billed yet, by customer
+  let invPick = new Set(), invArch = false;
+  function invPendView(ws) {
+    const all = invCands("", null, invArch).filter((c) => match([c.lot, (data.lotBy[c.lot] || {}).customer, c.doc].join(" "), ws)), by = {};
+    all.forEach((c) => { const k = UP((data.lotBy[c.lot] || {}).customer) || "(no customer)"; (by[k] = by[k] || []).push(c); });
+    const keys = new Set(all.map((c) => c.dkey)); invPick = new Set([...invPick].filter((k) => keys.has(k)));
+    const val = (c) => { const p = invPoLine(c.lot); return p && Number(p.rate) ? c.sqft * Number(p.rate) : null; };
+    const tot = all.reduce((t, c) => t + c.sqft, 0), tv = all.reduce((t, c) => t + (val(c) || 0), 0);
+    let h = `<p class="note" style="margin:8px 2px">Every delivery not billed yet. A lot delivered in parts shows each delivery on its own line; billing part of a delivery leaves the rest here. Tick deliveries, then make the invoice in the app, or mark them invoiced if the bill was made elsewhere.</p>
+      <div class="acts"><button class="chip" data-ipa="arch" aria-pressed="${invArch}">Include archived lots</button></div>
+      <div class="count"><span>${all.length} deliveries · ${fmtN(tot, 0)} sqft${tv ? " · about ₹" + fmtN(tv, 0) + " at PO rates" : ""}</span></div>`;
+    if (!all.length) return h + `<p class="empty">Nothing is waiting to be invoiced.</p>` + invMarksList();
+    h += Object.keys(by).sort((a, b) => by[b].length - by[a].length || a.localeCompare(b)).map((cu) => { const L = by[cu], sq = L.reduce((t, c) => t + c.sqft, 0), n = L.filter((c) => invPick.has(c.dkey)).length, allOn = n === L.length;
+      return `<div class="group">${esc(cu)} · ${L.length} · ${fmtN(sq, 0)} sqft</div>
+        <div class="ipc">${L.map((c) => { const v0 = val(c);
+          return `<label class="ipr"><input type="checkbox" data-ipk="${esc(c.dkey)}"${invPick.has(c.dkey) ? " checked" : ""}><span><b>${esc(c.lot)}</b> · ${c.date ? fmtD(c.date) : "no date"}${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? ` <span class="wait">waiting for Excel</span>` : ""}${c.tracker ? ` <span class="note">(${c.arch ? "archived, " : ""}tracker quantity)</span>` : ""}${c.opening ? ` <span class="note">(opening)</span>` : ""}<br>
+            <span class="note">${[c.hides ? fmtN(c.hides, 1) + " hides" : "", c.sides ? fmtN(c.sides, 0) + " sides" : ""].filter(Boolean).join(" + ")}${c.hides || c.sides ? ", " : ""}${fmtN(c.sqft, 2)} sqft${c.part ? " left of " + fmtN(c.full, 2) + " (" + fmtN(c.billed, 2) + " billed)" : ""}${v0 ? " · ₹" + fmtN(v0, 0) : ""}</span></span></label>`; }).join("")}</div>
+        ${store && canWrite ? `<div class="acts" style="margin:4px 0 12px"><button class="mini" data-ipa="all" data-cu="${esc(cu)}">${allOn ? "Clear" : "Select all"}</button><button class="btn" data-ipa="inv" data-cu="${esc(cu)}"${n ? "" : " disabled"}>Make invoice${n ? " (" + n + ")" : ""}</button><button class="btn alt" data-ipa="mark" data-cu="${esc(cu)}"${n ? "" : " disabled"}>Mark as invoiced${n ? " (" + n + ")" : ""}</button></div>` : ""}`; }).join("");
+    return h + invMarksList();
+  }
+  function invMarksList() {
+    const m = invLive().filter(isMark).sort((a, b) => String(b.made_at || "").localeCompare(String(a.made_at || ""))).slice(0, 40);
+    return m.length ? `<div class="group">Marked as invoiced · ${m.length}</div>` + m.map((v) => `<button class="row" data-k="inv:${esc(v.id)}"><span class="k" style="font-size:15px">${esc(v.ext_no || (v.nobill ? "No bill" : "Marked"))}</span><span class="pill ${v.nobill ? "idle" : "ok"}">${v.nobill ? "not billed" : "invoiced"}</span><span class="t">${esc(v.customer || "")}</span><span class="m num"><span>${fmtD(v.ext_date || v.date)}</span><span>${esc([...new Set((v.lines || []).map((l) => l.lot))].join(", "))}</span><span>${fmtN((v.lines || []).reduce((t, l) => t + (Number(l.sqft) || 0), 0), 0)} sqft</span>${v.amount ? `<span>${rs(v.amount)}</span>` : ""}</span></button>`).join("") : "";
+  }
+  function invMarkDetail(v) {
+    const sq = (v.lines || []).reduce((t, l) => t + (Number(l.sqft) || 0), 0);
+    return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${kv([["Status", v.nobill ? "Not to be billed" : "Invoiced outside the app"], ["Invoice no", esc(v.ext_no || "")], ["Invoice date", v.ext_date ? fmtD(v.ext_date) : ""], ["Amount", v.amount ? rs(v.amount) : ""], ["Customer", esc(v.customer || "")], ["Marked on", fmtD(v.date)], ["Note", esc(v.note || "")]])}
+      <h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Lot</th><th>Delivered</th><th class="r">Sqft</th></tr></thead><tbody>${(v.lines || []).map((l) => { const d = invDelInfo(l.dkey); return `<tr><td>${lotLink(l.lot)}</td><td>${d && d.date ? fmtD(d.date) : ""}${d && d.doc ? " · " + esc(d.doc) : ""}</td><td class="r num">${fmtN(l.sqft, 2)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td class="r num"><b>${fmtN(sq, 2)}</b></td></tr></tfoot></table></div>
+      ${store && canWrite ? `<div class="acts"><button class="btn alt" data-ipa="unmark" data-id="${esc(v.id)}">Undo: put back in pending</button></div>` : ""}`;
+  }
   // ---- list (Orders → Invoices)
   function invListView(ws) {
-    const all = invLive().filter((v) => match([v.temp, v.tally_no, v.customer, v.party, (v.lines || []).map((l) => l.lot + " " + l.item).join(" ")].join(" "), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.temp).localeCompare(String(a.temp)));
+    const all = invLive().filter((v) => !isMark(v)).filter((v) => match([v.temp, v.tally_no, v.customer, v.party, (v.lines || []).map((l) => l.lot + " " + l.item).join(" ")].join(" "), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.temp).localeCompare(String(a.temp)));
     const waiting = all.filter((v) => !v.tally_no);
     let h = store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-invnew>New invoice</button>${waiting.length ? `<button class="btn alt" data-invxmlall>Tally file for all not in Tally (${waiting.length})</button>` : ""}<button class="btn alt" data-invset>Tally names</button></div>` : "";
     h += `<p class="note" style="margin:6px 2px">Make the invoice here, tap Make Tally file and share it to OneDrive, folder SSI › Accountancy › tally data › SSI › XML DATA. On the PC press <b>Invoices &gt; Tally</b> in Excel: it enters every waiting file in Tally. The app marks them In Tally with the next data refresh.${tMeta("refreshed_at") ? ` Tally lists from ${esc(tMeta("refreshed_at"))}.` : ""}</p><div id="invout"></div>`;
@@ -3044,6 +3101,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function invDetail(k) {
     const v = invoices.find((x) => "inv:" + x.id === k);
     if (!v) return `<p class="empty">This invoice is not here any more.</p>`;
+    if (isMark(v)) return invMarkDetail(v);
     const t = invCalc(v), S = iset();
     const warn = (v.lines || []).map((ln) => { const d = invDelInfo(ln.dkey); return !d ? ln.lot + ": its delivery is not found." : d.void ? ln.lot + ": its delivery was cancelled." : ""; }).filter(Boolean);
     const tr = [["Transporter", v.transporter], ["Vehicle no", v.vehicle], ["LR / doc no", v.lr], ["LR date", v.lrdate ? fmtD(v.lrdate) : ""], ["E-way bill", v.eway], ["E-way date", v.ewaydate ? fmtD(v.ewaydate) : ""], ["Destination", v.dest]].filter((x) => x[1]);
@@ -3148,7 +3206,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (a.startsWith("pp:")) { const tp = tParty(a.slice(3)); if (tp) { inv.party = tp.name; inv.gstin = tp.gstin || ""; inv.state = tp.state || inv.state; inv.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); } invRedraw(); return; }
     if (a.startsWith("pi:")) { const [i, name] = [a.slice(3, a.indexOf("|")), a.slice(a.indexOf("|") + 1)], ln = inv.lines[Number(i)], ti = tItem(name); if (ln && ti) { ln.item = ti.name; ln.newitem = false; if (ti.hsn) ln.hsn = ti.hsn; } invRedraw(); return; }
     if (a === "showall") { invShowAll = !invShowAll; invRedraw(); return; }
-    if (a.startsWith("add:")) { const c = invCands("", inv.id).find((x) => x.dkey === a.slice(4)); if (c) inv.lines.push(invLine(c.lot, c)); invRedraw(); return; }
+    if (a.startsWith("add:")) { const c = invCands("", inv.id, true).find((x) => x.dkey === a.slice(4)); if (c) inv.lines.push(invLine(c.lot, c)); invRedraw(); return; }
     if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; } inv.lines.push(invLine(lot, null)); invRedraw(); return; }
     if (a.startsWith("del:")) { inv.lines.splice(Number(a.slice(4)), 1); invRedraw(); return; }
     if (!v) return;
@@ -3438,7 +3496,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const inv = invUsed(null);
     const add = (o) => { const l = data.lotBy[o.lot] || {}, p = invPoLine(o.lot), iv = o.key ? inv[o.key] || dkeyAlias(o.key).map((x) => inv[x]).find(Boolean) : null;
       const rate = p && Number(p.rate) ? Number(p.rate) : null;
-      out.push(Object.assign({ cust: l.customer || "", item: l.product || "", rate, value: rate === null ? null : r2(o.sqft * rate), inv: iv ? iv.tally_no || iv.temp : "" }, o)); };
+      out.push(Object.assign({ cust: l.customer || "", item: l.product || "", rate, value: rate === null ? null : r2(o.sqft * rate), inv: iv ? invRef(iv) : "" }, o)); };
     rows("SELECT * FROM lot_deliveries WHERE status='OK' AND entry_type IN ('DELIVERY','RETURN')").forEach((d) => {
       if (voided[d.id]) return; const ret = d.entry_type === "RETURN", sg = ret ? -1 : 1, s = sidesOf(d.note, d.pcs);
       dated[d.lot_no] = (dated[d.lot_no] || 0) + sg * Math.abs(d.sqft);
@@ -3755,6 +3813,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const d = { po, date, customer: cust, note: need("#fo-note") }; if (dup) d.add_to = "1";
       ls.forEach((x, i) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || q * r; d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), q, r, String(x.h || "").trim(), +a.toFixed(2)].join("~^~"); });
       return saveNew({ type: "order", lot_no: "PO " + po, data: d }, "PO saved. It is waiting for Excel.", msg, btn);
+    }
+    if (f.id === "fm-invmark") {
+      const lines = [], cs = invCands("", null, true); for (const x of f.querySelectorAll(".imq")) { const c = cs.find((y) => y.dkey === x.dataset.k), q = parseFloat(x.value) || 0; if (!c) return bad("A delivery here is no longer pending. Go back and pick again."); if (q < 0 || q > c.sqft + 0.5) return bad(c.lot + ": type up to " + fmtN(c.sqft, 2) + " sqft."); if (q > 0) { const fr = c.sqft ? q / c.sqft : 1; lines.push({ lot: c.lot, dkey: c.dkey, sqft: r2(q), hides: Math.round((Number(c.hides) || 0) * fr * 10) / 10, sides: Math.round((Number(c.sides) || 0) * fr) }); } }
+      if (!lines.length) return bad("Type the sqft billed for at least one delivery.");
+      const nb = need("#im-kind") === "nobill", no = need("#im-no"), dt = need("#im-date"), amt = numOf("#im-amt");
+      if (no && invLive().some((x) => String(x.ext_no || x.tally_no || x.vno || "").trim().toUpperCase() === no.toUpperCase()) && warnOnce(f, "Invoice no " + no + " is already used on another invoice.")) return;
+      btn.disabled = true;
+      store.collection("invoices").doc().set({ kind: "mark", status: "marked", nobill: nb, customer: f.dataset.cu, ext_no: no, ext_date: dt, amount: amt || "", note: need("#im-note"), lines, date: iso(today), made_at: new Date().toISOString(), made_by: uid })
+        .then(() => { invPick = new Set(); closeForm(nb ? "Marked as not to be billed." : "Marked as invoiced" + (no ? " on " + no : "") + "."); }, (e) => { btn.disabled = false; msg.textContent = saveError(e); });
+      return;
     }
     if (f.id === "fm-rework") {
       const lot = f.dataset.lot, l = data.lotBy[lot], whole = need("#rw-whole") === "1", pcs = numOf("#rw-pcs") || (whole ? l.lot_pcs || 0 : 0), sqft = numOf("#rw-sqft") || (whole && !numOf("#rw-pcs") ? l.lot_sqft || 0 : 0), date = need("#rw-date"), at = need("#rw-at"), back = need("#rw-back"), grp = need("#rw-grp"), cause = need("#rw-own") || need("#rw-cause");
@@ -4342,13 +4410,20 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#list").addEventListener("pointerup", swipeEnd);
   $("#list").addEventListener("change", (e) => {
     const t = e.target;
-    if (t.matches("[data-drby]")) { drep.by = t.value; drSave(); render(); }
+    if (t.matches("[data-ipk]")) { if (t.checked) invPick.add(t.dataset.ipk); else invPick.delete(t.dataset.ipk); const y = window.scrollY; render(); window.scrollTo(0, y); }
+    else if (t.matches("[data-drby]")) { drep.by = t.value; drSave(); render(); }
     else if (t.matches("[data-drf]")) { drep[t.dataset.drf] = t.value; render(); }
   });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
     { const rp = e.target.closest("[data-rwper]"); if (rp) { filter.rwPer = rp.dataset.rwper; render(); return; } }
+    { const ia = e.target.closest("[data-ipa]"); if (ia && ia.closest("#list")) { const a = ia.dataset.ipa, cu = ia.dataset.cu, mine = () => invCands("", null, invArch).filter((c) => (UP((data.lotBy[c.lot] || {}).customer) || "(no customer)") === cu);
+      if (a === "arch") { invArch = !invArch; render(); return; }
+      if (a === "all") { const L = mine(), on = L.every((c) => invPick.has(c.dkey)); L.forEach((c) => on ? invPick.delete(c.dkey) : invPick.add(c.dkey)); const y = window.scrollY; render(); window.scrollTo(0, y); return; }
+      const ks = mine().filter((c) => invPick.has(c.dkey)); if (!ks.length) return;
+      if (a === "inv") { sel[tab] = null; stack = []; inv = invNew(cu === "(no customer)" ? "" : cu); inv.lines = ks.map((c) => invLine(c.lot, c)); invShowAll = false; openForm("invoice:new"); return; }
+      if (a === "mark") { sel[tab] = null; stack = []; openForm("invmark:" + ks.map((c) => c.dkey).join(",")); return; } } }
     if (e.target.closest("[data-restore]")) { bkOpen(); return; }
     if (e.target.closest("[data-backup]")) { appBackup(e.target.closest("[data-backup]")); return; }
     { const th = e.target.closest("button[data-theme-set]"); if (th) { lsSet("ssi-theme", th.dataset.themeSet); applyTheme(); render(); return; } }
@@ -4380,7 +4455,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.target.closest("[data-invnew]")) { sel[tab] = null; stack = []; inv = invNew(); invShowAll = false; openForm("invoice:new"); return; }
     { const ma = e.target.closest("[data-menuact]"); if (ma) { menuAct(ma.dataset.menuact); return; } }
     if (e.target.closest("[data-invset]")) { sel[tab] = null; stack = []; openForm("invset:"); return; }
-    if (e.target.closest("[data-invxmlall]")) { invExport(invLive().filter((v) => !v.tally_no), $("#invout")); return; }
+    if (e.target.closest("[data-invxmlall]")) { invExport(invLive().filter((v) => !v.tally_no && !isMark(v)), $("#invout")); return; }
     const nb = e.target.closest("[data-new]");
     if (nb) { sel[tab] = null; stack = []; if (tab === "today" && nb.dataset.new !== "new_lot") { const k = nb.dataset.new; filter.lots = filter.lots === "table" ? "open" : filter.lots; go("lots"); openForm(k); return; } openForm(nb.dataset.new); return; }
     const hg = e.target.closest("[data-hgo]");
@@ -4415,6 +4490,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const ra = e.target.closest("[data-rwadd]"); if (ra) { const k = ra.dataset.rwadd, t = $("#rw-t-" + k); if (t) $("#rw-" + k).appendChild(t.content.cloneNode(true)); const L = $("#rw-" + k).querySelectorAll(".rwl"); const x = L[L.length - 1].querySelector("input,select"); if (x) x.focus(); return; } }
     const cd = e.target.closest("[data-cntdel]");
     if (cd) { if (!cd.dataset.sure) { cd.dataset.sure = "1"; cd.textContent = "Tap again to remove"; return; } store.doc("entries/" + cd.dataset.cntdel).update({ status: "cancelled" }).then(() => closeForm("Count removed.")); return; }
+    { const um = e.target.closest("[data-ipa=unmark]"); if (um) { if (!um.dataset.sure) { um.dataset.sure = "1"; um.textContent = "Tap again to put these back in pending"; return; } um.disabled = true; store.doc("invoices/" + um.dataset.id).update({ status: "deleted", deleted_at: new Date().toISOString() }).then(() => { sel[tab] = null; flash = ""; refresh(); showToast("Put back in pending invoicing."); }); return; } }
     const fb = e.target.closest("[data-form]");
     if (fb) { openForm(fb.dataset.form); return; }
     const act = e.target.closest("[data-act]");
