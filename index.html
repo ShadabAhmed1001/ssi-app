@@ -1034,7 +1034,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 114, at: "2026-11-13T16:03:56+05:30", notes: "Reads both ways Excel words a new lot number" };
+  const APP_BUILD = { v: 115, at: "2026-11-13T22:02:42+05:30", notes: "Loading a process only opens it; nothing is saved until Save" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2413,7 +2413,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const note = $("#ed-chg"); if (note) { note.style.display = n || gone ? "" : "none"; note.innerHTML = n || gone ? `<span class="chgkey"></span> ${n ? `${n} changed line${n === 1 ? "" : "s"} not saved yet` : ""}${n && gone ? " · " : ""}${gone ? `${gone} line${gone === 1 ? "" : "s"} removed` : ""}. The marks go once you save.` : ""; }
   }
   function edKeepDraft() {
-    if (!ed) return false;
+    if (!ed || ed.preview) return false;
     try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, ed })); return true; } catch (e) { return false; }
   }
   const edDropDraft = (k) => { try { localStorage.removeItem(DRAFT(k)); } catch (e) {} };
@@ -2458,6 +2458,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const btns = `<button type="button" class="x" data-edadd aria-label="Add a line below">+</button><button type="button" class="x" data-eddel aria-label="Remove this line">×</button>`;
     return `<form class="fm" id="fm-recipe" style="background:none;border:0;padding:0"><p class="sub" style="margin:0">${esc(ed.process)}${ed.base_lot ? " · loaded from " + esc(ed.base_lot) + (ed.load_cur !== undefined ? " v" + ed.base_ver : "") + ". Check it and save." : ""}</p>
       ${ed.restored ? `<p class="okmsg" style="margin:0">Your unsaved changes from ${esc(new Date(ed.restored).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))} are back. <button type="button" class="link" data-eddiscard>Discard them</button></p>` : ""}
+      ${ed.preview ? `<p class="soon" style="margin:0">${ed.preview === "page" ? "Nothing is saved yet. Tap Save to move " + esc(ed.lot) + " to this page." : "This is " + esc(ed.preview) + ", loaded for you to look at. Nothing is saved: tap Save to make it " + esc(ed.lot) + "'s process, or go back to leave " + esc(ed.lot) + " as it is."}</p>` : ""}
       <p class="note" id="ed-chg" style="margin:0;display:none"></p>
       ${ed.movePage ? `<p class="note" style="margin:0"><span class="wait">Saving also moves ${esc(ed.lot)} to ${esc(ed.movePage)}.</span></p>` : ""}
       ${data.lotBy[ed.lot] ? `<p class="calc" style="margin:0">${esc(h.details)}<br><span class="note">Shaved wt ${fmtN(h.shaved_wt, 2) || "-"} · pcs ${fmtN(h.pcs, 0) || "-"} · wet blue ${fmtN(h.wb_sqft, 2) || "-"} sqft · finish ${fmtN(h.finish_sqft, 2) || "-"} sqft · substance ${esc(h.substance) || "-"}.</span><br><span class="note">Excel takes these from the lot. <button type="button" class="link" data-editlot>Edit lot</button></span></p>
@@ -3629,16 +3630,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const m = key.split("@v"), a = m[0].slice(4).split("|"), lotS = a[0], process = a.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process];
     if (lotS === l.lot_no && !m[1]) { flash = ""; sel.lots = key;
       if (normPage(process) === normPage(l.process_page || "")) { formOpen = null; ed = null; showDetail(); $("#detail").scrollTop = 0; return; }
-      openEditor(key); ed.movePage = process; showDetail(); $("#detail").scrollTop = 0; loadSave("Process page changed to " + process + "."); return; }
+      openEditor(key); ed.movePage = process; ed.preview = "page"; showDetail(); $("#detail").scrollTop = 0; return; }
     const src = recAt(lotS, process, m[1] ? Number(m[1]) : live0 ? nextVer(live0) : 0);
     const seed = Object.assign({}, src, { lot_no: l.lot_no, from: lotS, base_process: process, base_ver: src.version, load_cur: curVersion(l.lot_no, process), details: [l.customer, l.product].filter(Boolean).join(" "), substance: l.shaving || src.substance, pcs: l.lot_pcs, shaved_wt: parseFloat(l.weight) || src.shaved_wt, wb_sqft: l.lot_sqft, finish_sqft: l.delivered_est ?? null });
     if (seed.shaved_wt !== src.shaved_wt) seed.crust = seed.crust.map((c) => c.p !== null && c.p !== undefined && !c.nq ? Object.assign({}, c, { q: +(c.p * seed.shaved_wt).toFixed(4) }) : c);
     flash = ""; sel.lots = "rec:" + l.lot_no + "|" + process; openEditor(sel.lots, seed);
     if (normPage(process) !== normPage(l.process_page || "")) ed.movePage = process;
+    ed.preview = lotS + (src.version ? " v" + src.version : "");
     showDetail(); $("#detail").scrollTop = 0;
-    loadSave("Process loaded from " + lotS + (src.version ? " v" + src.version : "") + ". It is waiting for Excel; tap Edit to change it.");
   }
-  // loading saves straight away and shows the recipe; if a check stops the save, the editor stays open with the message
+  // (no longer used: loading only opens the editor; nothing is saved until Save)
   async function loadSave(done) {
     const f = $("#fm-recipe"); if (!f) return;
     await submitRecipe(f);
