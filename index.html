@@ -546,6 +546,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const fmtN = (n, d = 2) => (n === null || n === undefined || n === "" || isNaN(n)) ? "" : Number(n).toLocaleString("en-IN", { maximumFractionDigits: d });
   const toDate = (s) => { if (!s) return null; const d = new Date(String(s).slice(0, 10) + "T00:00:00"); return isNaN(d) ? null : d; };
   const fmtD = (s) => { const d = toDate(s); return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).replace(/ /g, "-") : ""; };
+  // time of day of a saved stamp: Excel's local "2026-11-12 18:22:10", or the phone's UTC ISO time shown in local time
+  const fmtT = (s) => { const t = String(s || ""); if (!t) return ""; if (/T.*(Z|[+-]\d\d:?\d\d)$/.test(t)) { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } const m = /[ T](\d{1,2}):(\d{2})/.exec(t); return m ? m[1].padStart(2, "0") + ":" + m[2] : ""; };
+  const fmtST = (s) => [fmtS(s), fmtT(s)].filter(Boolean).join(" ");
   const fmtS = (s) => { const d = toDate(s); return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).replace(/ /g, "-") : ""; };
   const days = (s) => { const d = toDate(s); return d ? Math.round((d - today) / DAY) : null; };
   const words = (q) => q.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
@@ -1034,7 +1037,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 115, at: "2026-11-13T22:02:42+05:30", notes: "Loading a process only opens it; nothing is saved until Save" };
+  const APP_BUILD = { v: 116, at: "2026-11-13T22:33:25+05:30", notes: "Compare processes shows the time each version was saved" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2364,7 +2367,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const ownFirst = (list, lot) => { const i = list.findIndex((x) => x.lot === lot && x.latest); return i > 0 ? [list[i]].concat(list.slice(0, i), list.slice(i + 1)) : list; };
   const procSrcOpts = (page, lot, pick) => { const list = ownFirst(page ? pageRecipes(page) : [], lot), sel = pick && list.some((x) => x.key === pick) ? pick : list.length ? list[0].key : ""; return list.length ? list.map((x) => recOpt(x, x.key === sel ? x.key : "", lot)).join("") : `<option value="">No saved process on this page</option>`; };
   const procHint = (l, page) => normPage(page) === normPage(l.process_page || "") ? "" : "Saving will also move " + l.lot_no + " from " + (l.process_page || "no page") + " to " + page + ".";
-  const recOpt = (x, sel0, own) => `<option value="${esc(x.key)}"${x.key === sel0 ? " selected" : ""}>${esc(x.lot)}${x.lot === own && x.latest ? " (this lot)" : ""} ${x.phone ? "phone, not in Excel yet" : "v" + x.ver}${x.multi ? " latest" : ""} · ${esc(fmtS(x.saved))} · ${esc(String(x.details || "").slice(0, 34))}</option>`;
+  const recOpt = (x, sel0, own) => `<option value="${esc(x.key)}"${x.key === sel0 ? " selected" : ""}>${esc(x.lot)}${x.lot === own && x.latest ? " (this lot)" : ""} ${x.phone ? "phone, not in Excel yet" : "v" + x.ver}${x.multi ? " latest" : ""} · ${esc(fmtST(x.saved))} · ${esc(String(x.details || "").slice(0, 34))}</option>`;
   // ---- compare: lines are matched by chemical name, so it also works between pages
   function cmpItems(r) {
     const crust = {}, fin = {}, mach = {}, notes = {}, occ = {}, key = (sec, d) => { const k = sec + String(d).trim().toUpperCase(); occ[k] = (occ[k] || 0) + 1; return { k: String(d).trim().toUpperCase() + "#" + occ[k], n: String(d).trim() + (occ[k] > 1 ? " (" + occ[k] + ")" : "") }; };
@@ -2390,7 +2393,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const row = (t, f) => `<tr><td>${t}</td><td class="r num">${f(ca)}</td><td class="r num">${f(cb)}</td></tr>`;
     return `<p style="margin:0"><b>${d.n ? `${d.n} ${d.n === 1 ? "difference" : "differences"}: ${d.nc} changed, ${d.na} added, ${d.nr} removed` : "Same chemicals, percentages and times."}</b></p>
       ${Object.keys(d.out).map((sec) => `<h3>${esc(sec)}</h3><div class="tbl"><table><thead><tr><th>Item</th><th>${esc(name(a, ka))}</th><th>${esc(name(b, kb))}</th></tr></thead><tbody>${d.out[sec].map((l) => `<tr><td>${esc(l.n)}<br><span class="pill ${pill[l.kind]}">${l.kind}</span></td><td>${cell(l.a)}</td><td>${cell(l.b)}</td></tr>`).join("")}</tbody></table></div>`).join("")}
-      <h3>Cost</h3><div class="tbl"><table><thead><tr><th></th><th class="r">${esc(name(a, ka))}</th><th class="r">${esc(name(b, kb))}</th></tr></thead><tbody>${row("Saved", (c) => esc(fmtS(c === ca ? a.saved_at : b.saved_at)))}${row("Shaved wt", (c) => fmtN(c === ca ? a.shaved_wt : b.shaved_wt, 2))}${row("Pcs", (c) => fmtN(c === ca ? a.pcs : b.pcs, 0))}${row("Crusting ₹", (c) => fmtN(c.crust, 0))}${row("Machinery ₹", (c) => fmtN(c.mach, 0))}${row("Finishing ₹", (c) => fmtN(c.fin, 0))}${row("Chemicals ₹ / sqft", (c) => fmtN(c.chemSqft, 2))}${row("Cost ₹ / sqft", (c) => fmtN(c.perSqft, 2))}</tbody></table></div>
+      <h3>Cost</h3><div class="tbl"><table><thead><tr><th></th><th class="r">${esc(name(a, ka))}</th><th class="r">${esc(name(b, kb))}</th></tr></thead><tbody>${row("Saved", (c) => esc(fmtST(c === ca ? a.saved_at || a.created_at : b.saved_at || b.created_at)))}${row("Shaved wt", (c) => fmtN(c === ca ? a.shaved_wt : b.shaved_wt, 2))}${row("Pcs", (c) => fmtN(c === ca ? a.pcs : b.pcs, 0))}${row("Crusting ₹", (c) => fmtN(c.crust, 0))}${row("Machinery ₹", (c) => fmtN(c.mach, 0))}${row("Finishing ₹", (c) => fmtN(c.fin, 0))}${row("Chemicals ₹ / sqft", (c) => fmtN(c.chemSqft, 2))}${row("Cost ₹ / sqft", (c) => fmtN(c.perSqft, 2))}</tbody></table></div>
       <p class="note">Lines are matched by chemical name. Prices are from your last update, so cost differences here come from the recipe and the lot's size, not from price changes over time.</p>`;
   }
   const startSource = (l) => { const p = data.processes.find((x) => x.key === l.procKey); if (!p || p.none || !p.saved) return null;
