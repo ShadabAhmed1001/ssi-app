@@ -197,6 +197,19 @@ tr.tot td { border-top: 2px solid var(--ink); }
 .sgi:hover, .sgi:focus-visible { background: var(--accent-soft); }
 .invnew { border-left: 3px solid var(--bad); padding: 4px 0 4px 10px; display: grid; gap: 6px; }
 label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.rwc { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
+.rwc .tbl { margin-top: 6px; }
+.rwsteps { margin-top: 8px; border-left: 3px solid var(--line); padding-left: 10px; }
+.rws { margin: 0 0 10px; }
+.rws.pend { opacity: .85; }
+.rwhow { margin: 2px 0 0; white-space: pre-wrap; }
+.rwl.rwc3 { grid-template-columns: minmax(0, 1fr) 84px; }
+.rwl.rwc3 .rw-n { grid-column: 1 / -1; }
+.rwl { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px; margin: 0 0 6px; }
+.rwl.rwm { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.rwl.rwm select { grid-column: 1 / -1; }
+.rwl input, .rwl select { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (min-width: 700px) { .rwl.rwm { grid-template-columns: minmax(0, 1fr) 80px 80px 96px; border-bottom: 0; padding-bottom: 0; } .rwl.rwm select { grid-column: auto; } }
 label.chk input { width: 20px; height: 20px; }
 .invadd { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; display: grid; gap: 6px; }
 .invcand { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
@@ -547,7 +560,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes") };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s) };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -597,10 +610,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     const phoneMove = {}, phoneDel = {};
     live.forEach((e) => { if (e.type === "stage") phoneMove[e.lot_no] = e; else if (e.type === "delivery") (phoneDel[e.lot_no] = phoneDel[e.lot_no] || []).push(e);
-      else if (e.type === "lot_return") { const d = e.data; (phoneDel[e.lot_no] = phoneDel[e.lot_no] || []).push({ isReturn: true, entry_date: d.date, pcs: -(Number(d.pcs) || 0), sqft: -(Number(d.sqft) || 0), doc_no: d.doc, note: d.outcome + ": " + d.why }); if (d.outcome === "REWORK") phoneMove[e.lot_no] = { to_stage: d.stage, entry_date: d.date }; } });
+      else if (e.type === "lot_return") { const d = e.data; (phoneDel[e.lot_no] = phoneDel[e.lot_no] || []).push({ isReturn: true, entry_date: d.date, pcs: -(Number(d.pcs) || 0), sqft: -(Number(d.sqft) || 0), doc_no: d.doc, note: d.outcome + ": " + d.why }); if (d.outcome === "REWORK") phoneMove[e.lot_no] = { to_stage: d.stage, entry_date: d.date }; }
+      else if (e.type === "rework") { const d = e.data, k = d.whole === "1" ? e.lot_no : d.new_lot; if (d.whole !== "1" || String(d.back).toUpperCase() !== String(d.from_stage || "").toUpperCase()) phoneMove[k] = { to_stage: d.back, entry_date: d.date }; } });
     data.phoneDel = phoneDel; data.voidLive = live.filter((e) => e.type === "delivery_void"); data.adjLive = live.filter((e) => e.type === "chem_adjust" || e.type === "chem_readjust"); data.undoLive = live.filter((e) => e.type === "chem_undo");
     const of = (t) => live.filter((e) => e.type === t), tmp = (e) => "NEW-" + String(e.id).slice(0, 4).toUpperCase();
-    const moveE = of("lot_move"), lotDelE = of("lot_delete"), recDelE = of("recipe_delete"), poDelE = of("po_delete"), purchCl = of("purchase_close"), purchDel = of("purchase_delete"), splitE = of("purchase_split"), mergeE = of("purchase_merge"), chemAddE = of("chem_add"), chemEdE = of("chem_edit"), chemDelE = of("chem_delete"), chemVoidE = of("chem_void"), aliasE = of("chem_alias"), renameE = of("chem_rename"), adjE = of("chem_adjust"), reE = of("chem_readjust"), voidE = of("delivery_void"), undoE = of("chem_undo"), purchEd = of("purchase_edit"), orderEd = of("order_edit"), orderCl = of("order_close"), orderSh = of("order_short"), unlinkE = of("po_unlink"), backE = of("skins_back"), auditE = of("audit"), skinsE = of("skins"), newLots = of("new_lot"), newPurch = of("purchase").concat(of("lot_return").filter((e) => e.data.outcome === "REJECT").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}; return Object.assign({}, e, { data: { supplier: "RETURNED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.pcs, sqft: d.sqft, rate: 0, per: "SQFT", date: d.date, note: "Returned from " + e.lot_no + ": " + d.why } }); })).concat([].concat(...of("lot_balance").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}, out = [];
+    const moveE = of("lot_move").concat(rwMoves(live)), lotDelE = of("lot_delete"), recDelE = of("recipe_delete"), poDelE = of("po_delete"), purchCl = of("purchase_close"), purchDel = of("purchase_delete"), splitE = of("purchase_split"), mergeE = of("purchase_merge"), chemAddE = of("chem_add"), chemEdE = of("chem_edit"), chemDelE = of("chem_delete"), chemVoidE = of("chem_void"), aliasE = of("chem_alias"), renameE = of("chem_rename"), adjE = of("chem_adjust"), reE = of("chem_readjust"), voidE = of("delivery_void"), undoE = of("chem_undo"), purchEd = of("purchase_edit"), orderEd = of("order_edit"), orderCl = of("order_close"), orderSh = of("order_short"), unlinkE = of("po_unlink"), backE = of("skins_back"), auditE = of("audit"), skinsE = of("skins"), newLots = of("new_lot"), newPurch = of("purchase").concat(of("lot_return").filter((e) => e.data.outcome === "REJECT").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}; return Object.assign({}, e, { data: { supplier: "RETURNED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.pcs, sqft: d.sqft, rate: 0, per: "SQFT", date: d.date, note: "Returned from " + e.lot_no + ": " + d.why } }); })).concat([].concat(...of("lot_balance").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}, out = [];
       if (Number(d.reject_pcs) > 0) out.push(Object.assign({}, e, { id: e.id + ":r", created_at: String(e.created_at || "") + "0", data: { supplier: "REJECTED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.reject_pcs, sqft: d.reject_sqft, rate: 0, per: "SQFT", date: d.date, note: "Not delivered from " + e.lot_no + ": " + (d.note || "") } }));
       if (Number(d.stock_pcs) > 0) out.push(Object.assign({}, e, { id: e.id + ":s", created_at: String(e.created_at || "") + "1", data: { supplier: "LEFTOVER " + (L.customer || ""), animal: "", grade: "LEFTOVER " + e.lot_no, pcs: d.stock_pcs, sqft: d.stock_sqft, rate: 0, per: "SQFT", date: d.date, note: "Not delivered from " + e.lot_no + (d.note ? ": " + d.note : "") } }));
       return out; }))), newPO = of("order"), linksE = of("po_link"), chemE = of("chem"), dyeE = of("dye");
@@ -687,8 +701,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         hay: [p.purchase_no, p.supplier, p.animal, p.grade, p.note, p.lots].join(" ") });
     });
 
+    { const mg = new Set(of("rework_merge").map((e) => e.data.from)); data.lots.forEach((l) => { if (mg.has(l.lot_no) && l.state === "OPEN") Object.assign(l, { state: "ARCHIVED", grp: 3, flag: "idle", flagText: "merged", status: "Merged" }); }); }
     const lotBy = {}; data.lots.forEach((l) => lotBy[l.lot_no] = l);
     data.lotBy = lotBy;
+    rwLoad(of);
     const links = {}; rows("SELECT * FROM lot_orders").filter((r) => !linksE.some((e) => e.lot_no === r.lot_no) && !unlinkE.some((e) => e.lot_no === r.lot_no && Number(e.line_id) === r.line_id && !linkedLater(e))).forEach((r) => (links[r.line_id] = links[r.line_id] || []).push(r.lot_no));
     linksE.forEach((e) => (links[e.line_id] = links[e.line_id] || []).push(e.lot_no));
     const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
@@ -719,7 +735,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       chemVoidE.filter((e) => e.lot_no === c.name).forEach((e) => { c.available = (c.available || 0) - Number(e.data.qty); pm.push({ date: e.created_at, kind: "void entry", ref: e.data.type || "", qty: -Number(e.data.qty), status: e.status }); });
       renameE.forEach((e) => { const q = Number(e.data.qty) || 0; if (e.lot_no === c.name) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "history moved to", ref: e.data.to, qty: -q, status: e.status }); } if (e.data.to === c.name) { c.available = (c.available || 0) + q; pm.push({ date: e.created_at, kind: "history moved from", ref: e.lot_no, qty: q, status: e.status }); } });
       adjE.concat(reE).forEach((e) => { (e.lines || []).forEach((x) => { if (x.n === c.name) { c.available = (c.available || 0) - x.q; pm.push({ date: e.created_at, kind: e.type === "chem_readjust" ? "re-adjust" : "adjust " + [e.data.crust === "1" ? "crusting" : "", e.data.fin === "1" ? "finishing" : ""].filter(Boolean).join(" + "), ref: e.lot_no, qty: -x.q, status: e.status }); } }); });
-      undoE.forEach((e) => { const q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? AND UPPER(chemical)=UPPER(?)" + (e.data.what === "ALL" ? "" : " AND section=?"), e.data.what === "ALL" ? [e.lot_no, c.name] : [e.lot_no, c.name, e.data.what])[0].q; if (q) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "undo " + e.data.what.toLowerCase(), ref: e.lot_no, qty: -q, status: e.status }); } });
+      of("rework_use").forEach((e) => rwLines(e).filter((x) => x.kind === "CHEM" && x.item.toUpperCase() === c.name.toUpperCase()).forEach((x) => { c.available = (c.available || 0) - x.qty; pm.push({ date: e.created_at, kind: "rework", ref: e.lot_no, qty: -x.qty, status: e.status }); }));
+      of("rework_void").forEach((e) => { const q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE status='OK' AND section='REWORK' AND UPPER(chemical)=UPPER(?) AND reason LIKE ?", [c.name, "%" + e.data.use + "%"])[0].q; if (q) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "rework removed", ref: e.lot_no, qty: -q, status: e.status }); } });
+      undoE.forEach((e) => { const q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? AND UPPER(chemical)=UPPER(?)" + (e.data.what === "ALL" ? " AND IFNULL(section,'')<>'REWORK'" : " AND section=?"), e.data.what === "ALL" ? [e.lot_no, c.name] : [e.lot_no, c.name, e.data.what])[0].q; if (q) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "undo " + e.data.what.toLowerCase(), ref: e.lot_no, qty: -q, status: e.status }); } });
       const min = m.min_stock || 0, short = min > 0 && (c.available || 0) < min ? min - (c.available || 0) : 0;
       return Object.assign(c, { phone: ph, phoneMv: pm, min, used: m.used, avgWeek: m.avg_week, short, packs: short && c.pack_size ? Math.ceil(short / c.pack_size) : 0 });
     }).map((c) => Object.assign(c, { grp: Math.abs(c.available || 0) > 0.0005 ? 1 : 2, hay: c.name }));
@@ -793,7 +811,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const smallBal = (o) => o.status === "PART IN PRODUCTION" && o.left > 0 && (o.left <= 300 || o.left <= o.qty_sqft * 0.05);
   const CHIPS = {
     today: [],
-    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
+    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
     orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["drep", "Delivery report"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
@@ -875,7 +893,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function render() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && filter.lots === "table") || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && filter.orders === "drep") || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
@@ -896,6 +914,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return;
     }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
+    if (tab === "lots" && filter.lots === "rework") { $("#list").innerHTML = rwView(); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
@@ -996,7 +1015,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 107, at: "2026-11-12T23:25:31+05:30", notes: "Backups now include the Excel data, so a restored phone shows every lot, order and chemical without loading Excel. Who is signed in is no longer copied by a restore." };
+  const APP_BUILD = { v: 108, at: "2026-11-13T10:06:17+05:30", notes: "Rework: spoiled leather processed again, with steps, chemicals, machines and costs; part split to its own lot and merged back" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1364,13 +1383,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(r.animal || "").trim().toUpperCase()], pcs = r.pcs || (lot && lot.lot_pcs) || 0;
     r.machinery.forEach((m) => { const e = Number(m.n) || 0, u = String(m.d).toUpperCase(), rw = data.mach[u], mr = rw && col ? rw[col] || 0 : 0; const amt0 = NOT_ROUND.includes(u) ? e * mr : pcs * e * mr; mach += amt0; machRows.push({ d: m.d, n: m.n, rate: mr, amt: amt0 }); });
     const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0, outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3), wb = over.wb ?? (lot ? lotBlue(r.lot_no) : 0), blue = inSq * (Number(wb) || 0);
-    const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue;
-    return { machRows, crust, mach, fin, blue, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: [...missing], rate };
+    const rw = lot && r.lot_no === rwRoot(r.lot_no) ? rwCost(r.lot_no) : 0;
+    const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue + rw;
+    return { machRows, crust, mach, fin, blue, rw, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: [...missing], rate };
   }
   function costBox(r) {
     const c = costOf(r), line = (t, v) => `<tr><td>${t}</td><td class="r num">${fmtN(v, 0)}</td><td class="r num">${c.outSq ? fmtN(v / c.outSq, 2) : ""}</td></tr>`;
     return `<div class="coststk"><div><span class="note">Cost price per finished sqft</span><br><span class="cost-big">₹${fmtN(c.perSqft, 2)}</span></div>
-      <div class="tbl"><table><thead><tr><th>Part</th><th class="r">₹</th><th class="r">₹ / sqft</th></tr></thead><tbody>${line("Crusting", c.crust)}${line("Machinery", c.mach)}${line("Finishing", c.fin)}${line("Wet blue", c.blue)}</tbody><tfoot><tr><td><b>Total</b></td><td class="r num"><b>${fmtN(c.total, 0)}</b></td><td class="r num"><b>${fmtN(c.perSqft, 2)}</b></td></tr></tfoot></table></div>
+      <div class="tbl"><table><thead><tr><th>Part</th><th class="r">₹</th><th class="r">₹ / sqft</th></tr></thead><tbody>${line("Crusting", c.crust)}${line("Machinery", c.mach)}${line("Finishing", c.fin)}${c.rw ? line("Rework", c.rw) : ""}${line("Wet blue", c.blue)}</tbody><tfoot><tr><td><b>Total</b></td><td class="r num"><b>${fmtN(c.total, 0)}</b></td><td class="r num"><b>${fmtN(c.perSqft, 2)}</b></td></tr></tfoot></table></div>
       <p class="note" style="margin:0">${r.shaved_wt ? "Crusting ₹" + fmtN(Math.ceil(c.crust / r.shaved_wt), 0) + " per kg. " : ""}${r.pcs ? "Machinery ₹" + fmtN(Math.ceil(c.mach / r.pcs), 0) + " per pc. " : ""}On ${fmtN(c.inSq, 0)} sqft in, ${fmtN(c.outSq, 0)} sqft finished.${r.animal ? "" : " No animal set, so machinery is ₹0."}</p>
       ${c.profit !== null ? `<p class="${c.profit < 0 ? "late" : ""}" style="margin:0">Profit ₹${fmtN(c.profit, 0)} at ₹${fmtN(c.sell, 2)} / sqft</p>` : ""}
       ${c.missing.length ? `<p class="note" style="margin:0"><span class="soon">No price for:</span> ${esc(c.missing.join(", "))}</p>` : ""}</div>`;
@@ -1447,6 +1467,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (secN === "mach") { const fl = NOT_ROUND.includes(UP(val)); row.flat = fl; const cb = document.querySelector(`[data-c="mach|${i}|flat"]`); if (cb) cb.checked = fl; } }
     calcTotals();
   });
+  // rework forms: causes follow the group; the whole-lot choice changes the hint; the cost total follows the lines
+  document.addEventListener("change", (e) => { const t = e.target; if (!t || !t.id) return;
+    if (t.id === "rw-grp" && $("#rw-cause")) $("#rw-cause").innerHTML = rwCauseOpts(t.value);
+    if (t.id === "rw-whole" && $("#rw-hint")) { const f = $("#fm-rework"); $("#rw-hint").textContent = t.value === "1" ? f.dataset.lot + " goes back to the stage chosen. It can't move past the stage where the fault was found until the rework is marked done." : f.dataset.new + " gets its own row on the tracker, copied from " + f.dataset.lot + ". When the rework is done you can merge it back, or dispatch it on its own."; } });
+  document.addEventListener("input", (e) => { const f = e.target && e.target.closest && e.target.closest("#fm-rework_use"); if (!f) return; const r = rwBy(f.dataset.rw), an = ($("#rw-animal") || {}).value || ""; let t = 0, n = 0;
+    f.querySelectorAll(".rwl").forEach((row) => { const k = row.dataset.kind, it = (row.querySelector(".rw-i").value || "").trim(), q = parseFloat((row.querySelector(".rw-q") || {}).value) || 0, p = parseFloat((row.querySelector(".rw-p") || {}).value) || 0, am = parseFloat((row.querySelector(".rw-a") || {}).value) || 0;
+      if (k === "CHEM") { const c = data.chemBy[chemName(it).toUpperCase()]; if (c && q) { t += q * (c.rate || 0); n++; } } else if (k === "MACHINE") { if (it && q) { t += am || machCalc(it, q, an, p || (r && r.pcs)).amt; n++; } } else if (am) { t += am; n++; } });
+    $("#rw-tot").textContent = n ? n + " line" + (n === 1 ? "" : "s") + ", ₹" + fmtN(t, 0) : ""; });
   document.addEventListener("change", (e) => { const t = e.target; if (calc && tab === "calc" && t.dataset && t.dataset.c && (t.type === "checkbox" || t.tagName === "SELECT")) t.dispatchEvent(new Event("input", { bubbles: true })); });
   document.addEventListener("click", (e) => {
     if (tab !== "calc" || !calc) return; const t = e.target;
@@ -1498,6 +1526,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "purchase" || e.type === "purchase_split") return later.filter((x) => x.data && x.data.from_entry === e.id);
     if (e.type === "chem_add") return later.filter((x) => (x.data && x.data.to === e.lot_no) || names(x).includes(e.lot_no));
     if (e.type === "chem_alias") return later.filter((x) => names(x).includes(e.data.to));
+    if (e.type === "rework") return later.filter((x) => (x.data && x.data.rw === e.id) || (e.data.new_lot && x.lot_no === e.data.new_lot));
+    if (e.type === "rework_use") return later.filter((x) => x.type === "rework_void" && x.data.use === e.id);
+    if (e.type === "rework_done") return later.filter((x) => x.type === "rework_merge" && x.data.rw === e.data.rw);
     return [];
   }
   function namesFound() {
@@ -1655,7 +1686,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (r.finishing.length) { const fb = finRows(r).map((f) => [plain(f.r), plain(f.d), plain(f.w), plain(f.n)].concat(withCost ? [rt(f.d), am(f.w, f.d)] : [])); if (withCost) fb.push([{ content: "Total cost", colSpan: 5, styles: { fontStyle: "bold" } }, fmtN(c0.fin, 0)]); put(["Ratio", "Chemical name", "Weight", "Application notes"].concat(withCost ? ["Rate", "Amount"] : []), fb); }
       if (withCost) {
         const b = (t, x, u, ps) => [t, fmtN(x, 0), ps === null ? "" : c0.outSq ? fmtN((ps ?? x) / c0.outSq, 2) : "", u || ""];
-        put(["Costing", "Total", "Per sqft", "Per unit"], [b("Crusting", c0.crust, r.shaved_wt ? Math.ceil(c0.crust / r.shaved_wt) + " per kg" : ""), b("Machinery", c0.mach, r.pcs ? Math.ceil(c0.mach / r.pcs) + " per pc" : ""), b("Finishing", c0.fin), b("Blue cost at " + fmtN(c0.wb, 2), c0.blue, "", null), b("Total cost", c0.total, "", c0.crust + c0.mach + c0.fin), ["Final cost price", fmtN(c0.perSqft, 2), "", ""]].concat(c0.profit !== null ? [[`Profit at ${fmtN(c0.sell, 2)} / sqft`, fmtN(c0.profit, 0), "", ""]] : []));
+        put(["Costing", "Total", "Per sqft", "Per unit"], [b("Crusting", c0.crust, r.shaved_wt ? Math.ceil(c0.crust / r.shaved_wt) + " per kg" : ""), b("Machinery", c0.mach, r.pcs ? Math.ceil(c0.mach / r.pcs) + " per pc" : ""), b("Finishing", c0.fin)].concat(c0.rw ? [b("Rework", c0.rw)] : []).concat([b("Blue cost at " + fmtN(c0.wb, 2), c0.blue, "", null), b("Total cost", c0.total, "", c0.crust + c0.mach + c0.fin + (c0.rw || 0)), ["Final cost price", fmtN(c0.perSqft, 2), "", ""]]).concat(c0.profit !== null ? [[`Profit at ${fmtN(c0.sell, 2)} / sqft`, fmtN(c0.profit, 0), "", ""]] : []));
         if (c0.missing.length) put(["No price for"], [[plain(c0.missing.join(", "))]]);
       }
     }
@@ -1790,6 +1821,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // pieces not delivered (DispatchCheck in Excel, from 08-Nov-2026)
     a.run("CREATE TABLE IF NOT EXISTS lot_balance(id INTEGER, lot_no TEXT, bal_date TEXT, dest TEXT, pcs REAL, sqft REAL, ref_key TEXT, note TEXT, status TEXT)"); a.run("DELETE FROM lot_balance");
     try { q(src, "SELECT id, lot_no, bal_date, dest, pcs, sqft, ref_key, note, status FROM lot_balance").forEach((r) => a.run("INSERT INTO lot_balance VALUES(?,?,?,?,?,?,?,?,?)", [r.id, String(r.lot_no || "").toUpperCase(), r.bal_date, r.dest, r.pcs, r.sqft, r.ref_key, r.note, r.status])); } catch (e) { /* not in this database yet */ }
+    // rework (Excel module Rework, from 13-Nov-2026)
+    a.run("CREATE TABLE IF NOT EXISTS lot_rework(id INTEGER, rw_key TEXT, lot_no TEXT, parent_lot TEXT, found_on TEXT, found_stage TEXT, back_stage TEXT, cause_group TEXT, cause TEXT, whole INTEGER, pcs REAL, sqft REAL, status TEXT, done_on TEXT, no_chem INTEGER, merged_on TEXT, note TEXT, entered_by TEXT, created_at TEXT)"); a.run("DELETE FROM lot_rework");
+    a.run("CREATE TABLE IF NOT EXISTS lot_rework_cost(id INTEGER, rw_key TEXT, use_key TEXT, lot_no TEXT, parent_lot TEXT, entry_date TEXT, kind TEXT, item TEXT, qty REAL, unit TEXT, rate REAL, amount REAL, note TEXT, entered_by TEXT, status TEXT)"); a.run("DELETE FROM lot_rework_cost");
+    try { q(src, "SELECT id, rw_key, lot_no, parent_lot, found_on, found_stage, back_stage, cause_group, cause, whole, pcs, sqft, status, done_on, no_chem, merged_on, note, entered_by, created_at FROM lot_rework").forEach((r) => a.run("INSERT INTO lot_rework VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [r.id, r.rw_key, String(r.lot_no || "").toUpperCase(), String(r.parent_lot || "").toUpperCase(), r.found_on, r.found_stage, r.back_stage, r.cause_group, r.cause, r.whole, r.pcs, r.sqft, r.status, r.done_on, r.no_chem, r.merged_on, r.note, r.entered_by, r.created_at])); } catch (e) { /* not in this database yet */ }
+    a.run("CREATE TABLE IF NOT EXISTS lot_rework_step(id INTEGER, rw_key TEXT, use_key TEXT, lot_no TEXT, step_date TEXT, step_time TEXT, step TEXT, how TEXT, done_by TEXT, status TEXT)"); a.run("DELETE FROM lot_rework_step");
+    try { q(src, "SELECT id, rw_key, use_key, lot_no, step_date, step_time, step, how, done_by, status FROM lot_rework_step").forEach((r) => a.run("INSERT INTO lot_rework_step VALUES(?,?,?,?,?,?,?,?,?,?)", [r.id, r.rw_key, r.use_key, String(r.lot_no || "").toUpperCase(), r.step_date, r.step_time, r.step, r.how, r.done_by, r.status])); } catch (e) { /* not in this database yet */ }
+    try { q(src, "SELECT id, rw_key, use_key, lot_no, parent_lot, entry_date, kind, item, qty, unit, rate, amount, note, entered_by, status FROM lot_rework_cost").forEach((r) => a.run("INSERT INTO lot_rework_cost VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [r.id, r.rw_key, r.use_key, String(r.lot_no || "").toUpperCase(), String(r.parent_lot || "").toUpperCase(), r.entry_date, r.kind, r.item, r.qty, r.unit, r.rate, r.amount, r.note, r.entered_by, r.status])); } catch (e) { /* not in this database yet */ }
     // Tally masters read by Excel (TallyLink "Refresh from Tally", from 09-Nov-2026)
     [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
      ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
@@ -2004,6 +2042,89 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (p && p.length && !lg) return { ok: true, how: p[0].file };
     return { ok: false, stale: !!lg };
   }
+  // ---------------------------------------------------------------- rework: leather spoiled in-house and processed again (from v108)
+  // Part of a lot is split off as its own lot (L534R1) and can be merged back once the rework is done; the whole lot just goes back.
+  // Chemicals, machine passes and other costs of a rework are added to the parent lot's costing.
+  const RW_GROUPS = ["WET END", "MECHANICAL", "FINISHING"];
+  const RW_CAUSES = { "WET END": ["Uneven dyeing / shade off", "Patchy or spotty colour", "Poor penetration", "Loose grain / pipey", "Stains", "Wrong softness or feel"],
+    MECHANICAL: ["Grain cracked or damaged", "Cut or torn", "Setting or staking marks", "Uneven shaving / thickness", "Buffing marks"],
+    FINISHING: ["Shade off", "Poor adhesion / peeling", "Patchy or uneven spray", "Rub fastness failed", "Plating / embossing fault", "Wrong gloss"] };
+  const rwGrpName = (g) => ({ "WET END": "Wet end", MECHANICAL: "Mechanical", FINISHING: "Finishing" }[g] || g || "");
+  const rwCauses = (g) => [...new Set((RW_CAUSES[g] || []).concat((data.reworks || []).filter((r) => r.grp === g).map((r) => r.cause)).filter(Boolean))];
+  // payload lines l1, l2 ...: kind~^~item~^~qty~^~unit~^~rate~^~amount (kind CHEM, MACHINE or OTHER)
+  const rwLines = (e) => Object.keys(e.data || {}).filter((k) => /^l\d+$/.test(k)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map((k) => { const x = String(e.data[k]).split("~^~"); return { kind: x[0], item: x[1] || "", qty: Number(x[2]) || 0, unit: x[3] || "", rate: Number(x[4]) || 0, amt: Number(x[5]) || 0, note: x[6] || "" }; });
+  const RW_STEPS = ["Washing / stripping", "Re-tanning", "Re-dyeing", "Re-fatliquoring", "Re-setting", "Re-staking", "Re-milling / toggling", "Re-buffing", "Re-spraying", "Re-plating / embossing", "Re-finishing"];
+  // a part rework is a split to a new lot; merging it back is a move of all its skins
+  const rwMoves = (live) => live.filter((e) => (e.type === "rework" && e.data.whole !== "1") || e.type === "rework_merge").map((e) => Object.assign({}, e, { type: "lot_move", data: e.type === "rework" ? { from: e.lot_no, to: e.data.new_lot, is_new: "1", pcs: e.data.pcs, sqft: e.data.sqft, date: e.data.date, note: "Rework: " + e.data.cause } : { from: e.data.from, to: e.data.to, is_new: "0", pcs: e.data.pcs, sqft: e.data.sqft, date: e.data.date, note: "Rework merged back" } }));
+  function rwLoad(of) {
+    const T = (q) => { try { return rows(q); } catch (e) { return []; } }, U = (x) => String(x || "").toUpperCase(), R = {};
+    T("SELECT * FROM lot_rework ORDER BY id").forEach((r) => { R[r.rw_key] = { key: r.rw_key, lot: U(r.lot_no), parent: U(r.parent_lot), date: r.found_on, at: r.found_stage, back: r.back_stage, grp: r.cause_group, cause: r.cause, whole: Number(r.whole) === 1, pcs: Number(r.pcs) || 0, sqft: Number(r.sqft) || 0, status: r.status || "OPEN", done_on: r.done_on, no_chem: Number(r.no_chem) === 1, merged_on: r.merged_on, note: r.note || "", made: r.created_at || r.found_on, lines: [], steps: [], phone: false }; });
+    T("SELECT * FROM lot_rework_step WHERE status='OK' ORDER BY id").forEach((x) => { const r = R[x.rw_key]; if (r) r.steps.push({ use: x.use_key, date: x.step_date, time: x.step_time || "", step: x.step || "", how: x.how || "", by: x.done_by || "" }); });
+    T("SELECT * FROM lot_rework_cost WHERE status='OK' ORDER BY id").forEach((c) => { const r = R[c.rw_key]; if (r) r.lines.push({ use: c.use_key, date: c.entry_date, kind: c.kind, item: c.item, qty: Number(c.qty) || 0, unit: c.unit || "", rate: Number(c.rate) || 0, amt: Number(c.amount) || 0, note: c.note || "" }); });
+    of("rework").forEach((e) => { if (R[e.id]) return; const d = e.data; R[e.id] = { key: e.id, lot: d.whole === "1" ? e.lot_no : d.new_lot, parent: d.parent, date: d.date, at: d.at, back: d.back, grp: d.grp, cause: d.cause, whole: d.whole === "1", pcs: Number(d.pcs) || 0, sqft: Number(d.sqft) || 0, status: "OPEN", note: d.note || "", made: e.created_at, lines: [], steps: [], phone: true, wait: e.status === "pending" }; });
+    of("rework_use").forEach((e) => { const r = R[e.data.rw], d = e.data; if (!r || r.steps.some((x) => x.use === e.id) || r.lines.some((x) => x.use === e.id)) return; r.steps.push({ use: e.id, date: d.date, time: d.time || "", step: d.step || "", how: d.how || d.note || "", by: d.by || "", wait: true }); rwLines(e).forEach((x) => r.lines.push(Object.assign(x, { use: e.id, date: d.date, wait: true }))); r.phone = true; });
+    of("rework_void").forEach((e) => { const r = R[e.data.rw]; if (r) { r.lines = r.lines.filter((x) => x.use !== e.data.use); r.steps = r.steps.filter((x) => x.use !== e.data.use); r.phone = true; } });
+    Object.values(R).forEach((r) => { [...new Set(r.lines.map((x) => x.use))].filter((u) => !r.steps.some((x) => x.use === u)).forEach((u) => { const x = r.lines.find((y) => y.use === u); r.steps.push({ use: u, date: x.date, time: "", step: "", how: "", by: "", wait: x.wait }); }); r.steps.sort((a, b) => (String(a.date) + " " + a.time).localeCompare(String(b.date) + " " + b.time)); });
+    of("rework_done").forEach((e) => { const r = R[e.data.rw]; if (r && r.status === "OPEN") Object.assign(r, { status: "DONE", done_on: e.data.date, no_chem: e.data.no_chem === "1", phone: true }); });
+    of("rework_merge").forEach((e) => { const r = R[e.data.rw]; if (r) Object.assign(r, { status: "MERGED", merged_on: e.data.date, phone: true }); });
+    data.reworks = Object.values(R).sort((a, b) => String(a.made || "").localeCompare(String(b.made || "")));
+    data.rwByLot = {}; data.rwParent = {}; const n = {};
+    data.reworks.forEach((r) => { n[r.parent] = (n[r.parent] || 0) + 1; const sum = (k) => r.lines.filter((x) => x.kind === k).reduce((t, x) => t + x.amt, 0);
+      Object.assign(r, { no: n[r.parent], chem: sum("CHEM"), mach: sum("MACHINE"), other: sum("OTHER"), cost: r.lines.reduce((t, x) => t + x.amt, 0) });
+      [r.lot, r.parent].forEach((k) => { const L = data.rwByLot[k] = data.rwByLot[k] || []; if (!L.includes(r)) L.push(r); });
+      if (!r.whole) data.rwParent[r.lot] = r.parent; });
+    data.lots.forEach((l) => { const o = data.reworks.find((r) => r.lot === l.lot_no && r.status === "OPEN"); l.rwOpen = !!o; if (o) l.hay += " rework"; });
+  }
+  const rwOf = (k) => (data.rwByLot && data.rwByLot[k]) || [];
+  const rwBy = (key) => (data.reworks || []).find((r) => r.key === key);
+  const rwOpen = (k) => rwOf(k).find((r) => r.lot === k && r.status === "OPEN");
+  // a lot split off for rework follows its parent's recipe and chemical entries
+  const rwSrc = (l) => { const p = l && data.rwParent && data.rwParent[l.lot_no]; return p && data.lotBy[p] ? data.lotBy[p] : l; };
+  const rwCost = (k) => rwOf(k).filter((r) => r.parent === k).reduce((t, r) => t + r.cost, 0);
+  const rwRoot = (k) => (data.rwParent && data.rwParent[k]) || k;
+  // next free rework lot number: L534R1, L534R2 ...
+  function rwNewLot(k) { const p = rwRoot(k); let n = rwOf(p).filter((r) => r.parent === p).length + 1; while (data.lotBy[p + "R" + n] || (data.reworks || []).some((r) => r.lot === p + "R" + n)) n++; return p + "R" + n; }
+  const rwAnimal = (r) => { const src = data.lotBy[r.parent] || data.lotBy[r.lot], rc = src && src.recKey ? getRecipe(src.recKey) : null; return (rc && rc.animal) || ""; };
+  const rwStepsTxt = (r) => r.steps.map((st, i) => (i + 1) + ". " + (st.step || "Step") + " (" + fmtS(st.date) + (st.time ? " " + st.time : "") + ")").join(", ");
+  const rwName = (r) => "Rework " + r.no + (r.whole ? " (whole lot)" : " · " + r.lot);
+  function rwStatus(r) {
+    const t = r.status === "MERGED" ? "merged into " + r.parent + (r.merged_on ? " " + fmtS(r.merged_on) : "") : r.status === "DONE" ? "done " + fmtS(r.done_on) : "open";
+    return `<span class="pill ${r.status === "OPEN" ? "warn" : "ok"}">${esc(t)}</span>${r.phone ? ` <span class="wait">not in Excel yet</span>` : ""}`;
+  }
+  function rwCard(r, can, here) {
+    const uses = [...new Set(r.lines.map((x) => x.use))], lineTxt = (x) => x.kind === "CHEM" ? esc(x.item) + " · " + fmtN(x.qty, 3) + " kg" : x.kind === "MACHINE" ? esc(x.item) + " · " + fmtN(x.qty, 0) + " round" + (x.qty === 1 ? "" : "s") + (x.unit ? " × " + esc(x.unit) : "") : esc(x.item);
+    const stepsH = r.steps.map((st, i) => { const ls = r.lines.filter((x) => x.use === st.use), sub = ls.reduce((t, x) => t + x.amt, 0);
+      return `<div class="rws${st.wait ? " pend" : ""}"><p style="margin:0"><b>${i + 1}. ${esc(st.step || "Step")}</b> <span class="note">${fmtS(st.date)}${st.time ? " " + esc(st.time) : ""}${st.by ? " · " + esc(st.by) : ""}</span>${st.wait ? ` <span class="wait">waiting</span>` : can && r.status !== "MERGED" ? ` <button class="mini" data-form="rework_void:${esc(r.key)}|${esc(st.use)}">Remove</button>` : ""}</p>
+        ${st.how ? `<p class="rwhow">${esc(st.how)}</p>` : ""}
+        ${ls.length ? `<div class="tbl"><table><tbody>${ls.map((x) => `<tr><td>${lineTxt(x)}${x.note ? `<br><span class="note">${esc(x.note)}</span>` : ""}</td><td class="r num">${fmtN(x.amt, 0)}</td></tr>`).join("")}</tbody>${ls.length > 1 ? `<tfoot><tr><td>Step cost</td><td class="r num">${fmtN(sub, 0)}</td></tr></tfoot>` : ""}</table></div>` : ""}</div>`; }).join("");
+    const acts = !can ? "" : r.status === "OPEN" ? `<button class="btn" data-form="rework_use:${esc(r.key)}">Add a rework step</button><button class="btn alt" data-form="rework_done:${esc(r.key)}">Rework done</button>`
+      : r.status === "DONE" && !r.whole && data.lotBy[r.lot] && data.lotBy[r.lot].state === "OPEN" ? `<button class="btn" data-form="rework_merge:${esc(r.key)}">Merge back into ${esc(r.parent)}</button>` : "";
+    return `<div class="rwc"><p style="margin:0"><b>${esc(rwName(r))}</b> ${rwStatus(r)}</p>
+      <p class="note" style="margin:2px 0 0">${r.whole ? "Whole lot" : (here === r.lot ? "Split off " + lotLink(r.parent) : lotLink(r.lot) + " split off")}: ${fmtN(r.pcs, 0) || 0} pcs, ${fmtN(r.sqft, 2) || 0} sqft. Found at ${esc(r.at)} on ${fmtS(r.date)}, sent back to ${esc(r.back)}.</p>
+      <p style="margin:2px 0 0">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}${r.note ? ` <span class="note">· ${esc(r.note)}</span>` : ""}</p>
+      ${r.steps.length ? `<div class="rwsteps">${stepsH}</div><p style="margin:6px 0 0"><b>Rework cost ₹${fmtN(r.cost, 0)}</b>${r.cost ? ` <span class="note">(chemicals ₹${fmtN(r.chem, 0)}, machines ₹${fmtN(r.mach, 0)}, other ₹${fmtN(r.other, 0)})</span>` : ""}</p>` : `<p class="note" style="margin:4px 0 0">${r.status === "OPEN" ? "No rework steps recorded yet. Add each step as it is done: what was done, when, how, and the chemicals used." : r.no_chem ? "No chemicals were used." : ""}</p>`}
+      ${acts ? `<div class="acts" style="margin-top:6px">${acts}</div>` : ""}</div>`;
+  }
+  function rwBlock(l, can) {
+    const list = rwOf(l.lot_no); if (!list.length) return "";
+    const tot = l.lot_no === rwRoot(l.lot_no) ? rwCost(l.lot_no) : 0;
+    return `<h3>Rework</h3>${list.map((r) => rwCard(r, can, l.lot_no)).join("")}${tot && list.length > 1 ? `<p class="note">Rework cost for ${esc(l.lot_no)} in all: ₹${fmtN(tot, 0)}, included in its costing.</p>` : ""}`;
+  }
+  // Production → Rework: what is being reworked now, and what rework has cost
+  function rwView() {
+    const all = (data.reworks || []), open = all.filter((r) => r.status === "OPEN"), per = filter.rwPer || "this";
+    const d0 = new Date(today.getFullYear(), today.getMonth(), 1), from = per === "this" ? iso(d0) : per === "last" ? iso(new Date(d0.getFullYear(), d0.getMonth() - 1, 1)) : per === "year" ? (today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1) + "-04-01" : "", to = per === "last" ? iso(new Date(d0.getTime() - DAY)) : "9999";
+    const inP = all.filter((r) => String(r.date || "") >= from && String(r.date || "") <= to), sum = (L, f) => L.reduce((t, r) => t + (Number(f(r)) || 0), 0);
+    const grpRows = (key, label) => { const m = {}; inP.forEach((r) => { const k = key(r) || "-"; const o = m[k] = m[k] || { k, n: 0, pcs: 0, sqft: 0, cost: 0 }; o.n++; o.pcs += r.pcs; o.sqft += r.sqft; o.cost += r.cost; }); const L = Object.values(m).sort((a, b) => b.cost - a.cost || b.n - a.n);
+      return L.length ? `<h3>${label}</h3><div class="tbl"><table><thead><tr><th></th><th class="r">Times</th><th class="r">Pcs</th><th class="r">Sqft</th><th class="r">₹</th></tr></thead><tbody>${L.map((o) => `<tr><td>${esc(o.k)}</td><td class="r num">${o.n}</td><td class="r num">${fmtN(o.pcs, 0)}</td><td class="r num">${fmtN(o.sqft, 0)}</td><td class="r num">${fmtN(o.cost, 0)}</td></tr>`).join("")}</tbody></table></div>` : ""; };
+    const card = (r) => `<button class="row" data-go="lots" data-k="${esc(r.lot)}"><span class="k">${esc(r.lot)}</span><span class="pill ${r.status === "OPEN" ? "warn" : "ok"}">${esc(r.status === "OPEN" ? "open" : r.status.toLowerCase())}</span><span class="t">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}</span><span class="m"><span>${r.whole ? "Whole lot" : "Part of " + esc(r.parent)} · found at ${esc(r.at)}, back to ${esc(r.back)}</span><span class="num">${fmtN(r.pcs, 0)} pcs · ₹${fmtN(r.cost, 0)}</span><span>${fmtS(r.date)}</span></span></button>`;
+    const PER = [["this", "This month"], ["last", "Last month"], ["year", "This year (from April)"], ["all", "All"]];
+    return `<div class="count"><span>${open.length} open rework${open.length === 1 ? "" : "s"}</span></div>${open.length ? open.map(card).join("") : `<p class="empty">Nothing is being reworked. To start one, open the lot and tap Rework.</p>`}
+      <div class="group">Rework report</div><div class="acts">${PER.map(([k, t]) => `<button class="chip${per === k ? " on" : ""}" data-rwper="${k}" aria-pressed="${per === k}">${t}</button>`).join("")}</div>
+      ${inP.length ? `${kv([["Reworks", inP.length], ["Lots", new Set(inP.map((r) => r.parent)).size], ["Pcs reworked", fmtN(sum(inP, (r) => r.pcs), 0)], ["Sqft reworked", fmtN(sum(inP, (r) => r.sqft), 0)], ["Chemicals", "₹" + fmtN(sum(inP, (r) => r.chem), 0)], ["Machines", "₹" + fmtN(sum(inP, (r) => r.mach), 0)], ["Other", "₹" + fmtN(sum(inP, (r) => r.other), 0)], ["Rework cost", "₹" + fmtN(sum(inP, (r) => r.cost), 0)]])}
+      ${grpRows((r) => rwGrpName(r.grp), "Where it went wrong")}${grpRows((r) => r.at, "Stage where it was found")}${grpRows((r) => r.cause, "Cause")}
+      <h3>Reworks</h3>${inP.slice().reverse().map(card).join("")}` : `<p class="empty">No rework in this period.</p>`}`;
+  }
   const NEED_PROC = ["FAT", "SETTING/NAILING/DRYING", "MOLISSA/STAKING", "MILLING/TOGGLING", "FINISHING", "QC / READY FOR DISPATCH", "DISPATCHED"];
   // same as Excel's IsTrackedLot (Settings: ChemTrackFromLot = 500 on 08-Nov-2026)
   const trackedLot = (k) => /^L\d+/.test(k) && Number(String(k).slice(1).match(/^\d+/)[0]) >= 500;
@@ -2021,7 +2142,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return { lines: Object.keys(m).map((n) => ({ n, q: +m[n].toFixed(4) })), notFound, total: +Object.values(m).reduce((a, b) => a + b, 0).toFixed(4) };
   }
   function chemDeducted(k) {
-    const m = {}; rows("SELECT chemical c, -SUM(qty) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? GROUP BY UPPER(chemical)", [k]).forEach((x) => { const c = data.chemBy[chemName(x.c).toUpperCase()]; if (c) m[c.name] = (m[c.name] || 0) + x.q; });
+    const m = {}; rows("SELECT chemical c, -SUM(qty) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND IFNULL(section,'')<>'REWORK' AND UPPER(ref)=? GROUP BY UPPER(chemical)", [k]).forEach((x) => { const c = data.chemBy[chemName(x.c).toUpperCase()]; if (c) m[c.name] = (m[c.name] || 0) + x.q; });
     return m;
   }
   function chemState(l) {
@@ -2064,7 +2185,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="acts" style="margin-top:6px"><button class="btn" data-form="chem_readjust:${esc(l.lot_no)}">Re-adjust stock to the recipe</button>${b.best ? `<button class="btn alt" data-form="process:${esc(l.lot_no)}^${esc(b.best.key)}">Go back to v${esc(String(b.best.ver))}</button>` : ""}<button class="btn alt" data-chemok="${esc(chemSig(ch))}">Leave as it is</button></div></details>`;
   }
   function chemBlock(l, canAct) {
-    const r = rows("SELECT IFNULL(section,'') s, COUNT(*) n, -SUM(qty) q, MAX(entry_date) d, SUM(reason LIKE 'Old system%') old FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? GROUP BY IFNULL(section,'')", [l.lot_no]);
+    const r = rows("SELECT IFNULL(section,'') s, COUNT(*) n, -SUM(qty) q, MAX(entry_date) d, SUM(reason LIKE 'Old system%') old FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND IFNULL(section,'')<>'REWORK' AND UPPER(ref)=? GROUP BY IFNULL(section,'')", [l.lot_no]);
     const st = chemState(l), wait = entries.filter((e) => e.type === "chem_undo" && e.status === "pending" && e.lot_no === l.lot_no), re = r.some((x) => !["CRUSTING", "FINISHING"].includes(x.s));
     const sec = ["CRUSTING", "FINISHING"], todo = sec.filter((s) => st[s] === "todo" && st.r && chemNeed(st.r, s).lines.length), rw = entries.filter((e) => e.type === "chem_readjust" && e.status === "pending" && e.lot_no === l.lot_no), ch = !rw.length ? chemChanges(l, st) : [], adjW = sec.filter((s) => st[s] === "wait");
     if (!r.length && !(canAct && l.state === "OPEN" && todo.length) && !adjW.length) return "";
@@ -2094,7 +2215,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const muteTxt = needsAttn(l) ? (isMuted(k) ? `<p class="note">Muted in Needs attention until ${esc(muteUntilText(k))}. <button class="lnk" data-dunmute="${esc(k)}">Unmute</button></p>` : `<p class="note">Shown in Needs attention. <button class="lnk" data-dmute="${esc(k)}">Mute for a day</button></p>`) : "";
     return `<p class="sub">${esc(l.customer)} · ${esc(l.product)}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${muteTxt}
-      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
+      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="rework:${esc(l.lot_no)}">Rework</button>` : ""}${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
       ${canAct && !formOpen && l.state === "OPEN" && l.lot_pcs > 0 && deliveredPcs(k) >= l.lot_pcs - 0.0001 ? `<p class="missing">All ${fmtN(l.lot_pcs, 0)} pcs are delivered. <button class="link" data-markdisp>Mark as Dispatched</button></p>` : ""}
       ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
       ${store && canWrite && !formOpen && l.state === "ARCHIVED" && returnable(l).s > 0 ? `<div class="acts"><button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button></div>` : ""}
@@ -2103,7 +2224,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${lotHero(l, track)}
       ${(() => { const r = l.recKey ? getRecipe(l.recKey) : null, c = r ? costOf(r) : null; return `<details class="sec" data-sec="lotdetails"${secIsOpen("lotdetails", false) ? " open" : ""}><summary>More details</summary>${kv([
         ["Order qty", fmtN(l.order_qty, 0) + " sqft"], ["Shaving", esc(l.shaving)], ["Order date", fmtD(l.order_date)], ["Due date", l.due_date ? fmtD(l.due_date) : ""], ["Excel status", esc(l.status)],
-        ...(data.deducted[l.lot_no] ? [["Chemicals deducted", "₹" + fmtN(data.deducted[l.lot_no][0], 0)]] : []), ...(c ? [["Chemical cost", "₹" + fmtN(c.chem, 0) + " (₹" + fmtN(c.chemSqft, 2) + " / sqft)"], ["Cost price", "₹" + fmtN(c.perSqft, 2) + " / sqft"]] : []),
+        ...(data.deducted[l.lot_no] ? [["Chemicals deducted", "₹" + fmtN(data.deducted[l.lot_no][0], 0)]] : []), ...(c ? [["Chemical cost", "₹" + fmtN(c.chem, 0) + " (₹" + fmtN(c.chemSqft, 2) + " / sqft)"]].concat(c.rw ? [["Rework cost", "₹" + fmtN(c.rw, 0)]] : []).concat([["Cost price", "₹" + fmtN(c.perSqft, 2) + " / sqft" + (c.rw ? " with rework" : "")]]) : rwCost(k) ? [["Rework cost", "₹" + fmtN(rwCost(k), 0)]] : []),
         ["Process page", `${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : "Not set"))}${l.recKey ? "" : `<br><span class="note">No recipe saved on this page</span>`}${canAct ? `<br><button class="mini" data-form="page:${esc(l.lot_no)}">Change process page</button>` : ""}`], ["Archived on", fmtD(l.archived_on)]])}</details>`; })()}
       ${l.remarks ? remarksHtml(l.remarks) : ""}
       <h3>Skins and where they came from</h3>${skinsTable(k)}${entries.filter((e) => e.type === "skins_back" && e.status === "pending" && (e.data.to === k || e.data.from === k)).map((e) => `<p class="note"><span class="wait">Waiting for Excel:</span> ${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft back to ${esc(e.data.from)}${e.data.from === k ? " from " + esc(e.data.to) : ""}.</p>`).join("")}
@@ -2117,6 +2238,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
         const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
         return `<h3>Pieces not delivered</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Where</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${br.map((r) => `<tr><td class="nw">${fmtS(r.bal_date)}</td><td>${esc(lab[r.dest] || r.dest)} ${r.ref_key ? (/^P/.test(r.ref_key) ? purLink(r.ref_key) : lotLink(r.ref_key)) : ""}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td class="note">${esc(r.note || "")}</td></tr>`).join("")}${bp.map((e) => BAL.filter(([x]) => Number(e.data[x + "_pcs"]) > 0).map(([x, t]) => `<tr class="pendrow"><td class="nw">${fmtS(e.data.date)}</td><td>${esc(t.toLowerCase())}${x === "lot" ? " " + lotLink(e.data.to_lot) : ""} <span class="wait">waiting for Excel</span></td><td class="r num">${fmtN(e.data[x + "_pcs"], 0)}</td><td class="r num">${fmtN(e.data[x + "_sqft"], 2)}</td><td class="note">${esc(e.data.note || "")}</td></tr>`).join("")).join("")}</tbody></table></div>${nd && nd.sh > 0 && nd.dp > 0 ? `<p class="late">${fmtN(nd.sh, 0)} pcs are not delivered and not accounted for.${canAct ? ` <button class="link" data-form="lot_balance:${esc(k)}">Say where they went</button>` : ""}</p>` : ""}`; })()}
+      ${rwBlock(l, store && canWrite && l.state !== "ARCHIVED" && !formOpen)}
       ${chemBlock(l, canAct)}`;
   }
   function procDetail(k) {
@@ -2566,6 +2688,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const purchOpts = (sel0) => { const L = openPurch(), extra = sel0 && !L.some((p) => p.key === sel0) ? data.purchases.filter((p) => p.key === sel0) : []; return (sel0 ? "" : opt("", "Choose a purchase")) + extra.concat(L).map((p) => opt(p.key, [p.purchase_no, purchKind(p), p.supplier, fmtN(p.leftP, 0) + " pcs left"].filter(Boolean).join(" · "), p.key === sel0)).join(""); };
   const purchInfo = (key) => { const p = data.purchases.find((x) => x.key === key) || openPurch()[0]; return p ? `Animal: ${p.animal || "-"} · Grade: ${p.grade || "-"} · Supplier: ${p.supplier || "-"} · Left: ${fmtN(p.leftP, 0)} pcs, ${fmtN(p.leftS, 2)} sqft` : ""; };
   const lineOpts = (cur0) => data.orders.filter((o) => !o.isNew && o.grp === 1).map((o) => opt(o.id, `PO ${o.po_no} · ${o.customer} · ${o.item} · ${fmtN(o.qty_sqft, 0)} sqft`, String(o.id) === String(cur0))).join("");
+  const rwCauseOpts = (g) => opt("", "Pick a cause") + rwCauses(g).map((c) => opt(c, c)).join("");
   const formEnd = `<p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div>`;
   const dateF = (id, lb, val) => `<label>${lb}<input id="${id}" type="date" value="${val || ""}"></label>`;
   const numF = (id, lb, ph) => `<label>${lb}<input id="${id}" type="number" step="any" min="0" inputmode="decimal"${ph ? ` value="${esc(ph)}"` : ""}></label>`;
@@ -2669,6 +2792,42 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<form class="fm" id="fm-order_close" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.closed_on ? "This opens the item again." : "The item leaves the open list. You can reopen it later."}</p>${o.closed_on ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
     order_short: { title: "Close short", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
       return `<form class="fm" id="fm-order_short" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.short ? `This puts the ${fmtN(o.left, 2)} sqft balance back as still to start.` : `${fmtN(o.left, 2)} sqft of ${fmtN(o.qty_sqft, 2)} will not be made. The item counts as all in production, and is delivered once ${fmtN(o.sqf, 2)} sqft in its lots is delivered. The order quantity stays the same.`}</p>${o.short ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
+    rework: { title: "Rework", html: (a) => { const l = data.lotBy[a], nl = rwNewLot(a), src = rwSrc(l), n = ' type="number" step="any" min="0" inputmode="decimal"', stg = data.stages.filter((s) => !/^(purchase|dispatched|dumped|on hold)$/i.test(s.name)), cur = String(l.stage || "").toUpperCase();
+      return `<form class="fm" id="fm-rework" data-lot="${esc(a)}" data-new="${esc(nl)}"><h3>${esc(a)} at ${esc(l.stage || "no stage")}: ${fmtN(l.lot_pcs, 0)} pcs, ${fmtN(l.lot_sqft, 2)} sqft</h3>
+      <p class="note" style="margin:0">For leather spoiled here that has to be processed again. Afterwards record the chemicals, machine passes and other costs of the rework on it; they are added to ${esc(src.lot_no)}'s costing.</p>
+      <label>How much<select id="rw-whole"><option value="0">Part of the lot: it becomes ${esc(nl)}, the rest carries on</option><option value="1">The whole lot goes back</option></select></label>
+      <div class="two"><label>Pcs spoiled<input id="rw-pcs"${n}></label><label>Sqft spoiled<input id="rw-sqft"${n} placeholder="worked out from pcs"></label>
+      <label>Found at<select id="rw-at">${stg.map((s) => opt(s.name, s.name, s.name.toUpperCase() === cur)).join("")}</select></label>
+      <label>Goes back to<select id="rw-back">${stg.map((s) => opt(s.name, s.name, s.name.toUpperCase() === cur)).join("")}</select></label>
+      <label>Where it went wrong<select id="rw-grp">${RW_GROUPS.map((g) => opt(g, rwGrpName(g))).join("")}</select></label>
+      <label>Cause<select id="rw-cause">${rwCauseOpts(RW_GROUPS[0])}</select></label></div>
+      ${txtF("rw-own", "Or type the cause")}<div class="two">${dateF("rw-date", "Date", today0())}</div>${txtF("rw-note", "Note")}
+      <p class="note" style="margin:0" id="rw-hint">${esc(nl)} gets its own row on the tracker, copied from ${esc(a)}. When the rework is done you can merge it back into ${esc(rwRoot(a))}, or dispatch it on its own.</p>${formEnd}</form>`; } },
+    rework_use: { title: "Rework step", html: (a) => { const r = rwBy(a), an = rwAnimal(r), machs = Object.values(data.mach).map((m) => m.name).sort(), now = new Date(), hm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), last = r.steps.length ? r.steps[r.steps.length - 1] : null;
+      const chemRow = () => `<div class="rwl rwc3" data-kind="CHEM"><input class="rw-i" list="rw-chems" placeholder="Chemical" aria-label="Chemical" autocomplete="off"><input class="rw-q" placeholder="Kg" aria-label="Kg" inputmode="decimal" data-numonly="1"><input class="rw-n" placeholder="% / how added (optional)" aria-label="Note for this chemical" autocomplete="off"></div>`;
+      const machRow = () => `<div class="rwl rwm" data-kind="MACHINE"><select class="rw-i" aria-label="Machine"><option value="">Machine</option>${machs.map((m) => opt(m, m)).join("")}</select><input class="rw-q" placeholder="Rounds" aria-label="Rounds" inputmode="decimal" data-numonly="1"><input class="rw-p" placeholder="Pcs" aria-label="Pcs" title="Pcs" inputmode="decimal" data-numonly="1" value="${esc(r.pcs || "")}"><input class="rw-a" placeholder="₹ (auto)" aria-label="Amount" inputmode="decimal" data-numonly="1"></div>`;
+      const othRow = () => `<div class="rwl" data-kind="OTHER"><input class="rw-i" placeholder="What (labour, job work…)" aria-label="What" autocomplete="off"><input class="rw-a" placeholder="₹" aria-label="Amount" inputmode="decimal" data-numonly="1"></div>`;
+      return `<form class="fm" id="fm-rework_use" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}, step ${r.steps.length + 1}</h3><p class="note" style="margin:0">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}. ${fmtN(r.pcs, 0)} pcs, ${fmtN(r.sqft, 2)} sqft.${last ? " Last step: " + esc(last.step || "step") + ", " + fmtS(last.date) + (last.time ? " " + esc(last.time) : "") + "." : ""} Record each step as it is done. Excel takes the chemicals off stock; the cost is added to ${esc(r.parent)}'s costing as rework.</p>
+      ${dl("rw-chems", data.chemicals.map((c) => c.name))}${dl("rw-steps", RW_STEPS.concat((data.reworks || []).flatMap((x) => x.steps.map((y) => y.step))))}
+      <label>What was done<input id="rw-step" list="rw-steps" autocomplete="off" placeholder="for example Re-dyeing"></label>
+      <div class="two">${dateF("rw-date", "Date", today0())}<label>Time<input id="rw-time" type="time" value="${hm}"></label></div>
+      <label>How it was done<textarea id="rw-how" rows="4" placeholder="Drum, float, temperature, run times, pH, checks…"></textarea></label>
+      ${txtF("rw-by", "Done by")}
+      <h3>Chemicals</h3><div id="rw-CHEM">${chemRow()}${chemRow()}${chemRow()}</div><button type="button" class="btn alt" data-rwadd="CHEM">Add a chemical</button>
+      <h3>Machine passes</h3><label>Animal (for machine rates)<select id="rw-animal">${["", "Cow", "Calf", "Buff", "Goat"].map((x) => opt(x, x || "Not set", x.toUpperCase() === String(an).toUpperCase())).join("")}</select></label><p class="note" style="margin:0 0 6px">Machine, then rounds, pieces and ₹. Leave ₹ blank to use the rate on the machinery sheet.</p><div id="rw-MACHINE">${machRow()}${machRow()}</div><button type="button" class="btn alt" data-rwadd="MACHINE">Add a machine</button>
+      <h3>Other costs</h3><div id="rw-OTHER">${othRow()}</div><button type="button" class="btn alt" data-rwadd="OTHER">Add a cost</button>
+      <p class="note" id="rw-tot" style="margin:0"></p>
+      <template id="rw-t-CHEM">${chemRow()}</template><template id="rw-t-MACHINE">${machRow()}</template><template id="rw-t-OTHER">${othRow()}</template>${formEnd}</form>`; } },
+    rework_done: { title: "Rework done", html: (a) => { const r = rwBy(a), chem = r.lines.some((x) => x.kind === "CHEM");
+      return `<form class="fm" id="fm-rework_done" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}</h3><p class="note" style="margin:0">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}. ${r.steps.length ? r.steps.length + " step" + (r.steps.length === 1 ? "" : "s") + " recorded: " + esc(rwStepsTxt(r)) + "." : "No steps recorded."} Rework cost so far ₹${fmtN(r.cost, 0)}. Once done, ${esc(r.lot)} can move past ${esc(r.at)} again${r.whole ? "" : " and can be merged back into " + esc(r.parent)}.</p>
+      ${chem ? "" : `<label class="chk"><input type="checkbox" id="rw-nochem"> No chemicals were used in this rework</label>`}
+      <div class="two">${dateF("rw-date", "Date", today0())}</div>${txtF("rw-note", "Note")}${formEnd}</form>`; } },
+    rework_merge: { title: "Merge rework back", html: (a) => { const r = rwBy(a), l = data.lotBy[r.lot], p = data.lotBy[r.parent];
+      return `<form class="fm" id="fm-rework_merge" data-rw="${esc(a)}"><h3>${esc(r.lot)} into ${esc(r.parent)}</h3><p style="margin:0">All of ${esc(r.lot)}, ${fmtN(l.lot_pcs, 0)} pcs and ${fmtN(l.lot_sqft, 2)} sqft, goes back into ${esc(r.parent)}${p ? ` at ${esc(p.stage || "its stage")}` : ""}. ${esc(r.lot)} then leaves the tracker; its history stays in the archive.</p>
+      ${p && String(p.stage || "").toUpperCase() !== String(l.stage || "").toUpperCase() ? `<p class="soon" style="margin:0">${esc(r.lot)} is at ${esc(l.stage || "no stage")} and ${esc(r.parent)} at ${esc(p.stage || "no stage")}.</p>` : ""}
+      <div class="two">${dateF("rw-date", "Date", today0())}</div>${formEnd}</form>`; } },
+    rework_void: { title: "Remove rework entry", html: (a) => { const [k, u] = a.split("|"), r = rwBy(k), ls = r.lines.filter((x) => x.use === u);
+      return `<form class="fm" id="fm-rework_void" data-rw="${esc(k)}" data-use="${esc(u)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}, ${fmtS(ls[0] && ls[0].date)}</h3><p style="margin:0">${ls.map((x) => esc(x.item) + (x.kind === "CHEM" ? " " + fmtN(x.qty, 3) + " kg" : "") + " ₹" + fmtN(x.amt, 0)).join("; ")}</p><p class="note" style="margin:0">Excel takes these off the rework cost and puts the chemicals back in stock. Record the right figures again afterwards.</p>${formEnd}</form>`; } },
     part_ahead: { title: "Part sent ahead", html: (a) => { const [lot, to0] = a.split("|"), l = data.lotBy[lot], n = ' type="number" step="any" min="0" inputmode="decimal"';
       return `<form class="fm" id="fm-part_ahead" data-lot="${esc(lot)}"><h3>${esc(lot)} at ${esc(l.stage || "no stage")}</h3><p class="note" style="margin:0">For part of the lot going ahead early. The lot stays at ${esc(l.stage || "its stage")}; Excel adds a line to its remarks.</p>
       <div class="two"><label>Pcs<input id="fa-pcs"${n}></label><label>Sqft<input id="fa-sqft"${n}></label>
@@ -3597,6 +3756,49 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ls.forEach((x, i) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || q * r; d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), q, r, String(x.h || "").trim(), +a.toFixed(2)].join("~^~"); });
       return saveNew({ type: "order", lot_no: "PO " + po, data: d }, "PO saved. It is waiting for Excel.", msg, btn);
     }
+    if (f.id === "fm-rework") {
+      const lot = f.dataset.lot, l = data.lotBy[lot], whole = need("#rw-whole") === "1", pcs = numOf("#rw-pcs") || (whole ? l.lot_pcs || 0 : 0), sqft = numOf("#rw-sqft") || (whole && !numOf("#rw-pcs") ? l.lot_sqft || 0 : 0), date = need("#rw-date"), at = need("#rw-at"), back = need("#rw-back"), grp = need("#rw-grp"), cause = need("#rw-own") || need("#rw-cause");
+      if (checkDate(date)) return bad(checkDate(date)); if (!cause) return bad("Pick the cause, or type it.");
+      if (!whole && !pcs) return bad("Type the pcs spoiled."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft spoiled.");
+      if ((l.lot_pcs > 0 && pcs > l.lot_pcs + 0.0001) || (l.lot_sqft > 0 && sqft > l.lot_sqft + 0.5)) return bad("That is more than the lot's " + fmtN(l.lot_pcs, 0) + " pcs and " + fmtN(l.lot_sqft, 2) + " sqft.");
+      if (!whole && l.lot_pcs > 0 && pcs >= l.lot_pcs - 0.0001) return bad("That is the whole lot. Choose 'The whole lot goes back' instead.");
+      if (whole && rwOpen(lot)) return bad(lot + " already has a rework open. Mark it done first.");
+      const sa = stageNo(at) || 0, sb = stageNo(back) || 0;
+      if (sa && sb && sb > sa && warnOnce(f, back + " comes after " + at + ", where the fault was found.")) return;
+      const nl = whole ? "" : f.dataset.new;
+      return saveNew({ type: "rework", lot_no: lot, data: { lot, parent: rwRoot(lot), whole: whole ? "1" : "0", new_lot: nl, pcs, sqft: sqft || (l.lot_pcs ? +(l.lot_sqft * pcs / l.lot_pcs).toFixed(2) : 0), at, back, from_stage: l.stage || "", grp, cause, date, note: need("#rw-note") } }, whole ? "Rework saved. " + lot + " goes back to " + back + "." : "Rework saved. " + pcs + " pcs become " + nl + " at " + back + ".", msg, btn);
+    }
+    if (f.id === "fm-rework_use") {
+      const r = rwBy(f.dataset.rw), date = need("#rw-date"), time = need("#rw-time"), step = need("#rw-step"), how = $("#rw-how").value.trim(), by = need("#rw-by"), animal = need("#rw-animal"), ls = [];
+      if (!step) return bad("Say what was done in this step, for example Re-dyeing.");
+      if (checkDate(date)) return bad(checkDate(date)); if (date < String(r.date || "")) return bad("The date is before the rework started (" + fmtD(r.date) + ").");
+      for (const row of f.querySelectorAll(".rwl")) {
+        const k = row.dataset.kind, it = (row.querySelector(".rw-i").value || "").trim(), q = parseFloat((row.querySelector(".rw-q") || {}).value) || 0, p = parseFloat((row.querySelector(".rw-p") || {}).value) || 0, am = parseFloat((row.querySelector(".rw-a") || {}).value) || 0, nt = ((row.querySelector(".rw-n") || {}).value || "").trim();
+        if (!it && !q && !am) continue;
+        if (k === "CHEM") { const c = data.chemBy[chemName(it).toUpperCase()]; if (!c) return bad(it ? it + " is not on A. CHEMICALS. Pick a name from the list." : "Pick the chemical for " + q + " kg."); if (q <= 0) return bad("Type the kg of " + c.name + "."); ls.push({ kind: k, item: c.name, qty: q, unit: "KG", rate: c.rate || 0, amt: +(q * (c.rate || 0)).toFixed(2), avail: c.available || 0, note: nt }); }
+        else if (k === "MACHINE") { if (!it) return bad("Pick the machine for " + q + " rounds."); if (q <= 0) return bad("Type the rounds on " + it + "."); const m = machCalc(it, q, animal, p || r.pcs), amt = am || m.amt; if (!amt) return bad("No rate for " + it + (animal ? " (" + animal.toLowerCase() + ")" : ": set the animal") + ". Type the ₹ amount for it."); ls.push({ kind: k, item: it, qty: q, unit: m.per ? "per round" : fmtN(p || r.pcs, 0) + " pcs", rate: am ? 0 : m.rate, amt: +amt.toFixed(2) }); }
+        else { if (!it) return bad("Say what the ₹" + am + " is for."); if (am <= 0) return bad("Type the ₹ amount for " + it + "."); ls.push({ kind: k, item: it, qty: 1, unit: "", rate: am, amt: +am.toFixed(2) }); }
+      }
+      if (!ls.length && !how) return bad("Say how it was done, or type the chemicals, machine passes or costs of this step.");
+      const short = ls.filter((x) => x.kind === "CHEM" && x.qty > x.avail + 0.0005);
+      if (short.length && warnOnce(f, "Not enough in stock: " + short.map((x) => x.item + " (" + fmtN(x.avail, 3) + " kg)").join(", ") + ".")) return;
+      const d = { rw: r.key, lot: r.lot, parent: r.parent, date, time, step, how, by }; ls.forEach((x, i) => { d["l" + (i + 1)] = [x.kind, x.item, x.qty, x.unit, x.rate, x.amt, x.note || ""].map((y) => String(y ?? "").replace(/~\^~/g, " ")).join("~^~"); });
+      return saveNew({ type: "rework_use", lot_no: r.lot, data: d }, "Step saved" + (ls.length ? ": ₹" + fmtN(ls.reduce((t, x) => t + x.amt, 0), 0) + " added to the rework" : "") + ". It is waiting for Excel.", msg, btn);
+    }
+    if (f.id === "fm-rework_done") {
+      const r = rwBy(f.dataset.rw), date = need("#rw-date"), nc = $("#rw-nochem");
+      if (checkDate(date)) return bad(checkDate(date)); if (nc && !nc.checked) return bad("No chemicals are recorded for this rework. Record them first, or tick 'No chemicals were used'.");
+      if (date < String(r.date || "")) return bad("The date is before the rework started (" + fmtD(r.date) + ").");
+      return saveNew({ type: "rework_done", lot_no: r.lot, data: { rw: r.key, lot: r.lot, date, no_chem: nc ? "1" : "0", note: need("#rw-note") } }, r.whole ? "Rework marked done." : "Rework marked done. " + r.lot + " can now be merged back into " + r.parent + ".", msg, btn);
+    }
+    if (f.id === "fm-rework_merge") {
+      const r = rwBy(f.dataset.rw), l = data.lotBy[r.lot], date = need("#rw-date");
+      if (checkDate(date)) return bad(checkDate(date)); if (!data.lotBy[r.parent] || data.lotBy[r.parent].state === "ARCHIVED") return bad(r.parent + " is no longer on the tracker, so " + r.lot + " can't go back into it.");
+      if (deliveredPcs(r.lot) > 0 || (data.phoneDel[r.lot] || []).length) return bad(r.lot + " has deliveries recorded, so it can't be merged back.");
+      if (!(l.lot_pcs > 0)) return bad(r.lot + " has no pieces left to merge.");
+      return saveNew({ type: "rework_merge", lot_no: r.lot, data: { rw: r.key, from: r.lot, to: r.parent, pcs: l.lot_pcs, sqft: l.lot_sqft || 0, date } }, r.lot + " merged back into " + r.parent + ". It is waiting for Excel.", msg, btn);
+    }
+    if (f.id === "fm-rework_void") { const r = rwBy(f.dataset.rw); return saveNew({ type: "rework_void", lot_no: r.lot, data: { rw: r.key, use: f.dataset.use } }, "Removal saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-part_ahead") {
       const lot = f.dataset.lot, l = data.lotBy[lot], pcs = numOf("#fa-pcs"), sqft = numOf("#fa-sqft"), date = need("#fa-date"), purpose = need("#fa-why"), note = need("#fa-note");
       if (!pcs && !sqft) return bad("Type the pcs and / or sqft going ahead."); if (checkDate(date)) return bad(checkDate(date));
@@ -3649,15 +3851,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? n.name : "";
   }
   // a lot can't go past FAT until crusting is adjusted, or past FINISHING until finishing is; a part sent early is recorded instead
-  function stageGate(l, to) {
+  function stageGate(l0, to) {
     const seq = (n) => stageNo(n) || 0, t = seq(to), up = String(to).toUpperCase(), fat = seq("FAT"), fin = seq("FINISHING"), qc = seq("QC / Ready for Dispatch");
     const past = (g) => up === "DISPATCHED" || (t > g && t <= qc);
+    // a lot being reworked stays at or before the stage where the fault was found until the rework is done
+    const ro = rwOpen(l0.lot_no);
+    if (ro && !["ON HOLD", "DUMPED"].includes(up) && (up === "DISPATCHED" || (seq(ro.at) && t > seq(ro.at)))) return { sec: [], rw: ro, text: l0.lot_no + " is being reworked (found at " + ro.at + "). Record the rework's chemicals and machines, then mark it done before the lot moves past " + ro.at + "." };
+    const l = rwSrc(l0);
     if (!fat || !l.recKey && l.chem_crust === "n/a") return null;
     const st = chemState(l), ok = (x) => ["done", "wait", "na"].includes(st[x]), sec = [];
     if (past(fat) && !ok("CRUSTING")) sec.push("CRUSTING");
     if (past(fin) && !ok("FINISHING")) sec.push("FINISHING");
     if (!sec.length) return null;
-    return { sec, text: l.lot_no + " can't move to " + to + " until " + sec.map((x) => x.toLowerCase()).join(" and ") + " chemicals are adjusted. If only part of the lot is going ahead (approval sample, finish setup), record it instead; the lot stays where it is." };
+    return { sec, text: l0.lot_no + " can't move to " + to + " until " + sec.map((x) => x.toLowerCase()).join(" and ") + " chemicals are adjusted. If only part of the lot is going ahead (approval sample, finish setup), record it instead; the lot stays where it is." };
   }
   function stageForm(l) {
     const nx = nextStage(l.stage);
@@ -3706,14 +3912,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (since && minD > 0 && hereD < minD && warnOnce(f, l.stage + " normally takes at least " + fmtN(minD, 0) + " day(s); " + l.lot_no + " has been there " + hereD + " day(s).")) return;
       if (a && b && b < a && !["ON HOLD", "DUMPED"].includes(up) && cu !== "ON HOLD" && warnOnce(f, to + " comes before " + l.stage + ".")) return;
       { const why = stageGate(l, to);
+        if (why && why.rw) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="rework_done:${esc(why.rw.key)}">Rework done</button></span>`; return; }
         if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
       if (NEED_PROC.includes(up) && trackedLot(l.lot_no) && !String(l.process_page || "").trim()) { msg.innerHTML = esc(l.lot_no + " has no process page yet. Link a process before it moves to " + to + ".") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Process</button></span>`; return; }
       if (up === "DISPATCHED") {
         const { dp, sh } = notDelivered(l);
         if (dp <= 0) { msg.innerHTML = esc(l.lot_no + " can't be marked Dispatched: no delivery is recorded. Record the delivery first.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-act="delivery">Record delivery</button></span>`; return; }
         if (sh > 0) { msg.innerHTML = esc(fmtN(sh, 0) + " of " + fmtN(l.lot_pcs, 0) + " pcs were not delivered (" + fmtN(dp, 0) + " delivered). Say where they went before marking " + l.lot_no + " Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="lot_balance:${esc(l.lot_no)}">Say where they went</button></span>`; return; }
-        if (trackedLot(l.lot_no) && !processSaved(l)) { msg.innerHTML = esc(l.lot_no + "'s process isn't saved. Save it (Excel: Save Process; app: Load process or Edit recipe → Save) before marking it Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Load process</button></span>`; return; }
-        if (trackedLot(l.lot_no)) { const pm = pdfMade(l);
+        if (trackedLot(l.lot_no) && !processSaved(rwSrc(l))) { msg.innerHTML = esc(l.lot_no + "'s process isn't saved. Save it (Excel: Save Process; app: Load process or Edit recipe → Save) before marking it Dispatched.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Load process</button></span>`; return; }
+        if (trackedLot(l.lot_no)) { const pm = pdfMade(rwSrc(l));
           if (pm.ok === false && warnOnce(f, (pm.stale ? l.lot_no + "'s process was changed after its PDF was made. Make the PDF again" : "No process PDF has been made for " + l.lot_no + ". Make it") + " first: open its recipe and tap PDF. To dispatch without it, tap Save again.")) { msg.insertAdjacentHTML("beforeend", l.recKey ? `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn alt" type="button" data-go="lots" data-k="${esc(l.recKey)}">Open its recipe</button></span>` : ""); return; } }
         const y = yieldOf(l);
         if (y !== null && (y < YIELD_MIN || y > YIELD_MAX)) {
@@ -3772,6 +3979,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "audit") return `Stock audit posted: ${d.n_counted} counted, ${d.n_adj} adjusted, short ₹${fmtN(d.short, 0) || 0}, excess ₹${fmtN(d.excess, 0) || 0}`;
     if (e.type === "dye") return "Dye combinations · " + e.process + " · " + Object.keys(e.cells).length + " changes";
     if (e.type === "lot_balance") return "Not delivered: " + BAL.filter(([x]) => Number(d[x + "_pcs"]) > 0).map(([x, t]) => fmtN(d[x + "_pcs"], 0) + " pcs " + t.toLowerCase() + (x === "lot" ? " " + d.to_lot : "")).join(", ") + (d.note ? " (" + d.note + ")" : "");
+    if (e.type === "rework") return `Rework${d.whole === "1" ? " of the whole lot" : ": " + (fmtN(d.pcs, 0) || 0) + " pcs become " + d.new_lot}, back to ${d.back}. ${rwGrpName(d.grp)}: ${d.cause}`;
+    if (e.type === "rework_use") { const ls = rwLines(e); return `Rework step: ${d.step || ""}${d.time ? " at " + d.time : ""}${ls.length ? " · " : ""}${ls.map((x) => x.item + (x.kind === "CHEM" ? " " + fmtN(x.qty, 3) + " kg" : "")).join(", ")} · ₹${fmtN(ls.reduce((t, x) => t + x.amt, 0), 0)}`; }
+    if (e.type === "rework_done") return "Rework done" + (d.no_chem === "1" ? ", no chemicals used" : "");
+    if (e.type === "rework_merge") return `Merge rework back into ${d.to}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
+    if (e.type === "rework_void") return "Remove a rework entry";
     if (e.type === "part_ahead") return `Part sent ahead to ${d.stage} for ${d.purpose.toLowerCase()}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "lot_return") return `Customer return, ${d.outcome === "REWORK" ? "rework to " + d.stage : "reject to stock"}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "return_sale") return `Sold rejected skins to ${d.buyer}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
@@ -4136,6 +4348,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
+    { const rp = e.target.closest("[data-rwper]"); if (rp) { filter.rwPer = rp.dataset.rwper; render(); return; } }
     if (e.target.closest("[data-restore]")) { bkOpen(); return; }
     if (e.target.closest("[data-backup]")) { appBackup(e.target.closest("[data-backup]")); return; }
     { const th = e.target.closest("button[data-theme-set]"); if (th) { lsSet("ssi-theme", th.dataset.themeSet); applyTheme(); render(); return; } }
@@ -4199,6 +4412,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const ivl = e.target.closest("[data-invlot]"); if (ivl) { const l = data.lotBy[ivl.dataset.invlot]; inv = invNew(UP(l.customer), l.lot_no); invShowAll = false; openForm("invoice:new"); return; }
     if (e.target.closest("[data-backall]")) { const r = backRows($("#fm-skins_back").dataset.key).find((x) => String(x.id) === $("#fb-entry").value); if (r) { $("#fb-pcs").value = r.leftP; $("#fb-sqft").value = r.leftS; } return; }
     if (e.target.closest("[data-rates]")) { showRates = !showRates; showDetailKeep(); return; }
+    { const ra = e.target.closest("[data-rwadd]"); if (ra) { const k = ra.dataset.rwadd, t = $("#rw-t-" + k); if (t) $("#rw-" + k).appendChild(t.content.cloneNode(true)); const L = $("#rw-" + k).querySelectorAll(".rwl"); const x = L[L.length - 1].querySelector("input,select"); if (x) x.focus(); return; } }
     const cd = e.target.closest("[data-cntdel]");
     if (cd) { if (!cd.dataset.sure) { cd.dataset.sure = "1"; cd.textContent = "Tap again to remove"; return; } store.doc("entries/" + cd.dataset.cntdel).update({ status: "cancelled" }).then(() => closeForm("Count removed.")); return; }
     const fb = e.target.closest("[data-form]");
