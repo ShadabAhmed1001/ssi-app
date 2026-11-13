@@ -617,7 +617,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // in the meantime: then the lot gets the next free number and every entry on it follows (nl_map names the lot's own entry)
     { const plog = {}; try { rows("SELECT entry_id, result FROM phone_log").forEach((r) => { plog[r.entry_id] = String(r.result || ""); }); } catch (e) { /* older data */ }
       const known = new Set(rows("SELECT lot_no FROM lots").map((r) => String(r.lot_no || "").toUpperCase())), nl = {}, taken = new Set();
-      entries.filter((e) => e.type === "new_lot").forEach((e) => { const m = /new lot is (L\d+)/i.exec(plog[e.id] || ""); if (m) nl[e.id] = m[1].toUpperCase(); });
+      entries.filter((e) => e.type === "new_lot").forEach((e) => { const m = /new lot (?:is )?(L\d+)/i.exec(plog[e.id] || ""); if (m) nl[e.id] = m[1].toUpperCase(); });
       let hi = [...known].concat(Object.values(nl), live0.filter((e) => e.type === "lot_move" && e.data && e.data.is_new === "1").map((e) => e.data.to)).reduce((m, k) => { const x = /^L(\d+)$/.exec(String(k || "").toUpperCase()); return x ? Math.max(m, Number(x[1])) : m; }, 0);
       live0.filter((e) => e.type === "new_lot" && !nl[e.id]).forEach((e) => { let w = String((e.data && e.data.lot_no) || "").toUpperCase(); const x = /^L(\d+)$/.exec(w);
         if (!x || known.has(w) || taken.has(w)) w = "L" + (++hi); else hi = Math.max(hi, Number(x[1])); taken.add(w); nl[e.id] = w; });
@@ -1034,7 +1034,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 113, at: "2026-11-13T15:53:43+05:30", notes: "New lots made on the phone get their number at once and every button works on them; Excel keeps that number" };
+  const APP_BUILD = { v: 114, at: "2026-11-13T16:03:56+05:30", notes: "Reads both ways Excel words a new lot number" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
