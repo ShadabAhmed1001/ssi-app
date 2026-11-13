@@ -1,5 +1,5 @@
 // Keeps the app's own files on the phone so it opens without internet. Data lives in IndexedDB, not here.
-const V = "ssi-c54e43a2ee";
+const V = "ssi-662aa26506";
 const FILES = ["./", "index.html", "config.js", "onedrive.js", "msal-browser.min.js", "sql-asm.js", "xlsx.mini.min.js", "jspdf.umd.min.js", "jspdf.plugin.autotable.min.js", "appdb.txt", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-180.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(FILES))); });
 self.addEventListener("message", (e) => { if (e.data === "skip") self.skipWaiting(); });
