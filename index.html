@@ -841,10 +841,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const smallBal = (o) => o.status === "PART IN PRODUCTION" && o.left > 0 && (o.left <= 300 || o.left <= o.qty_sqft * 0.05);
   const CHIPS = {
     today: [],
-    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["quotes", "Quotations"], ["pay", "Payments"], ["all", "All"]],
-    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
-    chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
+    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stage guide"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
+    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["ledger", "Ledger"], ["all", "All"]],
+    chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
     settings: [],
     about: [],
@@ -876,11 +876,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const chipItems = (t, skip) => CHIPS[t].filter(([k]) => !(skip || []).includes(k)).map(([k, l]) => [t + "|" + k, l]);
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
-    { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep", "pay"]) },
+    { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep", "tally"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["orders|pay", "Payments"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
+    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stage guide"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
     { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
@@ -924,7 +924,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function render() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
@@ -948,8 +948,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
     if (tab === "lots" && filter.lots === "rework") { $("#list").innerHTML = rwView(); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
-    if (tab === "orders" && filter.orders === "quotes") { $("#list").innerHTML = qListView(ws); return; }
-    if (tab === "orders" && filter.orders === "pay") { $("#list").innerHTML = payListView(ws); return; }
+    if (tab === "orders" && filter.orders === "tally") { $("#list").innerHTML = tallyView(ws); return; }
+    if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
+    if (tab === "chemicals" && filter.chemicals === "usage") { $("#list").innerHTML = usageView(ws); return; }
+    if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
+    if (tab === "purchases" && filter.purchases === "ledger") { $("#list").innerHTML = ledgerView(ws); return; }
     if (tab === "orders" && filter.orders === "invpend") { $("#list").innerHTML = invPendView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
@@ -1001,6 +1004,68 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<div class="count"><span>${L.length} machine${L.length === 1 ? "" : "s"} on F. MACHINERY</span></div>
       <p class="note" style="margin:0 0 6px">₹ per piece per round. ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))} are ₹ per run for the whole lot. Rates are changed in Excel (F. MACHINERY) and come to the app with the next update.</p>
       ${L.length ? `<div class="tbl"><table><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr><td>${esc(m.name)}${NOT_ROUND.includes(String(m.name).toUpperCase()) ? ` <span class="note">per run</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
+  }
+  // ---------------------------------------------------------------- Excel sheets as views: STAGE GUIDE, chemical usage by lot,
+  // CHEM CLEANUP, PURCHASE LEDGER, TALLY MASTERS (read from the data the app already holds)
+  function guideView(ws) {
+    const open = data.lots.filter((l) => l.grp === 1), U = (x) => String(x || "").toUpperCase();
+    const L = data.stages.filter((s) => match(String(s.name) + " " + String(s.notes || ""), ws));
+    return `<p class="note" style="margin:6px 2px">The production stages in order, with the days a lot is expected to stay at each. A lot past its max days shows in Needs attention. Changed in Excel's STAGE GUIDE.</p>
+      <div class="tbl"><table><thead><tr><th>#</th><th>Stage</th><th class="r">Min days</th><th class="r">Max days</th><th class="r">Lots now</th><th class="r">Over max</th><th>Notes</th></tr></thead><tbody>${L.map((s, i) => { const here = open.filter((l) => U(l.stage) === U(s.name)), over = s.max_days ? here.filter((l) => l.inStage !== null && l.inStage > s.max_days) : [];
+        return `<tr><td class="num">${esc(s.seq ?? i + 1)}</td><td><b>${esc(s.name)}</b></td><td class="r num">${s.min_days ? fmtN(s.min_days, 0) : "-"}</td><td class="r num">${s.max_days ? fmtN(s.max_days, 0) : "-"}</td><td class="r num">${here.length || ""}</td><td class="r num ${over.length ? "late" : ""}">${over.length ? over.map((l) => `<button class="link" data-go="lots" data-k="${esc(l.lot_no)}">${esc(l.lot_no)}</button>`).join(" ") : ""}</td><td class="wrap">${esc(s.notes || "")}</td></tr>`; }).join("")}</tbody></table></div>`;
+  }
+  // chemicals taken for each lot (stock adjustments, re-adjustments, rework), newest lots first, 10 lots a page
+  function usageView(ws) {
+    const mv = rows("SELECT chemical, qty, ref, section FROM chem_moves WHERE entry_type='LOT USE' AND status<>'VOID'"), byLot = {};
+    mv.forEach((m) => { const k = String(m.ref || "").toUpperCase(); if (!k) return; const o = byLot[k] = byLot[k] || {}; o[m.chemical] = (o[m.chemical] || 0) - (Number(m.qty) || 0); });
+    const num = (k) => { const x = /^L(\d+)(.*)$/.exec(k); return x ? Number(x[1]) * 100 + (x[2] ? 1 : 0) : 0; };
+    let lots = Object.keys(byLot).filter((k) => !ws.length || match(k + " " + ((data.lotBy[k] || {}).product || "") + " " + ((data.lotBy[k] || {}).customer || "") + " " + Object.keys(byLot[k]).join(" "), ws)).sort((a, b) => num(b) - num(a));
+    const page = Math.max(0, Number(filter.usePage) || 0), per = 10, n = lots.length, cols = lots.slice(page * per, page * per + per);
+    const chems = [...new Set(cols.flatMap((k) => Object.keys(byLot[k]).filter((c) => Math.abs(byLot[k][c]) > 1e-6)))].sort((a, b) => a.localeCompare(b));
+    const rate = (c) => (data.chemBy[c.toUpperCase()] || {}).rate || 0, tot = (k) => Object.entries(byLot[k]).reduce((t, [c, q]) => t + q * rate(c), 0);
+    const nav = `<div class="acts">${page > 0 ? `<button class="btn alt" data-usepage="${page - 1}">Newer lots</button>` : ""}${(page + 1) * per < n ? `<button class="btn alt" data-usepage="${page + 1}">Older lots</button>` : ""}</div>`;
+    if (!n) return `<p class="empty">No chemical use recorded${ws.length ? " that matches" : ""}.</p>`;
+    return `<p class="note" style="margin:6px 2px">Kg of each chemical taken off stock for each lot, as Excel's chemical stock statement. Rework counts with its lot. Search a lot, product or chemical.</p><div class="count"><span>${n} lots · showing ${page * per + 1} to ${Math.min(n, page * per + per)}</span></div>${nav}
+      <div class="tbl"><table class="tview"><thead><tr><th>Chemical</th>${cols.map((k) => `<th class="r"><button class="link" data-go="lots" data-k="${esc(k)}">${esc(k)}</button></th>`).join("")}<th class="r">Total kg</th></tr></thead><tbody>${chems.map((c) => { const q = cols.map((k) => byLot[k][c] || 0);
+        return `<tr><td>${esc(c)}</td>${q.map((x) => `<td class="r num">${Math.abs(x) > 1e-6 ? fmtN(x, 3) : ""}</td>`).join("")}<td class="r num"><b>${fmtN(q.reduce((a, b) => a + b, 0), 3)}</b></td></tr>`; }).join("")}</tbody>
+        <tfoot><tr><td>Cost ₹</td>${cols.map((k) => `<td class="r num">${fmtN(tot(k), 0)}</td>`).join("")}<td class="r num"><b>${fmtN(cols.reduce((a, k) => a + tot(k), 0), 0)}</b></td></tr></tfoot></table></div>${nav}`;
+  }
+  // what to check on each chemical, as Excel's CHEM CLEANUP
+  function cleanupView(ws) {
+    const use = {}; rows("SELECT chemical, ref, entry_date FROM chem_moves WHERE entry_type='LOT USE' AND status<>'VOID' ORDER BY entry_date").forEach((m) => { const o = use[m.chemical.toUpperCase()] = use[m.chemical.toUpperCase()] || { lots: new Set(), last: "", at: "" }; o.lots.add(m.ref); o.last = m.ref; o.at = m.entry_date; });
+    const old = iso(new Date(today.getTime() - 120 * DAY));
+    const L = data.chemicals.map((c) => { const u = use[c.name.toUpperCase()] || { lots: new Set(), last: "", at: "" }, iss = [];
+      const inT = c.tally_stock !== null && c.tally_stock !== undefined && Number(c.tally_stock) !== 0 || Number(c.rate) > 0;
+      if (Number(c.available) < -1e-6) iss.push("Negative stock");
+      if (!Number(c.rate)) iss.push("No rate");
+      if (!inT && Number(c.available) > 0) iss.push("Not in Tally's list");
+      if (!Number(c.pack_size)) iss.push("No pack size");
+      const worth = Number(c.available) * (Number(c.rate) || 0);
+      if (!u.lots.size && worth >= 500) iss.push("Stock, no use recorded");
+      else if (u.lots.size && u.at && String(u.at).slice(0, 10) < old && worth >= 500) iss.push("Not used for 4 months");
+      return { c, u, iss }; }).filter((x) => x.iss.length && match(x.c.name + " " + x.iss.join(" "), ws)).sort((a, b) => b.iss.length - a.iss.length || a.c.name.localeCompare(b.c.name));
+    const cnt = {}; L.forEach((x) => x.iss.forEach((i) => { cnt[i] = (cnt[i] || 0) + 1; }));
+    return `<p class="note" style="margin:6px 2px">Chemicals that need a look: wrong stock, missing rate or pack size, or stock nobody uses. Fix rates and pack sizes with Edit chemical; a wrong stock with a stock audit. Use is counted from when the chemical ledger started${(() => { const f = (rows("SELECT MIN(entry_date) d FROM chem_moves")[0] || {}).d; return f ? " (" + esc(fmtS(f)) + ")" : ""; })()}; stock worth under ₹500 is not flagged as unused.</p>
+      <div class="acts">${Object.entries(cnt).map(([k, v]) => `<span class="pill warn">${esc(k)} ${v}</span>`).join(" ")}</div>
+      ${L.length ? `<div class="tbl"><table><thead><tr><th>Chemical</th><th class="r">Tally</th><th class="r">Ledger</th><th class="r">Available</th><th class="r">Rate</th><th class="r">Pack</th><th class="r">Lots</th><th>Last lot</th><th>To check</th></tr></thead><tbody>${L.map(({ c, u, iss }) => `<tr><td><button class="link" data-go="chemicals" data-k="${esc(c.name)}">${esc(c.name)}</button></td><td class="r num">${fmtN(c.tally_stock, 2)}</td><td class="r num">${fmtN(c.ledger_qty, 2)}</td><td class="r num ${Number(c.available) < 0 ? "late" : ""}">${fmtN(c.available, 2)}</td><td class="r num">${fmtN(c.rate, 2)}</td><td class="r num">${fmtN(c.pack_size, 0)}</td><td class="r num">${u.lots.size || ""}</td><td>${esc(u.last)}</td><td class="wrap">${esc(iss.join("; "))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">Nothing to check.</p>`}`;
+  }
+  // every skins movement: received from suppliers, given to lots, moved between lots, returned
+  function ledgerView(ws) {
+    const T = filter.ledT || "all", L = rows("SELECT * FROM purchase_ledger ORDER BY entry_date DESC, id DESC").filter((r) => (T === "all" || r.entry_type === T) && match([r.from_key, r.to_key, r.entry_type, r.note, r.status].join(" "), ws));
+    const types = [...new Set(rows("SELECT DISTINCT entry_type t FROM purchase_ledger").map((r) => r.t).filter(Boolean))].sort();
+    const shown = L.slice(0, 300), key = (k) => /^P\d/i.test(k) ? `<button class="link" data-go="purchases" data-k="${esc(k)}">${esc(k)}</button>` : /^L\d/i.test(k) ? lotLink(k) : esc(k);
+    return `<p class="note" style="margin:6px 2px">Every movement of skins: received from suppliers, given to lots, moved between lots, returned. Newest first.</p>
+      <div class="acts"><button class="chip${T === "all" ? " on" : ""}" data-ledt="all">All</button>${types.map((t) => `<button class="chip${T === t ? " on" : ""}" data-ledt="${esc(t)}">${esc(t.toLowerCase())}</button>`).join("")}</div>
+      <div class="count"><span>${L.length} rows${L.length > 300 ? " · first 300 shown, search to narrow" : ""}</span></div>
+      <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Status</th><th>Note</th></tr></thead><tbody>${shown.map((r) => `<tr${r.status === "VOID" ? ' class="void"' : ""}><td class="nw">${fmtS(r.entry_date)}</td><td>${esc(String(r.entry_type || "").toLowerCase())}</td><td>${key(r.from_key)}</td><td>${key(r.to_key)}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td>${esc(r.status)}</td><td class="wrap">${esc(r.note || "")}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  function tallyView(ws) {
+    const T = filter.tallyT || "parties";
+    const P = trows("SELECT * FROM tally_parties ORDER BY name").filter((r) => match([r.name, r.gstin, r.state, r.address].join(" "), ws)), I = trows("SELECT * FROM tally_items ORDER BY name").filter((r) => match([r.name, r.grp, r.hsn].join(" "), ws));
+    return `<p class="note" style="margin:6px 2px">Customers and stock items as Tally has them, for invoices. Updated when Excel reads Tally.</p>
+      <div class="acts"><button class="chip${T === "parties" ? " on" : ""}" data-tallyt="parties">Parties ${P.length}</button><button class="chip${T === "items" ? " on" : ""}" data-tallyt="items">Stock items ${I.length}</button></div>
+      ${T === "parties" ? `<div class="tbl"><table><thead><tr><th>Party</th><th>GSTIN</th><th>State</th><th>Address</th></tr></thead><tbody>${P.slice(0, 400).map((r) => `<tr><td><b>${esc(r.name)}</b></td><td class="nw">${esc(r.gstin || "")}</td><td>${esc(r.state || "")}</td><td class="wrap">${esc([r.address, r.pincode].filter(Boolean).join(" "))}</td></tr>`).join("")}</tbody></table></div>`
+        : `<div class="tbl"><table><thead><tr><th>Stock item</th><th>Group</th><th>Unit</th><th>HSN</th></tr></thead><tbody>${I.slice(0, 600).map((r) => `<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.grp || "")}</td><td>${esc(r.unit || "")}</td><td>${esc(r.hsn || "")}</td></tr>`).join("")}</tbody></table></div>`}`;
   }
   function procCard(p) {
     return `<button class="row" data-k="${esc(p.key)}"${cur(p.key)}>
@@ -1067,7 +1132,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 124, at: "2026-11-15T00:20:14+05:30", notes: "Quotations and proforma invoices with cost and margin, Make PO from a quotation, WhatsApp text; Payments in and out with due dates" };
+  const APP_BUILD = { v: 125, at: "2026-11-15T01:14:40+05:30", notes: "Stage guide, chemical usage by lot, chemical cleanup, purchase ledger and Tally lists as views; quotations and payments taken out of the menu" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1150,7 +1215,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function tourShow(i) {
     if (i < 0) i = 0; if (i >= TOUR.length) { tourEnd(); return; }
     tourAt = i; const st = TOUR[i], o = document.querySelector(".tour"); if (!o) return;
-    if (st.tab && tab !== st.tab) { sel[st.tab] = null; stack = []; if (st.tab === "lots" && ["proc", "noproc", "ready", "drafts", "table"].includes(filter.lots)) filter.lots = "open"; go(st.tab); }
+    if (st.tab && tab !== st.tab) { sel[st.tab] = null; stack = []; if (st.tab === "lots" && ["proc", "noproc", "ready", "drafts", "table", "guide"].includes(filter.lots)) filter.lots = "open"; go(st.tab); }
     const el = (st.el || []).map((q) => document.querySelector(q)).find(tourVis) || null;
     if (st.el && !el && i > 0 && i < TOUR.length - 1) { tourShow(i + (tourAt0 > i ? -1 : 1)); return; } // nothing to point at (e.g. no New button in view-only): skip
     tourAt0 = i;
@@ -4756,6 +4821,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.target.closest("[data-qnew]")) { sel[tab] = null; stack = []; qEd = qNew(); openForm("quote:new"); return; }
     { const b = e.target.closest("[data-paynew]"); if (b) { sel[tab] = null; stack = []; payEd = { dir: b.dataset.paynew, status: "Planned", date: today0() }; openForm("payment:new"); return; } }
     { const b = e.target.closest("[data-payper]"); if (b) { filter.payPer = b.dataset.payper; render(); return; } }
+    { const b = e.target.closest("[data-usepage]"); if (b) { filter.usePage = Number(b.dataset.usepage); render(); window.scrollTo(0, 0); return; } }
+    { const b = e.target.closest("[data-ledt]"); if (b) { filter.ledT = b.dataset.ledt; render(); return; } }
+    { const b = e.target.closest("[data-tallyt]"); if (b) { filter.tallyT = b.dataset.tallyt; render(); return; } }
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
     { const rp = e.target.closest("[data-rwper]"); if (rp) { filter.rwPer = rp.dataset.rwper; render(); return; } }
     { const ia = e.target.closest("[data-ipa]"); if (ia && ia.closest("#list")) { const a = ia.dataset.ipa, cu = ia.dataset.cu, mine = () => invCands("", null, invArch).filter((c) => (UP((data.lotBy[c.lot] || {}).customer) || "(no customer)") === cu);
