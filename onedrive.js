@@ -11,7 +11,7 @@
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const cfg = () => Object.assign({}, CFG0, lsGet(LSK, {}));
-  const SYNCED = ["entries", "audits", "people", "invoices", "invset"];
+  const SYNCED = ["entries", "audits", "people", "invoices", "invset", "quotes", "payments"];
 
   // ---------- local store ----------
   const DBN = "ssi-standalone", ST = "docs", META = "meta";

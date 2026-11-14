@@ -607,6 +607,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }, () => { clearTimeout(timer); store = null; srcLine(); showDetailKeep(); render(); });
     s.collection("audits").onSnapshot((snap) => { audits = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "chemicals") render(); }, () => {});
     s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); setTimeout(invSyncTally, 500); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
+    s.collection("quotes").onSnapshot((snap) => { quotes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "quotes") render(); if (!formOpen && tab === "orders" && String(sel.orders || "").startsWith("q:")) showDetailKeep(); }, () => {});
+    s.collection("payments").onSnapshot((snap) => { payments = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "pay") render(); if (!formOpen && tab === "orders" && String(sel.orders || "").startsWith("pay:")) showDetailKeep(); }, () => {});
     s.collection("pdflog").onSnapshot((snap) => { pdfLog = {}; snap.docs.forEach((d) => { pdfLog[d.id] = d.data(); }); }, () => {});
     s.collection("invset").onSnapshot((snap) => { const d = snap.docs.find((x) => x.id === "main"); invSet = d ? d.data() : {}; }, () => {});
   }
@@ -840,7 +842,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["quotes", "Quotations"], ["pay", "Payments"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -875,9 +877,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep"]) },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep", "pay"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
+    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["orders|pay", "Payments"], ["@invset", "Tally names"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -946,6 +948,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && filter.lots === "table") { $("#list").innerHTML = tableView(ws); return; }
     if (tab === "lots" && filter.lots === "rework") { $("#list").innerHTML = rwView(); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
+    if (tab === "orders" && filter.orders === "quotes") { $("#list").innerHTML = qListView(ws); return; }
+    if (tab === "orders" && filter.orders === "pay") { $("#list").innerHTML = payListView(ws); return; }
     if (tab === "orders" && filter.orders === "invpend") { $("#list").innerHTML = invPendView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
@@ -1063,7 +1067,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 123, at: "2026-11-14T23:51:28+05:30", notes: "Menu: Processes → Machinery rates (F. MACHINERY)" };
+  const APP_BUILD = { v: 124, at: "2026-11-15T00:20:14+05:30", notes: "Quotations and proforma invoices with cost and margin, Make PO from a quotation, WhatsApp text; Payments in and out with due dates" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1200,17 +1204,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     let excel = null;
     if (db && bkBuilt()) { const { text, gz } = await pack(db.export()); excel = { built_at: bkBuilt(), as_of: data.asOf || "", gz, text }; }
     return { kind: "ssi-app-backup", build: APP_BUILD.v, app_version: appVer(), made_at: new Date().toISOString(), data_as_of: data.asOf || "", by: uid,
-      counts: { entries: entries.length, invoices: invoices.length, audits: audits.length, pdflog: Object.keys(pdfLog).length, excel_built: excel ? excel.built_at : "" },
-      entries, invoices, audits, pdflog: pdfLog, invset: invSet, settings: bkSettings(), excel };
+      counts: { entries: entries.length, invoices: invoices.length, quotes: quotes.length, payments: payments.length, audits: audits.length, pdflog: Object.keys(pdfLog).length, excel_built: excel ? excel.built_at : "" },
+      entries, invoices, quotes, payments, audits, pdflog: pdfLog, invset: invSet, settings: bkSettings(), excel };
   }
   const bkStamp = (d) => String((d && (d._at || d.updated_at || d.imported_at || d.created_at || d.made_at)) || "");
-  const BK_NAMES = { entries: "phone entries", invoices: "invoices", audits: "audits", pdflog: "PDF records", invset: "Tally names" };
+  const BK_NAMES = { entries: "phone entries", invoices: "invoices", quotes: "quotations", payments: "payments", audits: "audits", pdflog: "PDF records", invset: "Tally names" };
   function bkPlan(body) {
     if (!body || body.kind !== "ssi-app-backup") return { err: "This is not an app backup file." };
     const bb = Number(body.build) || Number((String(body.app_version || "").match(/Version (\d+)/) || [])[1]) || 0;
     if (bb > APP_BUILD.v) return { err: `This backup was made by app version ${bb}. This phone has version ${APP_BUILD.v}. Update the app first (OneDrive settings › Check for updates), then restore.` };
     const byId = (a) => Object.fromEntries((a || []).map((x) => [x.id, x]));
-    const have = { entries: byId(entries), invoices: byId(invoices), audits: byId(audits), pdflog: pdfLog || {}, invset: invSet && Object.keys(invSet).length ? { main: invSet } : {} };
+    const have = { entries: byId(entries), invoices: byId(invoices), quotes: byId(quotes), payments: byId(payments), audits: byId(audits), pdflog: pdfLog || {}, invset: invSet && Object.keys(invSet).length ? { main: invSet } : {} };
     const src = (c) => { const v = body[c]; if (c === "invset") return v && Object.keys(v).length ? [["main", v]] : []; return Array.isArray(v) ? v.filter((x) => x && x.id).map((x) => [x.id, x]) : Object.entries(v || {}); };
     const writes = [], n = {};
     Object.keys(BK_NAMES).forEach((c) => {
@@ -3449,6 +3453,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (out) out.innerHTML = `<p class="okmsg">${esc(name)} made. Save it in OneDrive › SSI › Accountancy › tally data › SSI › XML DATA, then press Invoices &gt; Tally in Excel on the PC.</p>`; }
   }
   // ---- Tally names
+  FORMS.quote = { get title() { return qEd && qEd.id ? "Edit " + qEd.no : "New quotation"; }, html: () => qForm() };
+  FORMS.payment = { get title() { return payEd && payEd.id ? "Edit payment" : payEd && payEd.dir === "in" ? "Money coming in" : "Money going out"; }, html: () => payForm() };
   FORMS.invoice = { get title() { return inv && inv.id ? "Edit " + (inv.tally_no || inv.temp) : "New invoice"; }, html: () => invForm() };
   FORMS.invset = { title: "Tally names for invoices", html: () => { const S = iset(), f = (k, lb) => `<label>${lb}<input id="is-${k}" value="${esc(S[k])}" autocomplete="off"></label>`;
     const ps = Object.entries(S.parties);
@@ -3480,7 +3486,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   const inr = (n) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const dmy = (d) => { const x = new Date(String(d || "").slice(0, 10) + "T00:00:00"); return isNaN(x) ? String(d || "") : x.getDate() + "-" + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][x.getMonth()] + "-" + String(x.getFullYear()).slice(2); };
-  async function pdfInvoice(v, btn) {
+  async function pdfInvoice(v, btn, o = {}) {
     const old = btn.textContent; btn.disabled = true; btn.textContent = "Making PDF";
     try {
       const J = await pdfLib(), doc = new J({ unit: "mm", format: "a4" }), S = iset(), t = invCalc(v), u = S.unit;
@@ -3490,7 +3496,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const code = (st) => (Object.entries(GST_CODE).find(([, n]) => UP(n) === UP(st)) || [""])[0];
       const no = v.tally_no || v.vno || v.temp;
       doc.setLineWidth(0.2);
-      txt(105, 11, "Tax Invoice", { b: true, f: 12, a: "center" });
+      txt(105, 11, o.title || "Tax Invoice", { b: true, f: 12, a: "center" });
       const top = 14;
       // left: company, consignee, buyer
       let y = top + 4;
@@ -3508,7 +3514,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       party("Consignee (Ship to)", true); party("Buyer (Bill to)");
       // right: the boxes Tally prints
       const pos = [...new Set((v.lines || []).map((x) => x.po).filter(Boolean))].join(", ");
-      const cells = [["Invoice No.", no, v.eway ? "e-Way Bill No." : "Dated", v.eway ? v.eway : dmy(v.date)], ["Delivery Note", "", "Mode/Terms of Payment", ""], ["Reference No. & Date.", v.temp + " dt. " + dmy(v.date), "Other References", v.eway ? "Dated " + dmy(v.date) : ""], ["Buyer's Order No.", pos, "Dated", ""], ["Dispatch Doc No.", v.lr || "", "Delivery Note Date", v.lrdate ? dmy(v.lrdate) : ""], ["Dispatched through", [v.transporter, v.vehicle].filter(Boolean).join(" · "), "Destination", v.dest || ""]];
+      const cells = o.cells || [["Invoice No.", no, v.eway ? "e-Way Bill No." : "Dated", v.eway ? v.eway : dmy(v.date)], ["Delivery Note", "", "Mode/Terms of Payment", ""], ["Reference No. & Date.", v.temp + " dt. " + dmy(v.date), "Other References", v.eway ? "Dated " + dmy(v.date) : ""], ["Buyer's Order No.", pos, "Dated", ""], ["Dispatch Doc No.", v.lr || "", "Delivery Note Date", v.lrdate ? dmy(v.lrdate) : ""], ["Dispatched through", [v.transporter, v.vehicle].filter(Boolean).join(" · "), "Destination", v.dest || ""]];
       let ry = top; cells.forEach(([a, av, b2, bv]) => { line(M, ry, R, ry); line(C2, ry, C2, ry + 8.5); txt(M + 1.2, ry + 3, a, { f: 7.5 }); txt(C2 + 1.2, ry + 3, b2, { f: 7.5 }); txt(M + 1.2, ry + 7, av, { b: true, f: 8.5 }); txt(C2 + 1.2, ry + 7, bv, { b: true, f: 8.5 }); ry += 8.5; });
       line(M, ry, R, ry); txt(M + 1.2, ry + 3, "Terms of Delivery", { f: 7.5 });
       const hb = Math.max(y - 1, ry + 14);
@@ -3557,15 +3563,163 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const taxTot = t.intra ? r2(t.cgst + t.sgst) : t.igst;
       txt(L + 1.2, fy + 4.5, "Tax Amount (in words) :"); txt(L + 34, fy + 4.5, inWords(taxTot), { b: true }); fy += 8;
       txt(L + 1.2, fy, "Company's PAN"); txt(L + 34, fy, ":  " + String(S.gstin || "").slice(2, 12), { b: true }); fy += 4;
-      const dy = fy; txt(L + 1.2, fy, "Declaration", { f: 8 }); doc.line(L + 1.2, fy + 0.6, L + 17, fy + 0.6); fy += 3.6; wrap(S.declare, 90, 8).forEach((w) => { txt(L + 1.2, fy, w, { f: 8 }); fy += 3.4; });
+      const dy = fy; txt(L + 1.2, fy, "Declaration", { f: 8 }); doc.line(L + 1.2, fy + 0.6, L + 17, fy + 0.6); fy += 3.6; wrap(o.declare !== undefined ? o.declare || S.declare : S.declare, 90, 8).forEach((w) => { txt(L + 1.2, fy, w, { f: 8 }); fy += 3.4; });
       const sb = Math.max(fy + 1, dy + 16); box(M, dy - 3.4, R - M, sb - dy + 3.4); txt(R - 1.5, dy + 0.6, "for " + S.company, { b: true, a: "right" }); txt(R - 1.5, sb - 1.5, "Authorised Signatory", { f: 8, a: "right" });
       box(L, top, R - L, sb - top);
-      txt(105, sb + 5, "This is a Computer Generated Invoice", { f: 8, a: "center" });
+      txt(105, sb + 5, o.foot || "This is a Computer Generated Invoice", { f: 8, a: "center" });
       const n = doc.getNumberOfPages(); if (n > 1) for (let i = 1; i <= n; i++) { doc.setPage(i); txt(R, 290, "Page " + i + " of " + n, { f: 7, a: "right" }); }
-      const name = String(no).replace(/[\/\\:*?"<>|]+/g, "-") + "_" + String(v.party || v.customer).replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ")[0] + "_" + Math.round(t.total) + ".pdf";
+      const name = String(o.fname || no).replace(/[\/\\:*?"<>|]+/g, "-") + "_" + String(v.party || v.customer).replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ")[0] + "_" + Math.round(t.total) + ".pdf";
       const w = { textContent: "" }; await savePdf(doc, name, w); if (w.textContent && btn.parentElement) btn.parentElement.insertAdjacentHTML("afterend", `<p class="note bad">${esc(w.textContent)}</p>`);
     } catch (e) { const m = btn.parentElement; if (m) m.insertAdjacentHTML("afterend", `<p class="note bad">The PDF could not be made: ${esc(e.message)}</p>`); }
     btn.disabled = false; btn.textContent = old;
+  }
+  // ---------------------------------------------------------------- quotations and proforma invoices, payments
+  // the app's own records (like invoices): Excel's MOEX ORDER SHEET, PI and PAYMENT PLAN sheets, kept on the phones and synced
+  let quotes = [], qEd = null, payments = [], payEd = null, qDelArm = null;
+  const Q_ST = ["Enquiry", "Quoted", "Confirmed", "Lost"], Q_PILL = { Enquiry: "info", Quoted: "warn", Confirmed: "ok", Lost: "idle" };
+  const fyOf = (d) => { const x = new Date(d || today0()), y = x.getMonth() >= 3 ? x.getFullYear() : x.getFullYear() - 1; return String(y).slice(2) + "-" + String(y + 1).slice(2); };
+  function qNo(date) { const fy = fyOf(date), n = quotes.filter((q) => q.fy === fy).reduce((m, q) => Math.max(m, Number(q.seq) || 0), 0) + 1; return { fy, seq: n, no: "Q-" + String(n).padStart(3, "0") + "/" + fy }; }
+  function qCalc(q) {
+    const lines = (q.lines || []).map((ln) => { const s = Number(ln.sqft) || 0, r = Number(ln.rate) || 0, c = Number(ln.cp) || 0, amt = r2(s * r), cost = r2(s * c); return Object.assign({}, ln, { amt, cost, margin: c ? r2(amt - cost) : null, pct: c && r ? r2((r - c) / r * 100) : null }); });
+    const v = qAsInv(q), t = invCalc(v), cost = r2(lines.reduce((a, x) => a + x.cost, 0)), withCp = lines.filter((x) => Number(x.cp));
+    const mg = withCp.length ? r2(withCp.reduce((a, x) => a + x.amt - x.cost, 0)) : null, base = r2(withCp.reduce((a, x) => a + x.amt, 0));
+    return { lines, sqft: r2(lines.reduce((a, x) => a + (Number(x.sqft) || 0), 0)), goods: t.goods, total: t.total, tax: r2(t.cgst * 2 + t.igst), cost, margin: mg, pct: mg !== null && base ? r2(mg / base * 100) : null, t };
+  }
+  // a quotation in the shape an invoice has, so the invoice PDF and its GST maths are reused
+  const qAsInv = (q) => ({ party: q.party || q.customer, customer: q.customer, addr: q.addr, gstin: q.gstin, state: q.state, date: q.date, temp: q.no, vno: q.no, freight: q.freight, packing: q.packing,
+    lines: (q.lines || []).map((ln) => ({ item: ln.item, desc: ln.desc || "", sqft: ln.sqft, rate: ln.rate, disc: "", gst: ln.gst === "" || ln.gst === undefined ? iset().gst : ln.gst, hsn: ln.hsn || iset().hsn, lot: "", po: "" })) });
+  const qCusts = () => [...new Set(data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer), quotes.map((q) => q.customer)).filter(Boolean).map((x) => String(x).trim().toUpperCase()))].sort();
+  const qItems = () => [...new Set(data.orders.map((o) => o.item).concat(data.lots.map((l) => l.product), quotes.flatMap((q) => (q.lines || []).map((l) => l.item))).filter(Boolean).map((x) => String(x).trim().toUpperCase()))].sort();
+  // what this item sold at last, and what a recent lot of it cost per finished sqft
+  function qHints(item) {
+    const u = UP(String(item || "").trim()); if (!u) return {};
+    const sold = data.orders.filter((o) => UP(o.item) === u && Number(o.rate)).sort((a, b) => String(b.po_date).localeCompare(String(a.po_date)))[0];
+    const lot = data.lots.filter((l) => UP(l.product) === u && l.recKey && data.recipes[l.recKey]).sort((a, b) => b.num - a.num)[0];
+    let cp = null; if (lot) { try { const c = costOf(getRecipe(lot.recKey)); if (c.perSqft) cp = { v: r2(c.perSqft), lot: lot.lot_no }; } catch (e) { /* no costing */ } }
+    return { sold: sold ? { rate: Number(sold.rate), po: sold.po_no, date: sold.po_date, cust: sold.customer } : null, cp };
+  }
+  function qListView(ws) {
+    const all = quotes.filter((q) => match([q.no, q.customer, q.party, q.status, (q.lines || []).map((l) => l.item).join(" "), q.note].join(" ").toLowerCase(), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.seq || 0) - (a.seq || 0));
+    let h = store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-qnew>New quotation</button></div>` : "";
+    h += `<p class="note" style="margin:6px 2px">Enquiries and quotations with your cost and margin. A confirmed one becomes a PO in one tap; its PDF can go out as a quotation or a proforma invoice.</p>`;
+    if (!all.length) return h + `<p class="empty">${quotes.length ? "Nothing matches." : "No quotations yet. Tap New quotation when a customer asks for a price."}</p>`;
+    const sum = (L) => L.reduce((a, q) => a + qCalc(q).goods, 0);
+    return h + Q_ST.map((s) => { const L = all.filter((q) => (q.status || "Enquiry") === s); return L.length ? `<div class="group">${s} · ${L.length}${s !== "Lost" ? " · " + rs(sum(L)).replace(/\.00$/, "") : ""}</div>` + L.map(qCard).join("") : ""; }).join("");
+  }
+  function qCard(q) {
+    const c = qCalc(q);
+    return `<button class="row" data-k="q:${esc(q.id)}"${cur("q:" + q.id)}><span class="k" style="font-size:15px">${esc(q.no)}</span><span class="pill ${Q_PILL[q.status || "Enquiry"]}">${esc((q.status || "Enquiry").toLowerCase())}</span>
+      <span class="t">${esc(q.customer)} · ${esc((q.lines || []).map((l) => l.item).join(", "))}</span>
+      <span class="m num"><span>${fmtD(q.date)}</span><span>${fmtN(c.sqft, 0)} sqft</span><span>${rs(c.goods)}</span>${c.pct !== null ? `<span class="${c.pct < 0 ? "late" : c.pct < 8 ? "soon" : ""}">margin ${fmtN(c.pct, 1)}%</span>` : ""}${q.po ? `<span>PO ${esc(q.po)}</span>` : ""}</span></button>`;
+  }
+  function qDetail(k) {
+    const q = quotes.find((x) => "q:" + x.id === k); if (!q) return `<p class="empty">This quotation is not here any more.</p>`;
+    const c = qCalc(q), can = store && canWrite, st = q.status || "Enquiry";
+    const next = Q_ST.filter((s) => s !== st).map((s) => `<button class="btn alt" data-q="st:${s}">${s === "Confirmed" ? "Mark confirmed" : s === "Lost" ? "Mark lost" : s === "Quoted" ? "Mark quoted" : "Back to enquiry"}</button>`).join("");
+    return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
+      <div class="kv"><div><span>Status</span><b>${esc(st)}</b></div><div><span>Date</span><b>${fmtD(q.date)}</b></div>${q.valid ? `<div><span>Valid until</span><b>${fmtD(q.valid)}</b></div>` : ""}<div><span>Customer</span><b>${esc(q.customer)}</b></div>${q.party && UP(q.party) !== UP(q.customer) ? `<div><span>Bill to</span><b>${esc(q.party)}</b></div>` : ""}${q.gstin ? `<div><span>GSTIN</span><b>${esc(q.gstin)}</b></div>` : ""}${q.po ? `<div><span>PO</span><b>${esc(q.po)}</b></div>` : ""}</div>
+      ${can ? `<div class="acts lotacts"><button class="btn" data-q="edit">Edit</button><button class="btn alt" data-q="pdfq">Quotation PDF</button><button class="btn alt" data-q="pdfpi">Proforma invoice PDF</button><button class="btn alt" data-q="wa">Send on WhatsApp</button>${q.po ? "" : `<button class="btn alt" data-q="po">Make PO</button>`}${next}<button class="btn alt" data-q="copy">Copy as new</button><button class="btn alt" data-q="del">${qDelArm === q.id ? "Tap again to delete" : "Delete"}</button></div>` : `<div class="acts"><button class="btn alt" data-q="pdfq">Quotation PDF</button><button class="btn alt" data-q="pdfpi">Proforma invoice PDF</button></div>`}
+      <h3>Items</h3><div class="tbl"><table><thead><tr><th>Item</th><th class="r">Sqft</th><th class="r">Rate</th><th class="r">Amount</th><th class="r">Cost / sqft</th><th class="r">Margin</th></tr></thead><tbody>${c.lines.map((ln) => `<tr><td><b>${esc(ln.item)}</b>${ln.desc ? `<br><span class="note">${esc(ln.desc)}</span>` : ""}</td><td class="r num">${fmtN(ln.sqft, 0)}</td><td class="r num">${fmtN(ln.rate, 2)}</td><td class="r num">${fmtN(ln.amt, 0)}</td><td class="r num">${Number(ln.cp) ? fmtN(ln.cp, 2) : "-"}</td><td class="r num ${ln.pct !== null && ln.pct < 0 ? "late" : ""}">${ln.pct !== null ? fmtN(ln.pct, 1) + "%" : "-"}</td></tr>`).join("")}</tbody></table></div>
+      ${kv([["Sqft", fmtN(c.sqft, 0)], ["Goods", rs(c.goods)], ["GST", rs(c.tax)], ["Total with GST", rs(c.total)], ["Cost", c.cost ? rs(c.cost) : "-"], ["Margin", c.margin !== null ? rs(c.margin) + " (" + fmtN(c.pct, 1) + "%)" : "Type cost per sqft to see it"]])}
+      ${q.terms ? `<h3>Terms</h3><p style="white-space:pre-wrap">${esc(q.terms)}</p>` : ""}${q.note ? `<h3>Note (not printed)</h3><p style="white-space:pre-wrap">${esc(q.note)}</p>` : ""}
+      <p class="note">Made ${esc(fmtST(q.created_at))}${q.by ? ` by <span data-uid="${esc(q.by)}">someone</span>` : ""}${q.updated_at && q.updated_at !== q.created_at ? ", changed " + esc(fmtST(q.updated_at)) : ""}.</p>`;
+  }
+  function qNew(cust) { const S = iset(), p = cust ? S.parties[UP(cust)] || {} : {}; return { customer: cust || "", party: p.party || "", gstin: p.gstin || "", state: p.state || S.state, addr: p.addr || "", date: today0(), valid: iso(new Date(today.getTime() + 15 * DAY)), status: "Enquiry", lines: [{ item: "", desc: "", sqft: "", rate: "", cp: "", gst: S.gst }], terms: lsGet("ssi-qterms") || "Prices ex-works Kolkata. GST extra as applicable. Delivery as agreed on confirmation.", note: "", freight: "" }; }
+  function qLineHtml(ln, i) {
+    const hi = qHints(ln.item), n = (f, lb, more) => `<label>${lb}<input data-ql="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" inputmode="decimal" data-numonly="1"${more || ""}></label>`;
+    return `<div class="invline"><p style="margin:0;display:flex;justify-content:space-between;gap:8px"><b>Item ${i + 1}</b>${qEd.lines.length > 1 ? `<button type="button" class="mini" data-qdel="${i}">Remove</button>` : ""}</p>
+      <label>Item<input data-ql="${i}" data-f="item" value="${esc(ln.item)}" list="q-items" autocomplete="off" placeholder="Product, colour, thickness"></label>
+      <label>Description (printed)<input data-ql="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
+      <div class="two">${n("sqft", "Qty (sqft)")}${n("rate", "Rate ₹ / sqft")}${n("cp", "Our cost ₹ / sqft")}${n("gst", "GST %")}</div>
+      <p class="note" style="margin:0" id="q-hint-${i}">${hi.sold ? `Last sold at ₹${fmtN(hi.sold.rate, 2)} (PO ${esc(hi.sold.po)}, ${esc(hi.sold.cust)}, ${fmtS(hi.sold.date)}). ` : ""}${hi.cp ? `<button type="button" class="lnk" data-qcp="${i}|${hi.cp.v}">Use ₹${fmtN(hi.cp.v, 2)} cost from ${esc(hi.cp.lot)}</button>` : ""}</p></div>`;
+  }
+  function qForm() {
+    const q = qEd; if (!q) return `<p class="empty">Nothing to edit.</p>`;
+    return `<form class="fm" id="fm-quote">${dl("q-custs", qCusts())}${dl("q-items", qItems())}
+      <div class="two"><label>Customer<input id="q-customer" data-qf="customer" value="${esc(q.customer)}" list="q-custs" autocomplete="off"></label><label>Status<select id="q-status" data-qf="status">${Q_ST.map((s) => opt(s, s, s === (q.status || "Enquiry"))).join("")}</select></label>
+      <label>Date<input id="q-date" data-qf="date" type="date" value="${esc(q.date)}"></label><label>Valid until<input id="q-valid" data-qf="valid" type="date" value="${esc(q.valid || "")}"></label></div>
+      <details class="sec"><summary>Bill to (for the PDF)</summary><div class="two"><label>Party name<input id="q-party" data-qf="party" value="${esc(q.party)}" autocomplete="off"></label><label>GSTIN<input id="q-gstin" data-qf="gstin" value="${esc(q.gstin)}" maxlength="15" autocomplete="off"></label>
+      <label>State<select id="q-state" data-qf="state">${STATES.map((s) => opt(s, s, s === (q.state || iset().state))).join("")}</select></label><label>Freight ₹<input id="q-freight" data-qf="freight" value="${esc(q.freight || "")}" inputmode="decimal" data-numonly="1"></label></div><label>Address<textarea id="q-addr" data-qf="addr" rows="2">${esc(q.addr)}</textarea></label></details>
+      <h3 style="margin:8px 0 0">Items</h3>${q.lines.map(qLineHtml).join("")}<button type="button" class="btn alt" data-qadd>Add an item</button>
+      <p class="calc" id="q-tot" style="margin:0">${qTotHtml()}</p>
+      <label>Terms (printed)<textarea id="q-terms" data-qf="terms" rows="3">${esc(q.terms)}</textarea></label><label>Note (only for you)<textarea id="q-note" data-qf="note" rows="2">${esc(q.note)}</textarea></label>${formEnd}</form>`;
+  }
+  function qTotRefresh() { const el = $("#q-tot"); if (el && qEd) el.innerHTML = qTotHtml(); }
+  function qTotHtml() { const c = qCalc(qEd); return `${fmtN(c.sqft, 0)} sqft · goods ${rs(c.goods)} · with GST ${rs(c.total)}${c.margin !== null ? ` · margin <b class="${c.pct < 0 ? "late" : ""}">${rs(c.margin)} (${fmtN(c.pct, 1)}%)</b>` : ""}`; }
+  async function qSave(f, msg, btn) {
+    const q = qEd, bad = (t) => { msg.textContent = t; };
+    if (!String(q.customer).trim()) return bad("Type or pick the customer.");
+    const ls = q.lines.filter((x) => String(x.item).trim() || Number(x.sqft) || Number(x.rate)); if (!ls.length) return bad("Add at least one item.");
+    if (ls.some((x) => !String(x.item).trim() || !(Number(x.sqft) > 0) || !(Number(x.rate) > 0))) return bad("Each item needs a name, a qty and a rate above 0.");
+    if (q.valid && q.valid < q.date) return bad("Valid until is before the quotation date.");
+    const now = new Date().toISOString(), body = JSON.parse(JSON.stringify(Object.assign({}, q, { customer: String(q.customer).trim().toUpperCase(), lines: ls, updated_at: now })));
+    delete body.id; if (!q.id) Object.assign(body, qNo(q.date), { created_at: now, by: uid || "" });
+    btn.disabled = true; msg.textContent = "";
+    try { const ref = q.id ? store.doc("quotes/" + q.id) : store.collection("quotes").doc(); await ref.set(body); lsSet("ssi-qterms", q.terms || "");
+      qEd = null; formOpen = null; stack = []; sel.orders = "q:" + (q.id || ref.id); flash = q.id ? "Quotation saved." : "Quotation " + body.no + " saved."; render(); showDetail(); setTimeout(() => { flash = ""; }, 4000);
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  async function qAct(a, b) {
+    const k = sel[tab], q = quotes.find((x) => "q:" + x.id === k); if (!q) return;
+    if (a !== "del") qDelArm = null;
+    if (a === "edit") { qEd = JSON.parse(JSON.stringify(q)); openForm("quote:" + q.id); return; }
+    if (a === "copy") { qEd = Object.assign(JSON.parse(JSON.stringify(q)), { id: undefined, no: undefined, seq: undefined, fy: undefined, po: "", status: "Enquiry", date: today0(), valid: iso(new Date(today.getTime() + 15 * DAY)), created_at: undefined, updated_at: undefined }); delete qEd.id; openForm("quote:new"); return; }
+    if (a === "pdfq" || a === "pdfpi") { const pi = a === "pdfpi"; await pdfInvoice(qAsInv(q), b, { cells: [[pi ? "Proforma No." : "Quotation No.", q.no, "Dated", dmy(q.date)], ["Valid until", q.valid ? dmy(q.valid) : "", "Mode/Terms of Payment", ""], ["Buyer's Ref.", "", "Other References", ""]], title: pi ? "Proforma Invoice" : "Quotation", noLbl: pi ? "Proforma No." : "Quotation No.", foot: pi ? "This is a proforma invoice, not a tax invoice." : "This is a quotation, not an invoice." + (q.valid ? " Valid until " + dmy(q.valid) + "." : ""), declare: q.terms || "", fname: (pi ? "PI " : "") + q.no }); return; }
+    if (a === "wa") { const c = qCalc(q), txt = [`${pi0()} quotation ${q.no} (${fmtS(q.date)})`, `For ${q.customer}`].concat(c.lines.map((l) => `${l.item}: ${fmtN(l.sqft, 0)} sqft @ ₹${fmtN(l.rate, 2)} = ₹${fmtN(l.amt, 0)}`), [`Total ₹${fmtN(c.goods, 0)} + GST = ₹${fmtN(c.total, 0)}`, q.valid ? "Valid until " + fmtS(q.valid) : "", q.terms || ""]).filter(Boolean).join("\n");
+      window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank", "noopener"); return; }
+    if (a === "po") { qPoFrom = q.id; openForm("order:"); ed = { lines: q.lines.map((l) => ({ d: String(l.item).toUpperCase(), q: l.sqft, r: l.rate, a: "", h: l.hsn || iset().hsn })) }; showDetail(); setTimeout(() => { const c = $("#fo-cust"), n = $("#fo-note"); if (c) c.value = q.customer; if (n) n.value = "From quotation " + q.no; }, 0); return; }
+    if (a.startsWith("st:")) { b.disabled = true; try { await store.doc("quotes/" + q.id).update({ status: a.slice(3), updated_at: new Date().toISOString() }); flash = q.no + " marked " + a.slice(3).toLowerCase() + "."; } catch (e) { flash = saveError(e); } showDetail(); return; }
+    if (a === "del") { if (qDelArm !== q.id) { qDelArm = q.id; showDetail(); return; } qDelArm = null; b.disabled = true; try { await store.doc("quotes/" + q.id).delete(); sel.orders = null; flash = ""; render(); showDetail(); } catch (e) { b.disabled = false; } }
+  }
+  let qPoFrom = null;
+  const pi0 = () => iset().company || "Our";
+  // ---- payments: money in and out, planned and paid (PAYMENT PLAN)
+  const PAY_PER = [["30", "Next 30 days"], ["due", "Due and overdue"], ["month", "This month"], ["all", "All"]];
+  function payListView(ws) {
+    const per = filter.payPer || "30", t0 = today0(), in30 = iso(new Date(today.getTime() + 30 * DAY)), m0 = t0.slice(0, 8) + "01";
+    const keep = (p) => per === "all" ? true : per === "due" ? p.status !== "Paid" && p.date <= t0 : per === "month" ? String(p.date).slice(0, 7) === t0.slice(0, 7) : p.status !== "Paid" ? p.date <= in30 : p.date >= iso(new Date(today.getTime() - 7 * DAY)) && p.date <= in30;
+    const all = payments.filter((p) => keep(p) && match([p.party, p.note, p.ref, p.dir === "in" ? "incoming received" : "outgoing paid"].join(" ").toLowerCase(), ws)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const sum = (L) => L.reduce((a, p) => a + (Number(p.amount) || 0), 0), ins = all.filter((p) => p.dir === "in"), outs = all.filter((p) => p.dir !== "in");
+    const late = payments.filter((p) => p.status !== "Paid" && p.date < t0);
+    let h = `${store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-paynew="in">Money coming in</button><button class="btn alt" data-paynew="out">Money going out</button></div>` : ""}
+      <div class="acts">${PAY_PER.map(([k, t]) => `<button class="chip${per === k ? " on" : ""}" data-payper="${k}" aria-pressed="${per === k}">${t}</button>`).join("")}</div>
+      ${kv([["Coming in", rs(sum(ins.filter((p) => p.status !== "Paid")))], ["Going out", rs(sum(outs.filter((p) => p.status !== "Paid")))], ["Net still to come", rs(sum(ins.filter((p) => p.status !== "Paid")) - sum(outs.filter((p) => p.status !== "Paid")))], ["Received", rs(sum(ins.filter((p) => p.status === "Paid")))], ["Paid out", rs(sum(outs.filter((p) => p.status === "Paid")))]])}
+      ${late.length ? `<p class="soon" style="margin:4px 2px">${late.length} overdue, ${rs(sum(late))}. <button class="lnk" data-payper="due">Show them</button></p>` : ""}`;
+    if (!payments.length) return h + `<p class="empty">No payments planned yet. Add what you expect to receive from customers and what you must pay suppliers, with dates.</p>`;
+    if (!all.length) return h + `<p class="empty">Nothing in this period.</p>`;
+    const card = (p) => `<button class="row" data-k="pay:${esc(p.id)}"${cur("pay:" + p.id)}><span class="k" style="font-size:15px">${p.dir === "in" ? "In" : "Out"} · ${rs(p.amount).replace(/\.00$/, "")}</span><span class="pill ${p.status === "Paid" ? "ok" : p.date < t0 ? "bad" : "warn"}">${p.status === "Paid" ? (p.dir === "in" ? "received" : "paid") : p.date < t0 ? "overdue" : "planned"}</span><span class="t">${esc(p.party)}${p.ref ? " · " + esc(p.ref) : ""}</span><span class="m"><span>${fmtD(p.date)}</span>${p.note ? `<span>${esc(p.note)}</span>` : ""}</span></button>`;
+    return h + (ins.length ? `<div class="group">Coming in · ${ins.length} · ${rs(sum(ins)).replace(/\.00$/, "")}</div>` + ins.map(card).join("") : "") + (outs.length ? `<div class="group">Going out · ${outs.length} · ${rs(sum(outs)).replace(/\.00$/, "")}</div>` + outs.map(card).join("") : "");
+  }
+  function payDetail(k) {
+    const p = payments.find((x) => "pay:" + x.id === k); if (!p) return `<p class="empty">This payment is not here any more.</p>`;
+    const can = store && canWrite;
+    return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${kv([["Direction", p.dir === "in" ? "Coming in (from a customer)" : "Going out (to a supplier)"], ["Party", esc(p.party)], ["Amount", rs(p.amount)], [p.status === "Paid" ? (p.dir === "in" ? "Received on" : "Paid on") : "Due on", fmtD(p.status === "Paid" ? p.paid_on || p.date : p.date)], ["Status", p.status === "Paid" ? "Done" : "Planned"], ["Against", esc(p.ref || "-")], ["Mode", esc(p.mode || "-")], ["Note", esc(p.note || "-")]])}
+      ${can ? `<div class="acts">${p.status === "Paid" ? `<button class="btn alt" data-pay="unpaid">Mark not done</button>` : `<button class="btn" data-pay="paid">${p.dir === "in" ? "Mark received today" : "Mark paid today"}</button>`}<button class="btn alt" data-pay="edit">Edit</button><button class="btn alt" data-pay="del">${qDelArm === p.id ? "Tap again to delete" : "Delete"}</button></div>` : ""}`;
+  }
+  function payForm() {
+    const p = payEd; if (!p) return "";
+    const parties = [...new Set(payments.map((x) => x.party).concat(qCusts(), data.purchases.map((x) => x.supplier)).filter(Boolean).map((x) => String(x).trim().toUpperCase()))].sort();
+    return `<form class="fm" id="fm-payment">${dl("pay-parties", parties)}<div class="two"><label>Direction<select id="pf-dir">${opt("in", "Coming in (customer pays us)", p.dir === "in")}${opt("out", "Going out (we pay a supplier)", p.dir !== "in")}</select></label>
+      <label>Party<input id="pf-party" value="${esc(p.party || "")}" list="pay-parties" autocomplete="off"></label><label>Amount ₹<input id="pf-amount" value="${esc(p.amount || "")}" inputmode="decimal" data-numonly="1"></label>
+      <label>Due date<input id="pf-date" type="date" value="${esc(p.date || today0())}"></label><label>Status<select id="pf-status">${opt("Planned", "Planned", p.status !== "Paid")}${opt("Paid", "Done (received or paid)", p.status === "Paid")}</select></label>
+      <label>Mode<input id="pf-mode" value="${esc(p.mode || "")}" list="pay-modes" autocomplete="off" placeholder="NEFT, cheque, cash"></label></div>${dl("pay-modes", ["NEFT", "RTGS", "Cheque", "Cash", "UPI", "Bank account"])}
+      <label>Against (invoice, PO, bill)<input id="pf-ref" value="${esc(p.ref || "")}" autocomplete="off"></label><label>Note<input id="pf-note" value="${esc(p.note || "")}" autocomplete="off"></label>${formEnd}</form>`;
+  }
+  async function paySave(f, msg, btn) {
+    const g = (id) => $(id).value.trim(), amt = parseFloat(g("#pf-amount")) || 0, body = { dir: g("#pf-dir"), party: g("#pf-party").toUpperCase(), amount: r2(amt), date: g("#pf-date"), status: g("#pf-status"), mode: g("#pf-mode"), ref: g("#pf-ref"), note: g("#pf-note"), updated_at: new Date().toISOString() };
+    if (!body.party) { msg.textContent = "Type the party."; return; } if (!(amt > 0)) { msg.textContent = "Type the amount."; return; } if (checkDate(body.date)) { msg.textContent = checkDate(body.date); return; }
+    if (body.status === "Paid" && !(payEd && payEd.paid_on)) body.paid_on = body.date;
+    if (!payEd.id) Object.assign(body, { created_at: body.updated_at, by: uid || "" });
+    btn.disabled = true;
+    try { const ref = payEd.id ? store.doc("payments/" + payEd.id) : store.collection("payments").doc(); await (payEd.id ? ref.update(body) : ref.set(body)); payEd = null; formOpen = null; stack = []; sel.orders = "pay:" + ref.id; flash = "Saved."; render(); showDetail(); setTimeout(() => { flash = ""; }, 4000); }
+    catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  async function payAct(a, b) {
+    const k = sel[tab], p = payments.find((x) => "pay:" + x.id === k); if (!p) return;
+    if (a !== "del") qDelArm = null;
+    if (a === "edit") { payEd = JSON.parse(JSON.stringify(p)); openForm("payment:" + p.id); return; }
+    if (a === "paid" || a === "unpaid") { b.disabled = true; try { await store.doc("payments/" + p.id).update(a === "paid" ? { status: "Paid", paid_on: today0(), updated_at: new Date().toISOString() } : { status: "Planned", paid_on: "", updated_at: new Date().toISOString() }); flash = a === "paid" ? "Marked done." : "Marked planned again."; } catch (e) { flash = saveError(e); } render(); showDetail(); return; }
+    if (a === "del") { if (qDelArm !== p.id) { qDelArm = p.id; showDetail(); return; } qDelArm = null; try { await store.doc("payments/" + p.id).delete(); sel.orders = null; render(); showDetail(); } catch (e) { /* stays */ } }
   }
   function invOfLot(lot) { return invLive().filter((v) => (v.lines || []).some((l) => l.lot === lot)); }
   // ---------------------------------------------------------------- delivery corrections
@@ -3944,6 +4098,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (dup && warnOnce(f, `PO ${dup.po_no} is already saved for ${dup.customer}${dup.customer.toUpperCase() !== cust.toUpperCase() ? ", a different customer" : ""}. Save again to add these items to it.`)) return;
       const d = { po, date, customer: cust, note: need("#fo-note") }; if (dup) d.add_to = "1";
       ls.forEach((x, i) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || q * r; d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), q, r, String(x.h || "").trim(), +a.toFixed(2)].join("~^~"); });
+      if (qPoFrom) { const qid = qPoFrom; qPoFrom = null; store.doc("quotes/" + qid).update({ po, status: "Confirmed", updated_at: new Date().toISOString() }).catch(() => {}); }
       return saveNew({ type: "order", lot_no: "PO " + po, data: d }, "PO saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-invmark") {
@@ -4137,6 +4292,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   async function submitEntry(f) {
     if (f.id === "fm-recipe") return submitRecipe(f);
     if (f.id === "fm-lot") return submitLot(f);
+    if (f.id === "fm-quote") return qSave(f, $("#fm-msg"), f.querySelector("[type=submit]"));
+    if (f.id === "fm-payment") return paySave(f, $("#fm-msg"), f.querySelector("[type=submit]"));
     if (f.id !== "fm-stage" && f.id !== "fm-delivery") return submitNew(f);
     const stage = f.id === "fm-stage", l = data.lotBy[f.dataset.lot], msg = $("#fm-msg"), btn = f.querySelector("[type=submit]");
     let body;
@@ -4439,6 +4596,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(FORMS[kind].title)}</h2></div>${FORMS[kind].html(arg)}`;
       d.classList.add("open"); return;
     }
+    if (tab === "orders" && String(k).startsWith("q:")) { const q = quotes.find((x) => "q:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(q ? "Quotation " + q.no : "Quotation")}</h2></div>${qDetail(k)}`; d.classList.add("open"); return; }
+    if (tab === "orders" && String(k).startsWith("pay:")) { const p = payments.find((x) => "pay:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(p ? (p.dir === "in" ? "From " : "To ") + p.party : "Payment")}</h2></div>${payDetail(k)}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
     const title = isProc ? (data.processes.find((p) => p.key === k) || {}).name : isRec ? k.slice(4).split("|")[0] + " recipe" + (k.includes("@v") ? " v" + k.split("@v")[1] : "") : { lots: k, orders: (() => { const o = data.orders.find((x) => String(x.id) === String(k)); return o ? "PO " + o.po_no : ""; })(), purchases: k, chemicals: k }[tab];
@@ -4594,6 +4753,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-qnew]")) { sel[tab] = null; stack = []; qEd = qNew(); openForm("quote:new"); return; }
+    { const b = e.target.closest("[data-paynew]"); if (b) { sel[tab] = null; stack = []; payEd = { dir: b.dataset.paynew, status: "Planned", date: today0() }; openForm("payment:new"); return; } }
+    { const b = e.target.closest("[data-payper]"); if (b) { filter.payPer = b.dataset.payper; render(); return; } }
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
     { const rp = e.target.closest("[data-rwper]"); if (rp) { filter.rwPer = rp.dataset.rwper; render(); return; } }
     { const ia = e.target.closest("[data-ipa]"); if (ia && ia.closest("#list")) { const a = ia.dataset.ipa, cu = ia.dataset.cu, mine = () => invCands("", null, invArch).filter((c) => (UP((data.lotBy[c.lot] || {}).customer) || "(no customer)") === cu);
@@ -4657,6 +4819,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#detail").addEventListener("focusout", (e) => { const t = e.target; if (t.id === "iv-party" || (t.dataset && t.dataset.f === "item")) setTimeout(() => { const a = document.activeElement; if (!a || !a.closest || !a.closest(".pickw")) suggHide(); }, 200); });
   $("#detail").addEventListener("toggle", (e) => { const t = e.target; if (t.matches && t.matches("details[data-sec]")) { SECOPEN[t.dataset.sec] = t.open; try { localStorage.setItem("ssi-secs", JSON.stringify(SECOPEN)); } catch (x) {} } }, true);
   $("#detail").addEventListener("click", (e) => {
+    { const b = e.target.closest("[data-q]"); if (b) { qAct(b.dataset.q, b); return; } }
+    { const b = e.target.closest("[data-pay]"); if (b) { payAct(b.dataset.pay, b); return; } }
+    if (e.target.closest("[data-qadd]") && qEd) { qEd.lines.push({ item: "", desc: "", sqft: "", rate: "", cp: "", gst: iset().gst }); const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; qTotRefresh(); return; }
+    { const b = e.target.closest("[data-qdel]"); if (b && qEd) { qEd.lines.splice(Number(b.dataset.qdel), 1); const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; qTotRefresh(); return; } }
+    { const b = e.target.closest("[data-qcp]"); if (b && qEd) { const [i, v0] = b.dataset.qcp.split("|"); qEd.lines[Number(i)].cp = v0; const inp = document.querySelector(`[data-ql="${i}"][data-f="cp"]`); if (inp) inp.value = v0; qTotRefresh(); return; } }
     { const mo = e.target.closest("[data-mopen]"); if (mo) { const m = $(`#detail [data-msheet="${mo.dataset.mopen}"]`); if (m) { m.hidden = false; const f = m.querySelector(".mitem"); if (f) f.focus({ preventScroll: true }); } return; }
       const ms = e.target.closest(".msheet"); if (ms) { ms.hidden = true; if (e.target === ms || e.target.closest("[data-mclose]")) return; }
       if (e.target.classList && e.target.classList.contains("fsheet")) { formOpen = null; delEdit = null; showDetail(); return; } }
@@ -4763,6 +4930,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   $("#detail").addEventListener("focusin", (e) => { if (e.target.dataset && e.target.dataset.ac) acFill(e.target); });
   $("#detail").addEventListener("input", (e) => {
+    { const t = e.target; if (qEd && t.dataset && (t.dataset.qf || t.dataset.ql !== undefined) && t.closest("#fm-quote")) {
+      if (t.dataset.qf) { qEd[t.dataset.qf] = t.value; if (t.dataset.qf === "customer") { const p = iset().parties[UP(t.value.trim())]; if (p && !qEd.party) { qEd.party = p.party || ""; qEd.gstin = p.gstin || ""; qEd.state = p.state || qEd.state; ["party", "gstin"].forEach((k) => { const el = $("#q-" + k); if (el) el.value = qEd[k]; }); } } }
+      else { const i = Number(t.dataset.ql); qEd.lines[i][t.dataset.f] = t.value; if (t.dataset.f === "item") { const h = qHints(t.value), el = $("#q-hint-" + i); if (el) el.innerHTML = `${h.sold ? `Last sold at ₹${fmtN(h.sold.rate, 2)} (PO ${esc(h.sold.po)}, ${esc(h.sold.cust)}, ${fmtS(h.sold.date)}). ` : ""}${h.cp ? `<button type="button" class="lnk" data-qcp="${i}|${h.cp.v}">Use ₹${fmtN(h.cp.v, 2)} cost from ${esc(h.cp.lot)}</button>` : ""}`; } }
+      qTotRefresh(); return; } }
     if (e.target.dataset && e.target.dataset.ac) acFill(e.target);
     if (e.target.id === "fo-page") { const f = $("#fm-process"), l = data.lotBy[f.dataset.lot]; $("#fo-src").innerHTML = procSrcOpts(e.target.value, l.lot_no); $("#fo-hint").textContent = procHint(l, e.target.value); return; }
     if (e.target.id === "cmp-page") { const p = e.target.value; $("#cmp-b").innerHTML = pageRecipes(p).map((x) => recOpt(x)).join(""); }
