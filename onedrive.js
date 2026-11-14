@@ -237,6 +237,9 @@
           const there = text === meta.lastCsv ? await g("GET", itemUrl(name), null, "", tok) : null;
           if (text !== meta.lastCsv || !there) { await g("PUT", itemUrl(name) + ":/content", text, "text/csv", tok); await setMeta("lastCsv", text); }
         } else if (meta.lastCsv) { await g("DELETE", itemUrl(name), null, "", tok); await setMeta("lastCsv", undefined); }
+        // what Excel's automatic import last did (excel-status.json, written by the workbook)
+        try { const xs = await g("GET", itemUrl(c.entriesFolder + "/excel-status.json"), null, "", tok);
+          if (xs && xs.eTag !== meta.xsTag) { await setMeta("excelStatus", await (await download(xs, tok)).json()); await setMeta("xsTag", xs.eTag); } } catch (e) { /* not set up yet */ }
       }
       // 5. this phone's daily backup: <entries folder>/app/backups/<day>_<phone>_<name>.json, the last 30 kept per phone
       if (H && H.backupBody) {
@@ -252,7 +255,7 @@
       }
       await setMeta("syncAt", new Date().toISOString());
       lastErr = "";
-      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet"), "ok");
+      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText(), "ok");
     } catch (e) {
       lastErr = e && e.message ? e.message : String(e);
       setStatus("Sync problem: " + lastErr + " · entries are safe on this phone", "bad", needLogin ? "signin" : "retry");
@@ -260,6 +263,8 @@
     syncing = false;
     if (again) kick(500);
   }
+  const xsText = () => { const x = meta.excelStatus; if (!x || !x.at) return ""; const old = Date.now() - new Date(x.at) > Math.max(30, 3 * (x.every || 5)) * 60000;
+    return " · Excel " + (x.on === false ? "auto import off" : old ? "not checking (open since " + hhmm(x.at) + "?)" : "checked " + hhmm(x.at)); };
   const waitingText = () => { const k = Object.keys(dirty()).length; return k ? k + " change" + (k > 1 ? "s" : "") + " waiting · " : ""; };
   const hhmm = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); };
 
@@ -298,7 +303,11 @@
       ${f("userName", "Your name (shown on entries)")}
       ${f("dataFolder", "Folder with the Excel workbook and database", "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
       ${f("xlsm", "Workbook file name")}${f("db", "Database file name")}
-      ${f("entriesFolder", "Phone entries folder (Excel imports from here)", "SSI/PRODUCTION/Phone entries")}
+      ${f("entriesFolder", "Phone entries folder (the app puts entries here; Excel imports them on its own)", "SSI/PRODUCTION/Phone entries")}
+      ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
+      ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
+        const e = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        return `<span style="font-size:12px;color:var(--muted,#567)">Excel automatic import: ${x.on === false ? "off" : "every " + e(x.every) + " min"} · last look ${e(hhmm(x.at))}${x.imported ? " · imported " + e(x.imported) : ""}${x.report ? "<br>" + e(x.report).replace(/\n/g, "<br>") : ""}</span>`; })()}
       <details><summary>Advanced</summary>${f("clientId", "App (client) ID")}${f("authority", "Sign-in authority")}</details>
       <span class="row2"><button type="button" data-x="upd">Check for updates</button>${account ? `<button type="button" data-x="out">Sign out</button>` : ""}<button type="button" data-x="cancel">Cancel</button><button type="submit">Save</button></span></form>`;
     document.body.appendChild(w);
@@ -354,6 +363,7 @@
     window.addEventListener("online", () => kick(300));
     window.addEventListener("offline", () => sync("offline"));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kick(300); });
-    setInterval(() => { if (document.visibilityState === "visible") sync("timer"); }, 2 * 60 * 1000);
+    const every = Math.min(60, Math.max(1, Number(cfg().syncMinutes) || 2));
+    setInterval(() => { if (document.visibilityState === "visible") sync("timer"); }, every * 60 * 1000);
   });
 })();
