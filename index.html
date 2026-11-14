@@ -846,6 +846,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     health: [],
     settings: [],
     about: [],
+    mach: [],
     calc: [],
     entries: [["pending", "Waiting for Excel"], ["imported", "Imported"], ["cancelled", "Cancelled"], ["all", "All"]],
   };
@@ -857,7 +858,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (sideOpen || WIDE.matches) $("#side").innerHTML = sideHtml();
   }
   // ---------------------------------------------------------------- sidebar: every tab and its views
-  const SIDE_T = { today: "Today", lots: "Production", orders: "Orders", purchases: "Purchases", chemicals: "Chemicals", entries: "Phone entries", health: "Health check", settings: "Settings", calc: "Costing calculator", about: "About" };
+  const SIDE_T = { today: "Today", lots: "Production", orders: "Orders", purchases: "Purchases", chemicals: "Chemicals", entries: "Phone entries", health: "Health check", settings: "Settings", calc: "Costing calculator", mach: "Machinery rates", about: "About" };
   const SIDE_ICON = { entries: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>', health: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>' };
   let sideOpen = false;
   const WIDE = window.matchMedia("(min-width: 1100px)");
@@ -877,7 +878,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
     { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
     { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
@@ -921,11 +922,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function render() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework")) || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
     if (tab === "about") { $("#list").innerHTML = aboutView(); return; }
+    if (tab === "mach") { $("#list").innerHTML = machView(words($("#q").value)); return; }
     if (tab === "calc") { $("#list").innerHTML = calcView(); calcTotals(); return; }
     const ws = words($("#q").value);
     if (tab === "today") { $("#list").innerHTML = ws.length ? searchAll(ws) : todayView(); return; }
@@ -988,6 +990,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       html += card(it);
     });
     $("#list").innerHTML = html;
+  }
+  // F. MACHINERY from Excel: ₹ per piece per round for each animal (the drums and milling are ₹ per run)
+  function machView(ws) {
+    const L = Object.values(data.mach || {}).filter((m) => match(String(m.name).toLowerCase(), ws)).sort((a, b) => String(a.name).localeCompare(String(b.name))), r = (v) => Number(v) ? fmtN(v, 2) : "-";
+    return `<div class="count"><span>${L.length} machine${L.length === 1 ? "" : "s"} on F. MACHINERY</span></div>
+      <p class="note" style="margin:0 0 6px">₹ per piece per round. ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))} are ₹ per run for the whole lot. Rates are changed in Excel (F. MACHINERY) and come to the app with the next update.</p>
+      ${L.length ? `<div class="tbl"><table><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr><td>${esc(m.name)}${NOT_ROUND.includes(String(m.name).toUpperCase()) ? ` <span class="note">per run</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
   }
   function procCard(p) {
     return `<button class="row" data-k="${esc(p.key)}"${cur(p.key)}>
@@ -1054,7 +1063,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 122, at: "2026-11-14T23:34:15+05:30", notes: "Rework process: each rework gets a process sheet like a lot's (pcs, weight, crusting, machinery, finishing), with Check stock and adjust" };
+  const APP_BUILD = { v: 123, at: "2026-11-14T23:51:28+05:30", notes: "Menu: Processes → Machinery rates (F. MACHINERY)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4440,7 +4449,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
 
   // ---------------------------------------------------------------- events
-  const TABS = ["today", "lots", "orders", "purchases", "chemicals", "entries", "health", "settings", "about", "calc"];
+  const TABS = ["today", "lots", "orders", "purchases", "chemicals", "entries", "health", "settings", "about", "calc", "mach"];
   // tab changes are history entries too (with the page depth), so the phone's Back walks back through them
   let popping = false;
   function go(t) { route(t); if (popping) return; histPush(navDepth(), "#" + t); }
