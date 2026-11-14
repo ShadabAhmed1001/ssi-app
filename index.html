@@ -1040,7 +1040,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 117, at: "2026-11-14T08:15:02+05:30", notes: "Process editor sections fold with an arrow" };
+  const APP_BUILD = { v: 118, at: "2026-11-14T16:56:12+05:30", notes: "Fix: saving a process or page change on a lot made on the phone" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2593,7 +2593,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         await writeLotEdit(ed.lot, diff, "Process loaded from " + (ed.base_lot || ed.lot)); }
       await writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body);
       recNext = ed.lot + "|" + ed.process; edDropDraft(ed.key); formOpen = null; ed = null; flash = ""; refresh(); showDetail();
-    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+    } catch (e) { console.error("recipe save", e); btn.disabled = false; msg.textContent = saveError(e); }
   }
   // ---------------------------------------------------------------- lot editing
   const LOT_FIELDS = ["customer", "product", "order_qty", "lot_pcs", "lot_sqft", "delivered_est", "shaving", "weight", "order_date", "due_date", "process_page", "remarks"];
@@ -2615,7 +2615,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
   function lotDiff(lot, next) {
-    const base = rows("SELECT * FROM lots WHERE lot_no=?", [lot])[0], built = String(one("SELECT value FROM meta WHERE key='built_at'") || "");
+    // a lot made on the phone has no Excel row yet: every field it shows is compared against nothing, so only real changes count
+    const base = rows("SELECT * FROM lots WHERE lot_no=?", [lot])[0] || {}, built = String(one("SELECT value FROM meta WHERE key='built_at'") || "");
     entries.filter((e) => e.status === "imported" && e.type === "lot_edit" && e.lot_no === lot && String(e.created_at).slice(0, 19) > built).forEach((e) => Object.assign(base, e.changes));
     const changes = {}, before = {}, shown = data.lotBy[lot] || {}, pend = (entries.find((e) => e.status === "pending" && e.type === "lot_edit" && e.lot_no === lot) || {}).changes || {};
     for (const k of LOT_FIELDS) {
@@ -3957,7 +3958,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("Dye combinations saved. They are waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); });
     }
   }
-  const saveError = (e) => (e && e.code) === "invalid_argument" ? "You can view this app but not enter data. Ask the owner for Contributor access." : "Not saved. Check the connection and tap Save again.";
+  // a fault in the app itself is named as one, so it is not taken for a connection problem
+  const saveError = (e) => (e && e.code) === "invalid_argument" ? "You can view this app but not enter data. Ask the owner for Contributor access." : e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError ? "Not saved: the app hit a fault (" + e.message + "). Please send a screenshot of this." : "Not saved. Check the connection and tap Save again.";
   // ---------------------------------------------------------------- phone entries
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const stageNames = () => data.stages.map((s) => s.name);
