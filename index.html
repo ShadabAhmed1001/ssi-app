@@ -1040,7 +1040,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 119, at: "2026-11-14T22:04:41+05:30", notes: "Excel imports phone entries on its own every few minutes; the OneDrive bar shows when Excel last checked; check interval in OneDrive settings" };
+  const APP_BUILD = { v: 120, at: "2026-11-14T23:14:30+05:30", notes: "Lots and processes open with every section folded, whether viewed or edited" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4259,6 +4259,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // ---------------------------------------------------------------- page polish: summary card, folding sections, action menus, sheets
   const SECOPEN = {}; try { Object.assign(SECOPEN, JSON.parse(localStorage.getItem("ssi-secs") || "{}")); } catch (e) {}
   const secIsOpen = (k, def) => (k in SECOPEN ? SECOPEN[k] : def);
+  const SEC_FRESH = new WeakSet(); let secView = null;
   const niceStage = (s) => esc(String(s || "-")).replace(/\s*\/\s*/g, " / ");
   function lotHero(l, track) {
     const due = l.due_date ? (l.grp === 1 ? (l.dueIn < 0 ? `<span class="late">${-l.dueIn} d late</span>` : l.dueIn <= 2 ? `<span class="soon">${l.dueIn} d left</span>` : `${l.dueIn} d left`) : "") : "";
@@ -4299,6 +4300,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (cur) cur.appendChild(n);
       });
     }
+    // a lot or a process opens folded, whether viewed or edited (each section opens with its arrow and stays so until the process is opened again)
+    { const fresh = formOpen === "recipe" && ed && !SEC_FRESH.has(ed) ? (SEC_FRESH.add(ed), true) : !formOpen && !!pg && secView !== sel.lots;
+      secView = !formOpen && pg ? sel.lots : formOpen ? secView : null;
+      if (fresh) { d.querySelectorAll("details.sec").forEach((x) => { x.open = false; if (x.dataset.sec) SECOPEN[x.dataset.sec] = false; }); try { localStorage.setItem("ssi-secs", JSON.stringify(SECOPEN)); } catch (e) {} } }
     // action rows: the first ones stay, the rest go under More; PDFs get their own menu
     const dw = d.clientWidth || window.innerWidth;
     d.querySelectorAll(".acts").forEach((a, ai) => {
