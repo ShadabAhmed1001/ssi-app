@@ -134,6 +134,10 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .swipe { touch-action: pan-y; transition: transform .18s ease, opacity .18s ease; position: relative; }
 .swipe.drag { transition: none; }
 .swipe.gone { transform: translateX(-110%); opacity: 0; }
+.swipe.gone-r { transform: translateX(110%); opacity: 0; }
+.row.pinned { border-color: var(--accent); }
+.row.down { opacity: .7; }
+.pinmark { font-size: 10px; margin-right: 5px; color: var(--accent); vertical-align: 2px; }
 .mutebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 13px; background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
 .mutebar .lnk, .lnk { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; padding: 4px 2px; text-decoration: underline; cursor: pointer; }
 .row.muted { opacity: .6; }
@@ -970,6 +974,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (showMuted && mutedL.length) html += `<div class="group">Muted for a day · ${mutedL.length}</div>` + mutedL.map((l) => card(l).replace("</button>", `<span class="m"><span>Muted until ${esc(muteUntilText(l.lot_no))}</span><span class="lnk" role="button" tabindex="0" data-unmute="${esc(l.lot_no)}">Unmute</span></span></button>`)).join("");
       $("#list").innerHTML = html; return;
     }
+    if (tab === "lots" && (filter.lots || "open") === "open") {
+      items.sort((a, b) => lordSort(a, b) || sorters.lots(a, b));
+      const np = items.filter(lordPin).length, nd = items.filter(lordDown).length, u = lordLast && data.lotBy[lordLast.k];
+      const top = u ? `<span>${esc(lordLast.k)} ${lordLast.way === "down" ? "moved to the end" : lordPin(u) ? "pinned to the top" : "put back in its place"}.</span><button class="lnk" data-lordundo>Undo</button>` : `<span>Swipe a lot left to move it to the end, right to pin it to the top.</span>`;
+      html = `<div class="mutebar">${top}${np + nd ? `<button class="lnk" data-lordreset>Reset order${np ? " · " + np + " pinned" : ""}${nd ? " · " + nd + " at the end" : ""}</button>` : ""}</div>` + html;
+      let wasDown = false;
+      items.slice(0, 400).forEach((it) => { const d = lordDown(it); if (d && !wasDown) html += `<div class="group">Moved to the end · ${nd}</div>`; wasDown = d; html += card(it); });
+      $("#list").innerHTML = html; return;
+    }
     items.slice(0, 400).forEach((it) => {
       if (it.grp !== lastGrp && (filter[tab] === "all")) { html += `<div class="group">${gname[it.grp]}</div>`; lastGrp = it.grp; }
       html += card(it);
@@ -1040,7 +1053,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 120, at: "2026-11-14T23:14:30+05:30", notes: "Lots and processes open with every section folded, whether viewed or edited" };
+  const APP_BUILD = { v: 121, at: "2026-11-14T23:19:18+05:30", notes: "Open lots: swipe left moves a lot to the end, swipe right pins it to the top" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1975,6 +1988,21 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function muteLot(k) { mutes[k] = Date.now() + 864e5; lastMuted = k; saveMutes(); }
   function unmuteLot(k) { delete mutes[k]; if (lastMuted === k) lastMuted = null; saveMutes(); }
   const needsAttn = (l) => l.grp === 1 && (l.flag === "bad" || l.flag === "warn");
+  // Open lots order, per phone: swipe left moves a lot to the end (until its stage changes), swipe right pins it to the top
+  const LO_KEY = "ssi-lotorder-v1"; let lord = { pin: {}, down: {} }, lordLast = null;
+  try { lord = Object.assign({ pin: {}, down: {} }, JSON.parse(localStorage.getItem(LO_KEY) || "{}") || {}); } catch (e) { lord = { pin: {}, down: {} }; }
+  const lordSave = () => { try { localStorage.setItem(LO_KEY, JSON.stringify(lord)); } catch (e) {} };
+  const lordDown = (l) => { const d = lord.down[l.lot_no]; return !!d && d.stage === (l.stage || ""); };
+  const lordPin = (l) => !!lord.pin[l.lot_no];
+  function lordMove(k, way) {
+    const l = data.lotBy[k]; if (!l) return; lordLast = { k, pin: lord.pin[k], down: lord.down[k], way };
+    if (way === "down") { delete lord.pin[k]; lord.down[k] = { at: Date.now(), stage: l.stage || "" }; }
+    else if (lordDown(l)) delete lord.down[k];
+    else { delete lord.down[k]; lord.pin[k] = Date.now(); }
+    lordSave();
+  }
+  function lordUndo() { const u = lordLast; if (!u) return; if (u.pin) lord.pin[u.k] = u.pin; else delete lord.pin[u.k]; if (u.down) lord.down[u.k] = u.down; else delete lord.down[u.k]; lordLast = null; lordSave(); }
+  const lordSort = (a, b) => (lordPin(b) - lordPin(a)) || (lordPin(a) && lordPin(b) ? lord.pin[b.lot_no] - lord.pin[a.lot_no] : 0) || (lordDown(a) - lordDown(b)) || (lordDown(a) && lordDown(b) ? lord.down[a.lot_no].at - lord.down[b.lot_no].at : 0);
   const tableRows = (ws) => data.lots.filter((l) => l.grp < 3 && (!pick || String(l[pick.field] || "").toUpperCase() === pick.value.toUpperCase()) && match(l.hay, ws)).sort((a, b) => {
     const k = tsort.k, x = a[k], y = b[k], nx = k === "lot_no" ? a.num : x, ny = k === "lot_no" ? b.num : y;
     if (nx === ny) return 0; if (nx === null || nx === undefined || nx === "") return 1; if (ny === null || ny === undefined || ny === "") return -1;
@@ -1988,10 +2016,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const cur = (k) => sel[tab] === k ? ' aria-current="true"' : "";
   function lotCard(l) {
     const due = l.dueIn === null ? "" : `<span class="${l.grp === 1 && l.dueIn < 0 ? "late" : l.grp === 1 && l.dueIn <= 3 ? "soon" : ""}">due ${fmtD(l.due_date)}</span>`;
-    const sw = tab === "lots" && filter.lots === "late" && needsAttn(l), mu = sw && isMuted(l.lot_no);
+    const sw0 = tab === "lots" && filter.lots === "late" && needsAttn(l), mu = sw0 && isMuted(l.lot_no), sw2 = tab === "lots" && (filter.lots || "open") === "open" && l.grp === 1, sw = sw0 || sw2;
+    const pn = sw2 && lordPin(l), dn = sw2 && lordDown(l);
     const sn = stageNo(l.stage) || 0, pr = /DISPATCHED/i.test(l.stage || "") ? 100 : sn > 0 && sn <= 11 ? Math.round(sn / 11 * 100) : 0;
-    return `<button class="row${sw ? " swipe" : ""}${mu ? " muted" : ""}" data-flag="${esc(l.flag || "")}" data-k="${esc(l.lot_no)}"${cur(l.lot_no)}${sw ? ` aria-description="${mu ? "Muted until " + esc(muteUntilText(l.lot_no)) : "Swipe left to mute for a day"}"` : ""}>
-      <span class="k">${esc(l.lot_no)}</span><span class="pill ${l.flag}">${esc(l.flagText)}</span>
+    return `<button class="row${sw ? " swipe" : ""}${mu ? " muted" : ""}${pn ? " pinned" : ""}${dn ? " down" : ""}"${sw2 ? ' data-sw="2"' : ""} data-flag="${esc(l.flag || "")}" data-k="${esc(l.lot_no)}"${cur(l.lot_no)}${sw0 ? ` aria-description="${mu ? "Muted until " + esc(muteUntilText(l.lot_no)) : "Swipe left to mute for a day"}"` : sw2 ? ` aria-description="${pn ? "Pinned to the top. Swipe left to move it to the end" : dn ? "Moved to the end. Swipe right to put it back" : "Swipe left to move to the end, right to pin to the top"}"` : ""}>
+      <span class="k">${pn ? `<span class="pinmark" aria-hidden="true">▲</span>` : dn ? `<span class="pinmark" aria-hidden="true">▼</span>` : ""}${esc(l.lot_no)}</span><span class="pill ${l.flag}">${esc(l.flagText)}</span>
       <span class="t">${esc(l.customer)} · ${esc(l.product)}</span>${pr ? `<span class="prog" aria-hidden="true"><i style="width:${pr}%"></i></span>` : ""}
       <span class="m"><span><b>${esc(l.stage || "-")}</b>${l.grp === 1 && l.inStage !== null ? " · " + l.inStage + " d" : ""}</span>
         <span class="num">${fmtN(l.lot_pcs, 0)} pcs · ${fmtN(l.lot_sqft, 0)} sqft</span>${due}${l.phone ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
@@ -4461,15 +4490,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#list").addEventListener("pointermove", (e) => {
     if (!swipe || e.pointerId !== swipe.id) return;
     const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
-    if (!swipe.on) { if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } if (dx < -12) { swipe.on = true; swipe.r.classList.add("drag"); try { swipe.r.setPointerCapture(e.pointerId); } catch (x) {} } else return; }
-    swipe.dx = Math.min(0, dx); swipe.r.style.transform = `translateX(${swipe.dx}px)`;
+    if (!swipe.on) { if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } if (dx < -12 || (dx > 12 && swipe.r.dataset.sw === "2")) { swipe.on = true; swipe.r.classList.add("drag"); try { swipe.r.setPointerCapture(e.pointerId); } catch (x) {} } else return; }
+    swipe.dx = swipe.r.dataset.sw === "2" ? dx : Math.min(0, dx); swipe.r.style.transform = `translateX(${swipe.dx}px)`;
   });
   const swipeEnd = (e) => {
     if (!swipe || e.pointerId !== swipe.id) return;
     const { r, dx, on } = swipe; swipe = null; if (!on) return;
     swiped = true; setTimeout(() => { swiped = false; }, 400);
     r.classList.remove("drag");
-    if (e.type === "pointerup" && dx < -Math.min(90, r.offsetWidth * .3)) { r.style.transform = ""; r.classList.add("gone"); const k = r.dataset.k; setTimeout(() => { muteLot(k); render(); }, 180); }
+    const lim = Math.min(90, r.offsetWidth * .3), two = r.dataset.sw === "2";
+    if (e.type === "pointerup" && dx < -lim) { r.style.transform = ""; r.classList.add("gone"); const k = r.dataset.k; setTimeout(() => { if (two) lordMove(k, "down"); else muteLot(k); render(); }, 180); }
+    else if (e.type === "pointerup" && two && dx > lim) { r.style.transform = ""; r.classList.add("gone-r"); const k = r.dataset.k; setTimeout(() => { lordMove(k, "up"); render(); }, 180); }
     else r.style.transform = "";
   };
   $("#list").addEventListener("pointerup", swipeEnd);
@@ -4500,6 +4531,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.target.closest("[data-chkupd]")) { const m = $("#updmsg"), bt = e.target.closest("[data-chkupd]"); bt.disabled = true; m.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { m.textContent = r; bt.disabled = false; }); return; }
     if (swiped) { swiped = false; e.preventDefault(); return; }
     const um = e.target.closest("[data-unmute]"); if (um) { unmuteLot(um.dataset.unmute); render(); return; }
+    if (e.target.closest("[data-lordundo]")) { lordUndo(); render(); return; }
+    if (e.target.closest("[data-lordreset]")) { lordLast = null; lord = { pin: {}, down: {} }; lordSave(); render(); return; }
     if (e.target.closest("[data-showmuted]")) { showMuted = !showMuted; render(); return; }
     if (tab === "entries" && await entryAction(e)) return;
     const pb = e.target.closest("[data-pdf]"); if (pb) return pdfAction(pb);
