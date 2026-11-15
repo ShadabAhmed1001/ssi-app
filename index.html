@@ -622,7 +622,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // Excel's macros do, and notes it in app_applied. The database is rebuilt from the base (baseBytes: the last data loaded)
   // whenever an entry already written is changed, cancelled, or arrives out of order. Entry types without an applier yet
   // stay on the overlay in load(), so the mode can grow type by type. Switched on per phone for testing (ssi-records = app).
-  let baseBytes = null, engineErr = {};
+  let baseBytes = null, engineErr = {}, enApplied = new Set();
+  // still waiting: pending and not yet written by the app itself
+  const isWait = (e) => e.status === "pending" && !enApplied.has(e.id);
   const recMode = () => { try { return localStorage.getItem("ssi-records") === "app"; } catch (e) { return false; } };
   const enRun = (sql, p) => { db.run(sql, p || []); };
   const enOne = (sql, p) => (rows(sql, p)[0] || null);
@@ -762,6 +764,144 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // CHEM ALIASES: a recipe name that means this chemical
     chem_alias(e) { const d = e.data || {}; let m = {}; try { m = JSON.parse((enOne("SELECT value FROM meta WHERE key='chem_aliases'") || {}).value || "{}") || {}; } catch (x) { m = {}; }
       m[UP(d.name || e.lot_no)] = d.to; enRun("INSERT OR REPLACE INTO meta(key, value) VALUES('chem_aliases', ?)", [JSON.stringify(m)]); },
+    // ---- small helpers shared by the appliers below
+    _id(t) { return (Number((enOne("SELECT MAX(id) m FROM " + t) || {}).m) || 0) + 1; },
+    _dm(dt) { const d = new Date(String(dt || "").slice(0, 10) + "T00:00:00"); return isNaN(d) ? "" : String(d.getDate()).padStart(2, "0") + "-" + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]; },
+    _f(x) { const n = Number(x) || 0; return n.toLocaleString("en-US", { maximumFractionDigits: 2 }); },
+    // a line in the tracker's REMARKS, as Excel's macros add them
+    _rem(lot, line) { const l = enOne("SELECT lot_no, remarks FROM lots WHERE UPPER(lot_no)=UPPER(?)", [lot]); if (!l) return; enRun("UPDATE lots SET remarks=? WHERE lot_no=?", [(l.remarks ? l.remarks + "\n" : "") + line, l.lot_no]); },
+    _day(e, d) { return String((d && d.date) || e.entry_date || e.created_at || enNow()).slice(0, 10); },
+    _who(e) { return ("Phone " + (e.entered_by || "")).slice(0, 60); },
+    // an order item: its number, or one the app gave a PO saved on the phone ("n" + entry + "l1")
+    _line(v) { const s = String(v ?? ""); if (/^n/.test(s)) { const k = (enOne("SELECT key FROM app_keys WHERE entry_id=?", [s]) || {}).key; if (!k) throw new Error("the PO of this order item is not in the records"); return Number(k); } return Number(s) || 0; },
+    _lineRow(id) { const r = enOne("SELECT l.*, o.customer, o.po_no FROM order_lines l JOIN orders o ON o.id=l.order_id WHERE l.id=?", [id]); if (!r) throw new Error("order item " + id + " is not in the records"); return r; },
+    _stageName(s) { const r = enOne("SELECT name FROM stages WHERE UPPER(TRIM(name))=UPPER(TRIM(?))", [s || ""]); return r ? r.name : ""; },
+    _animal(lot) { return (enOne("SELECT p.animal a FROM purchase_ledger l JOIN purchases p ON UPPER(p.purchase_no)=UPPER(l.from_key) WHERE UPPER(l.to_key)=UPPER(?) AND l.status<>'VOID' ORDER BY l.id LIMIT 1", [lot]) || {}).a || ""; },
+    // CreatePurchase: a stock line with its receipt
+    _stockLine(e, sub, d, note) { const k = ENGINE._newPurch(Object.assign({}, e, { id: e.id + sub }), Object.assign({ rate: 0, per: "SQFT" }, d), note); ENGINE._led(d.date, "SUPPLIER", k, d.pcs, d.sqft, "RECEIPT", e, note); return k; },
+    // ---- POs (OrdSave, AfSaveOrderLine, AfArchiveOrderLine, close short, OrdLinkLot, AfUnlinkLot, PO delete)
+    order(e) { const d = e.data || {}, norm = UP(d.po).replace(/[^A-Z0-9]/g, ""), ex = norm ? enOne("SELECT id, po_no FROM orders WHERE po_norm=? ORDER BY id LIMIT 1", [norm]) : null;
+      if (ex && d.add_to !== "1") throw new Error("PO " + ex.po_no + " is already saved");
+      const lines = Object.keys(d).filter((k) => /^l\d+$/.test(k)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+      if (!lines.length) throw new Error("the PO has no items");
+      let oid = ex ? ex.id : 0;
+      if (!oid) { oid = ENGINE._id("orders"); enRun("INSERT INTO orders(id, po_no, po_norm, po_date, customer, note, created_by, created_at) VALUES(?,?,?,?,?,?,?,?)", [oid, String(d.po || "").trim(), norm, String(d.date || "").slice(0, 10), String(d.customer || "").trim(), String(d.note || "").trim(), e.entered_by || "", e.created_at || enNow()]); }
+      lines.forEach((k) => { const p = String(d[k]).split("~^~"); if (p.length !== 5) throw new Error("item " + k.slice(1) + " could not be read"); const id = ENGINE._id("order_lines");
+        enRun("INSERT INTO order_lines(id, order_id, item, qty_sqft, rate, hsn, amount) VALUES(?,?,?,?,?,?,?)", [id, oid, p[0], Number(p[1]) || 0, Number(p[2]) || 0, p[3], Number(p[4]) || 0]);
+        enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", ["n" + e.id + k, String(id)]); }); },
+    order_edit(e) { const d = e.data || {}, id = ENGINE._line(d.line_id), cur = ENGINE._lineRow(id), b = e.before || null;
+      if (b) { const same = (x, y, num) => num ? Math.abs((Number(x) || 0) - (Number(y) || 0)) < 0.005 : UP(String(x ?? "").trim()) === UP(String(y ?? "").trim());
+        if (("item" in b && !same(cur.item, b.item)) || ("qty" in b && !same(cur.qty_sqft, b.qty, 1)) || ("rate" in b && !same(cur.rate, b.rate, 1)) || ("customer" in b && !same(cur.customer, b.customer))) throw new Error("the item was changed after this entry was made"); }
+      enRun("UPDATE orders SET po_date=?, customer=? WHERE id=?", [String(d.po_date || "").slice(0, 10), d.customer ?? cur.customer, cur.order_id]);
+      enRun("UPDATE order_lines SET item=?, hsn=?, qty_sqft=?, rate=?, amount=? WHERE id=?", [d.item, d.hsn, Number(d.qty) || 0, Number(d.rate) || 0, Number(d.amount) || 0, id]); },
+    order_close(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
+      if (d.close === "1") enRun("UPDATE order_lines SET closed_on=?, closed_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET closed_on=NULL WHERE id=?", [id]); },
+    order_short(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
+      if (d.close === "1") enRun("UPDATE order_lines SET short_on=?, short_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET short_on=NULL, short_note=NULL WHERE id=?", [id]); },
+    po_link(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
+      enRun("INSERT OR REPLACE INTO lot_orders(lot_no, line_id, linked_at, linked_by) VALUES(?,?,?,?)", [l.lot_no, id, e.created_at || enNow(), e.entered_by || ""]); },
+    po_unlink(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=UPPER(?) AND line_id=?", [d.lot || e.lot_no, id]); },
+    po_delete(e) { const oid = Number((e.data || {}).order_id) || 0;
+      if (enOne("SELECT COUNT(*) n FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id WHERE l.order_id=?", [oid]).n) throw new Error("lots are linked to this PO. Unlink them first");
+      enRun("DELETE FROM order_lines WHERE order_id=?", [oid]); enRun("DELETE FROM orders WHERE id=?", [oid]); },
+    // ---- lots: archive (ArchiveDispatchedLots for the lots the phone listed), delete (AfDeleteLot), saved process delete
+    archive(e) { const day = String(e.created_at || enNow()).slice(0, 10);
+      String((e.data || {}).lots || "").split(/[\s,]+/).filter(Boolean).forEach((k) => { const l = enOne("SELECT lot_no, state FROM lots WHERE UPPER(lot_no)=UPPER(?)", [k]); if (l && l.state === "DISPATCHED") enRun("UPDATE lots SET state='ARCHIVED', archived_on=? WHERE lot_no=?", [day, l.lot_no]); }); },
+    lot_delete(e) { const l = enLot((e.data || {}).lot || e.lot_no), K = UP(l.lot_no), why = [];
+      const n1 = enOne("SELECT COUNT(*) n FROM purchase_ledger WHERE status<>'VOID' AND (UPPER(to_key)=? OR UPPER(from_key)=?)", [K, K]).n; if (n1) why.push("it has skins entries (" + n1 + ")");
+      const n2 = enOne("SELECT COUNT(*) n FROM chem_moves WHERE status='OK' AND UPPER(ref)=?", [K]).n; if (n2) why.push("chemicals were taken for it (" + n2 + ")");
+      const n3 = enOne("SELECT COUNT(*) n FROM lot_deliveries WHERE status='OK' AND UPPER(lot_no)=?", [K]).n; if (n3) why.push("deliveries are recorded (" + n3 + ")");
+      if (why.length) throw new Error(K + " can't be deleted because " + why.join(", "));
+      enRun("DELETE FROM lots WHERE lot_no=?", [l.lot_no]); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=?", [K]); },
+    recipe_delete(e) { const d = e.data || {}, lot = UP(d.lot || e.lot_no), pr = d.proc || e.process;
+      if (!enOne("SELECT COUNT(*) n FROM lot_recipes WHERE UPPER(lot_no)=? AND process=?", [lot, pr]).n) throw new Error("no saved process for " + lot + " on " + pr);
+      enRun("DELETE FROM lot_recipes WHERE UPPER(lot_no)=? AND process=?", [lot, pr]); enRun("DELETE FROM lot_recipe_versions WHERE UPPER(lot_no)=? AND process=?", [lot, pr]); },
+    // the dye combinations table of a process page
+    dye(e) { const pr = e.process || e.lot_no; if (!enOne("SELECT 1 x FROM process_pages WHERE UPPER(name)=UPPER(?) UNION SELECT 1 FROM process_dyes WHERE UPPER(process)=UPPER(?)", [pr, pr])) throw new Error("there is no process page called " + pr);
+      const was = enOne("SELECT process FROM process_dyes WHERE UPPER(process)=UPPER(?)", [pr]); enRun("DELETE FROM process_dyes WHERE UPPER(process)=UPPER(?)", [pr]); enRun("INSERT INTO process_dyes(process, rows) VALUES(?,?)", [was ? was.process : pr, JSON.stringify(e.after || [])]); },
+    // PartAheadSave: the lot stays where it is; a line in its remarks
+    part_ahead(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), pcs = Number(d.pcs) || 0;
+      if (Number(l.lot_pcs) > 0 && pcs > Number(l.lot_pcs) + 0.0001) throw new Error("that is more than the lot's " + l.lot_pcs + " pcs");
+      ENGINE._rem(l.lot_no, "PART AHEAD " + ENGINE._dm(d.date) + ": " + ENGINE._f(pcs) + "PCS - " + ENGINE._f(d.sqft) + "SQ to " + UP(String(d.stage || "").trim()) + " for " + UP(String(d.purpose || "").trim()) + (String(d.note || "").trim() ? " (" + String(d.note).trim() + ")" : "")); },
+    // LotBalanceSave: pieces not delivered, to rejected stock, leftover stock, another lot or wastage
+    lot_balance(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), why = String(d.note || "").trim(), dt = ENGINE._day(e, d);
+      if ((Number(d.reject_pcs) > 0 || Number(d.waste_pcs) > 0) && !why) throw new Error("a reason is needed for rejected or wasted pieces");
+      let any = false;
+      [["reject", "REJECT"], ["stock", "STOCK"], ["lot", "LOT"], ["waste", "WASTE"]].forEach(([x, dest]) => { const pcs = Number(d[x + "_pcs"]) || 0, sqft = Number(d[x + "_sqft"]) || 0; if (pcs <= 0) return; any = true;
+        let ref = "", label = "";
+        if (dest === "REJECT") { ref = ENGINE._stockLine(e, ":r", { supplier: "REJECTED " + (l.customer || ""), animal: ENGINE._animal(l.lot_no), grade: "REJECT " + l.lot_no, pcs, sqft, date: dt }, "Not delivered from " + l.lot_no + " " + (l.product || "") + ": " + why); label = "REJECTED, stock line " + ref; }
+        else if (dest === "STOCK") { ref = ENGINE._stockLine(e, ":s", { supplier: "LEFTOVER " + (l.customer || ""), animal: ENGINE._animal(l.lot_no), grade: "LEFTOVER " + l.lot_no, pcs, sqft, date: dt }, "Not delivered from " + l.lot_no + " " + (l.product || "") + (why ? ": " + why : "")); label = "LEFTOVER STOCK, stock line " + ref; }
+        else if (dest === "LOT") { const to = enLot(d.to_lot); if (UP(to.lot_no) === UP(l.lot_no)) throw new Error("pick the lot they moved to");
+          ENGINE._led(dt, l.lot_no, to.lot_no, pcs, sqft, "TRANSFER", e, "Not delivered from " + l.lot_no + (why ? ": " + why : "")); ENGINE._lotQty(l.lot_no, -pcs, -sqft); ENGINE._lotQty(to.lot_no, pcs, sqft); ref = to.lot_no; label = "MOVED TO " + to.lot_no; }
+        else label = "WASTAGE";
+        enRun("INSERT INTO lot_balance(id, lot_no, bal_date, dest, pcs, sqft, ref_key, note, status) VALUES(?,?,?,?,?,?,?,?,?)", [ENGINE._id("lot_balance"), l.lot_no, dt, dest, pcs, sqft, ref, why, "OK"]);
+        ENGINE._rem(l.lot_no, "NOT DELIVERED " + ENGINE._dm(dt) + ": " + ENGINE._f(pcs) + "PCS - " + ENGINE._f(sqft) + "SQ " + label + (why ? " - " + why : "")); });
+      if (!any) throw new Error("no pieces were given"); },
+    // RetSave: a customer return lowers what was delivered; back into production (REWORK) or to a rejected stock line (REJECT)
+    lot_return(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), out = UP(d.outcome), why = String(d.why || "").trim(), pcs = Number(d.pcs) || 0, sqft = Number(d.sqft) || 0, dt = ENGINE._day(e, d), onT = l.state !== "ARCHIVED";
+      if (out !== "REWORK" && out !== "REJECT") throw new Error("pick rework or reject"); if (!why) throw new Error("the reason is missing");
+      const t = enOne("SELECT COUNT(*) n, IFNULL(SUM(pcs),0) p, IFNULL(SUM(sqft),0) s FROM lot_deliveries WHERE status='OK' AND lot_no=?", [l.lot_no]), disp = /^dispatched$/i.test(l.stage || "");
+      let p = t.p, s = t.s, seedP = 0, seedS = 0;
+      if (!t.n) { if (onT && !disp && Math.abs((Number(l.delivered_est) || 0) - (Number(l.lot_sqft) || 0) * 0.9) < 0.01) throw new Error(l.lot_no + " has no delivery recorded, so nothing can be returned");
+        seedS = Number(l.delivered_est) || 0; if (disp || !onT) seedP = Number(l.lot_pcs) || 0; p = seedP; s = seedS; }
+      if (out === "REWORK" && !onT) throw new Error(l.lot_no + " is archived. It must be on the tracker to go back into production");
+      if (sqft > s + 0.5) throw new Error(l.lot_no + " has only " + ENGINE._f(s) + " sqft delivered"); if (p > 0 && pcs > p + 0.0001) throw new Error(l.lot_no + " has only " + ENGINE._f(p) + " pcs delivered");
+      const ins = (P, S, doc, note, typ) => enRun("INSERT INTO lot_deliveries(lot_no, del_date, pcs, sqft, doc_no, note, entry_type, status, entered_by, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", [l.lot_no, dt, P, S, doc, note, typ, "OK", e.entered_by || "", e.created_at || enNow()]);
+      if (seedP || seedS) ins(seedP, seedS, "", "delivered before returns were recorded", "OPENING");
+      ins(-pcs, -sqft, d.doc || "", out + ": " + why, "RETURN");
+      if (onT) { ENGINE._delSync(l.lot_no); ENGINE._rem(l.lot_no, "RETURN " + ENGINE._dm(dt) + ": " + ENGINE._f(pcs) + "PCS - " + ENGINE._f(sqft) + "SQ " + out + " " + why); }
+      if (out === "REWORK") { const st = ENGINE._stageName(d.stage) || d.stage; if (UP(l.stage) !== UP(st)) { ENGINE.stage({ lot_no: l.lot_no, to_stage: st, entry_date: dt, note: "Return: " + why, entered_by: e.entered_by, created_at: e.created_at }); ENGINE._delSync(l.lot_no); } }
+      else ENGINE._stockLine(e, "", { supplier: "RETURNED " + (l.customer || ""), animal: ENGINE._animal(l.lot_no), grade: "REJECT " + l.lot_no, pcs, sqft, date: dt }, "Returned from " + l.lot_no + " " + (l.product || "") + ": " + why); },
+    // RetSale: rejected skins sold off a stock line
+    return_sale(e) { const d = e.data || {}, p = ENGINE._purch(d.key || e.lot_no), K = UP(p.purchase_no), buyer = String(d.buyer || "").trim(), pcs = Number(d.pcs) || 0, sqft = Number(d.sqft) || 0, rate = Number(d.rate) || 0;
+      if (!buyer) throw new Error("the buyer is missing");
+      const b = enOne("SELECT (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(to_key)=?1 AND status<>'VOID') - (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(from_key)=?1 AND status<>'VOID') p, (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(to_key)=?1 AND status<>'VOID') - (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(from_key)=?1 AND status<>'VOID') s", [K]);
+      if (pcs > b.p + 0.0001 || sqft > b.s + 0.5) throw new Error(K + " has only " + ENGINE._f(b.p) + " pcs / " + ENGINE._f(b.s) + " sqft left");
+      ENGINE._led(ENGINE._day(e, d), K, "SOLD", pcs, sqft, "ADJUSTMENT", e, "SOLD to " + buyer + (d.inv ? " inv " + d.inv : "") + (rate > 0 ? " @ " + ENGINE._f(rate) : ""));
+      if (b.p - pcs <= 0.0001 && b.s - sqft <= 0.5) enRun("UPDATE purchases SET closed_on=? WHERE purchase_no=? AND (closed_on IS NULL OR closed_on='')", [String(e.created_at || enNow()).slice(0, 10), p.purchase_no]); },
+    // ---- rework (Rework.bas): lot_rework, its steps and costs; chemicals used come off stock in section REWORK
+    _rwT() { enRun("CREATE TABLE IF NOT EXISTS lot_rework(id INTEGER, rw_key TEXT, lot_no TEXT, parent_lot TEXT, found_on TEXT, found_stage TEXT, back_stage TEXT, cause_group TEXT, cause TEXT, whole INTEGER, pcs REAL, sqft REAL, status TEXT, done_on TEXT, no_chem INTEGER, merged_on TEXT, note TEXT, entered_by TEXT, created_at TEXT)");
+      enRun("CREATE TABLE IF NOT EXISTS lot_rework_cost(id INTEGER, rw_key TEXT, use_key TEXT, lot_no TEXT, parent_lot TEXT, entry_date TEXT, kind TEXT, item TEXT, qty REAL, unit TEXT, rate REAL, amount REAL, note TEXT, entered_by TEXT, status TEXT)");
+      enRun("CREATE TABLE IF NOT EXISTS lot_rework_step(id INTEGER, rw_key TEXT, use_key TEXT, lot_no TEXT, step_date TEXT, step_time TEXT, step TEXT, how TEXT, done_by TEXT, status TEXT)"); },
+    _rw(key) { ENGINE._rwT(); const r = enOne("SELECT * FROM lot_rework WHERE rw_key=?", [key]); if (!r) throw new Error("the rework is not in the records"); return r; },
+    rework(e) { ENGINE._rwT(); const d = e.data || {}, lot = UP(d.lot || e.lot_no), parent = UP(d.parent || lot), whole = d.whole === "1", nl = UP(d.new_lot), pcs = Number(d.pcs) || 0, sqft = Number(d.sqft) || 0, dt = ENGINE._day(e, d);
+      const at = ENGINE._stageName(d.at), back = ENGINE._stageName(d.back), note = String(d.note || "").trim(), cause = String(d.cause || "");
+      enLot(lot); if (!at || !back) throw new Error("the stage " + (at ? d.back : d.at) + " is not on the stage guide");
+      if (enOne("SELECT 1 x FROM lot_rework WHERE rw_key=?", [e.id])) return;
+      if (!whole) { if (!nl) throw new Error("no lot number for the part split off"); if (enOne("SELECT 1 x FROM lots WHERE UPPER(lot_no)=?", [nl])) throw new Error(nl + " is already on the tracker"); if (pcs <= 0) throw new Error("no pieces to split off"); }
+      else if (enOne("SELECT 1 x FROM lot_rework WHERE UPPER(lot_no)=? AND status='OPEN'", [lot])) throw new Error(lot + " already has a rework open. Mark it done first");
+      const target = whole ? lot : nl;
+      enRun("INSERT INTO lot_rework VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [ENGINE._id("lot_rework"), e.id, target, parent, dt, at, back, d.grp || "", cause, whole ? 1 : 0, pcs, sqft, "OPEN", null, 0, null, note, ENGINE._who(e), e.created_at || enNow()]);
+      const n = enOne("SELECT COUNT(*) n FROM lot_rework WHERE UPPER(parent_lot)=?", [parent]).n;
+      if (!whole) ENGINE.lot_move(Object.assign({}, e, { data: { from: lot, to: nl, is_new: "1", pcs, sqft, date: dt, note: "REWORK " + n + ": " + cause } }));
+      const t = enLot(target); if (UP(t.stage) !== UP(back)) ENGINE.stage({ lot_no: target, to_stage: back, entry_date: dt, note: ("REWORK " + n + ": " + cause).trim(), entered_by: e.entered_by, created_at: e.created_at });
+      const line = "REWORK " + n + " " + ENGINE._dm(dt) + ": " + ENGINE._f(pcs) + "PCS - " + ENGINE._f(sqft) + "SQ found at " + UP(at) + " (" + UP(cause) + "), back to " + UP(back) + (note ? " - " + note : "");
+      ENGINE._rem(target, line); if (!whole) ENGINE._rem(lot, line + " as " + nl); },
+    rework_use(e) { const d = e.data || {}, r = ENGINE._rw(d.rw), dt = ENGINE._day(e, d), how = d.how || d.note || "", step = d.step || "";
+      if (enOne("SELECT (SELECT COUNT(*) FROM lot_rework_cost WHERE use_key=?1) + (SELECT COUNT(*) FROM lot_rework_step WHERE use_key=?1) n", [e.id]).n) return;
+      const ls = rwLines(e).map((x) => Object.assign({}, x, { kind: UP(x.kind).trim(), item: String(x.item).trim() }));
+      ls.forEach((x) => { if (x.kind === "CHEM") x.item = ENGINE._chem(x.item).name; });
+      if (!ls.length && !how && !step) throw new Error("nothing to record");
+      enRun("INSERT INTO lot_rework_step VALUES(?,?,?,?,?,?,?,?,?,?)", [ENGINE._id("lot_rework_step"), d.rw, e.id, r.lot_no, dt, d.time || "", step, how, d.by || "", "OK"]);
+      const at = Object.assign({}, e, { created_at: dt + " " + (String(e.created_at || "").slice(11, 19) || "00:00:00") }), why = ("REWORK " + d.rw + " / " + e.id + (step ? " " + step : "")).slice(0, 250);
+      ls.forEach((x) => { enRun("INSERT INTO lot_rework_cost VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [ENGINE._id("lot_rework_cost"), d.rw, e.id, r.lot_no, r.parent_lot, dt, x.kind, x.item, x.qty, x.unit || "", x.rate, x.amt, x.note || "", ENGINE._who(e), "OK"]);
+        if (x.kind === "CHEM") ENGINE._mv(at, x.item, -x.qty, "LOT USE", r.lot_no, "REWORK", why); }); },
+    rework_done(e) { const d = e.data || {}, r = ENGINE._rw(d.rw), dt = ENGINE._day(e, d), note = String(d.note || "").trim(); if (r.status !== "OPEN") return;
+      enRun("UPDATE lot_rework SET status='DONE', done_on=?, no_chem=?" + (note ? ", note=TRIM(IFNULL(note,'') || ' | ' || ?)" : "") + " WHERE rw_key=?", [dt, d.no_chem === "1" ? 1 : 0].concat(note ? [note] : [], [d.rw]));
+      ENGINE._rem(r.lot_no, "REWORK DONE " + ENGINE._dm(dt) + (d.no_chem === "1" ? " (no chemicals)" : "") + (note ? " - " + note : "")); },
+    rework_merge(e) { const d = e.data || {}, r = ENGINE._rw(d.rw), dt = ENGINE._day(e, d), from = UP(r.lot_no), to = UP(r.parent_lot);
+      if (r.status === "MERGED") return; if (r.status !== "DONE") throw new Error("the rework is not marked done yet"); if (Number(r.whole) === 1) throw new Error("a whole-lot rework has nothing to merge");
+      if (enOne("SELECT COUNT(*) n FROM lot_deliveries WHERE status='OK' AND UPPER(lot_no)=?", [from]).n) throw new Error(from + " has deliveries, so it can't be merged back");
+      const n = enOne("SELECT COUNT(*) n FROM lot_rework WHERE UPPER(parent_lot)=? AND id<=?", [to, r.id]).n, f = enLot(from); enLot(to);
+      const pcs = Number(f.lot_pcs) || 0, sqft = Number(f.lot_sqft) || 0; if (pcs <= 0) throw new Error(from + " has no pieces on the tracker");
+      ENGINE.lot_move(Object.assign({}, e, { data: { from, to, is_new: "0", pcs, sqft, date: dt, note: "REWORK " + n + " MERGED BACK" } }));
+      enRun("UPDATE lots SET state='ARCHIVED', archived_on=? WHERE lot_no=?", [String(e.created_at || enNow()).slice(0, 10), f.lot_no]);
+      enRun("UPDATE lot_rework SET status='MERGED', merged_on=? WHERE rw_key=?", [dt, d.rw]); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=?", [from]);
+      ENGINE._rem(to, "REWORK " + n + " MERGED BACK " + ENGINE._dm(dt) + ": " + ENGINE._f(pcs) + "PCS - " + ENGINE._f(sqft) + "SQ from " + from); },
+    rework_void(e) { ENGINE._rwT(); const u = (e.data || {}).use; if (!u) throw new Error("no entry given");
+      const mv = rows("SELECT * FROM chem_moves WHERE status='OK' AND section='REWORK' AND reason LIKE ?", ["%" + u + "%"]);
+      enRun("UPDATE lot_rework_cost SET status='VOID' WHERE status='OK' AND use_key=?", [u]); enRun("UPDATE lot_rework_step SET status='VOID' WHERE status='OK' AND use_key=?", [u]);
+      mv.forEach((m) => { enRun("UPDATE chem_moves SET status='VOID' WHERE id=?", [m.id]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE UPPER(name)=UPPER(?)", [m.qty, m.qty, m.chemical]); }); },
     // Edit lot: the tracker cells; a lot size change moves DELIVERED QUANTITY when it was still the 90% formula
     lot_edit(e) {
       const l = enLot(e.lot_no), ch = e.changes || {}, cols = new Set(rows("PRAGMA table_info(lots)").map((c) => c.name)), set = [], vals = [];
@@ -799,7 +939,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return new Set(rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id));
   }
   function load() {
-    const enDone = engineSync();
+    const enDone = engineSync(); enApplied = enDone;
     const stages = {}; rows("SELECT * FROM stages").forEach((s) => stages[s.name.toUpperCase()] = s);
     const del = {}; rows("SELECT lot_no, SUM(pcs) p, SUM(sqft) s FROM lot_deliveries WHERE status='OK' GROUP BY lot_no").forEach((d) => del[d.lot_no.toUpperCase()] = d);
     const po = {}; rows("SELECT lo.lot_no, o.po_no, l.id line_id FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id JOIN orders o ON o.id=l.order_id").forEach((r) => po[r.lot_no] = r);
@@ -979,7 +1119,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const r = { lot_no: e.lot_no, process: e.process, version: 0, saved_at: e.created_at, details: e.after.details, key };
       (p.saved = p.saved || []).push(r); data.recipes[key] = r;
     });
-    data.dyePhone = {}; dyeE.forEach((e) => { data.dyes[e.process.toUpperCase()] = e.after; if (e.status === "pending") data.dyePhone[e.process.toUpperCase()] = true; });
+    data.dyePhone = {}; dyeE.forEach((e) => { data.dyes[e.process.toUpperCase()] = e.after; if (isWait(e)) data.dyePhone[e.process.toUpperCase()] = true; });
     data.pages = rows("SELECT name FROM process_pages").map((r) => r.name);
     data.rate = {}; data.chemicals.forEach((c) => { const k = c.name.toUpperCase(); if (!(k in data.rate)) data.rate[k] = c.rate || 0; });
     data.finAnchor = {}; rows("SELECT * FROM process_fin").forEach((p) => { data.finAnchor[p.process.toUpperCase()] = JSON.parse(p.anchors); });
@@ -1269,7 +1409,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     else if (l.recKey !== "rec:" + r.lot_no + "|" + r.process) stock = `<p class="note" style="margin:0">This is not ${esc(r.lot_no)}'s current process page, so stock is not adjusted from it.</p>`;
     else {
       const st = chemState(l), todo = sec.filter((x) => st[x] === "todo" && st.r && chemNeed(st.r, x).lines.length), wait = sec.filter((x) => st[x] === "wait");
-      const rw = entries.some((e) => e.type === "chem_readjust" && e.status === "pending" && e.lot_no === l.lot_no), ch = rw ? [] : chemChanges(l, st), b = [];
+      const rw = entries.some((e) => e.type === "chem_readjust" && isWait(e) && e.lot_no === l.lot_no), ch = rw ? [] : chemChanges(l, st), b = [];
       todo.forEach((x) => b.push(`<button class="btn" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Check stock and adjust ${x.toLowerCase()}</button>`));
       if (todo.length === 2) b.push(`<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>`);
       if (ch.length) b.push(`<button class="btn" data-form="chem_readjust:${esc(l.lot_no)}">Check stock and re-adjust</button>`);
@@ -1316,7 +1456,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 129, at: "2026-11-15T09:36:11+05:30", notes: "Groundwork: the app can now write chemical stock adjustments, re-adjustments, undo, audits and chemical changes into its own records (not switched on yet)" };
+  const APP_BUILD = { v: 130, at: "2026-11-15T10:00:04+05:30", notes: "Records engine: POs, archive, lot and process delete, dye tables, parts sent ahead, pieces not delivered, customer returns, reject sales and rework written by the app" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2403,7 +2543,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const lotInUse = (k) => one("SELECT COUNT(*) FROM purchase_ledger WHERE status<>'VOID' AND (to_key=? OR from_key=?)", [k, k]) || one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=?", [k]) || one("SELECT COUNT(*) FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k]) || entries.some((e) => e.status === "pending" && (e.lot_no === k || (e.data && (e.data.to === k || e.data.from === k))));
   // pieces not delivered that are already accounted for: Excel's lot_balance (LOT moves already lowered the lot) + phone entries waiting
   const balRows = (k) => { try { return rows("SELECT * FROM lot_balance WHERE status='OK' AND lot_no=? ORDER BY id", [k]); } catch (e) { return []; } };
-  const balPend = (k) => entries.filter((e) => e.type === "lot_balance" && e.status === "pending" && e.lot_no === k);
+  const balPend = (k) => entries.filter((e) => e.type === "lot_balance" && isWait(e) && e.lot_no === k);
   const BAL = [["reject", "Rejected / kept in dump"], ["stock", "Kept in stock as leftover"], ["lot", "Moved to another lot"], ["waste", "Wastage / lost"]];
   const balAcc = (k) => balRows(k).filter((r) => r.dest !== "LOT").reduce((t, r) => t + (Number(r.pcs) || 0), 0) + balPend(k).reduce((t, e) => t + BAL.reduce((u, [x]) => u + (Number(e.data[x + "_pcs"]) || 0), 0), 0);
   const notDelivered = (l) => { const dp = deliveredPcs(l.lot_no), sh = (Number(l.lot_pcs) || 0) - dp - balAcc(l.lot_no); return { dp, sh: sh > 0.0001 ? sh : 0 }; };
@@ -2542,7 +2682,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // same as Excel's IsTrackedLot (Settings: ChemTrackFromLot = 500 on 08-Nov-2026)
   const trackedLot = (k) => /^L\d+/.test(k) && Number(String(k).slice(1).match(/^\d+/)[0]) >= 500;
   // part sent ahead earlier (remarks lines from Excel + phone entries still waiting)
-  const partAheadLines = (l) => String(l.remarks || "").split(/\n/).filter((t) => /PART AHEAD/i.test(t)).concat(entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no).map((e) => "PART AHEAD " + fmtS(e.data.date) + ": " + fmtN(e.data.pcs, 0) + " pcs to " + e.data.stage + " for " + String(e.data.purpose || "").toLowerCase()));
+  const partAheadLines = (l) => String(l.remarks || "").split(/\n/).filter((t) => /PART AHEAD/i.test(t)).concat(entries.filter((e) => e.type === "part_ahead" && isWait(e) && e.lot_no === l.lot_no).map((e) => "PART AHEAD " + fmtS(e.data.date) + ": " + fmtN(e.data.pcs, 0) + " pcs to " + e.data.stage + " for " + String(e.data.purpose || "").toLowerCase()));
   // PO lines this lot is linked to, with sqft delivered on each (all linked lots, phone entries included)
   const poLines = (k) => rows("SELECT ol.id, ol.qty_sqft q, o.po_no, ol.item FROM lot_orders lo JOIN order_lines ol ON ol.id=lo.line_id JOIN orders o ON o.id=ol.order_id WHERE lo.lot_no=?", [k]).map((r) => ({ ...r, del: rows("SELECT lot_no FROM lot_orders WHERE line_id=?", [r.id]).reduce((t, x) => t + deliveredSqft(x.lot_no), 0) }));
   const deliveredPcs = (k) => rows("SELECT IFNULL(SUM(pcs),0) p FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k])[0].p + (data.phoneDel[k] || []).reduce((a, e) => a + (Number(e.pcs) || 0), 0) - data.voidLive.filter((e) => e.lot_no === k).reduce((a, e) => a + (Number(e.data.pcs) || 0), 0);
@@ -2599,8 +2739,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function chemBlock(l, canAct) {
     const r = rows("SELECT IFNULL(section,'') s, COUNT(*) n, -SUM(qty) q, MAX(entry_date) d, SUM(reason LIKE 'Old system%') old FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND IFNULL(section,'')<>'REWORK' AND UPPER(ref)=? GROUP BY IFNULL(section,'')", [l.lot_no]);
-    const st = chemState(l), wait = entries.filter((e) => e.type === "chem_undo" && e.status === "pending" && e.lot_no === l.lot_no), re = r.some((x) => !["CRUSTING", "FINISHING"].includes(x.s));
-    const sec = ["CRUSTING", "FINISHING"], todo = sec.filter((s) => st[s] === "todo" && st.r && chemNeed(st.r, s).lines.length), rw = entries.filter((e) => e.type === "chem_readjust" && e.status === "pending" && e.lot_no === l.lot_no), ch = !rw.length ? chemChanges(l, st) : [], adjW = sec.filter((s) => st[s] === "wait");
+    const st = chemState(l), wait = entries.filter((e) => e.type === "chem_undo" && isWait(e) && e.lot_no === l.lot_no), re = r.some((x) => !["CRUSTING", "FINISHING"].includes(x.s));
+    const sec = ["CRUSTING", "FINISHING"], todo = sec.filter((s) => st[s] === "todo" && st.r && chemNeed(st.r, s).lines.length), rw = entries.filter((e) => e.type === "chem_readjust" && isWait(e) && e.lot_no === l.lot_no), ch = !rw.length ? chemChanges(l, st) : [], adjW = sec.filter((s) => st[s] === "wait");
     if (!r.length && !(canAct && l.state === "OPEN" && todo.length) && !adjW.length) return "";
     return `<h3>Chemical entries</h3>${r.length ? `<div class="tbl"><table><thead><tr><th>Section</th><th class="r">Lines</th><th class="r">Qty</th><th>Last</th><th></th></tr></thead><tbody>${r.map((x) => `<tr><td>${esc(x.s.toLowerCase() || "-")}</td><td class="r num">${x.n}</td><td class="r num">${fmtN(x.q, 2)}</td><td class="nw">${fmtS(x.d)}</td><td>${x.old ? `<span class="wait">old system</span>` : canAct && !wait.length && !re && x.s ? `<button class="mini" data-chemundo="${esc(x.s)}">Undo</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${adjW.length ? `<p class="note"><span class="wait">Stock adjustment waiting for Excel:</span> ${esc(adjW.map((x) => x.toLowerCase()).join(", "))}.</p>` : ""}
@@ -2630,7 +2770,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${muteTxt}
       ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="rework:${esc(l.lot_no)}">Rework</button>` : ""}${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
       ${canAct && !formOpen && l.state === "OPEN" && l.lot_pcs > 0 && deliveredPcs(k) >= l.lot_pcs - 0.0001 ? `<p class="missing">All ${fmtN(l.lot_pcs, 0)} pcs are delivered. <button class="link" data-markdisp>Mark as Dispatched</button></p>` : ""}
-      ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && e.status === "pending" && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
+      ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && isWait(e) && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
       ${store && canWrite && !formOpen && l.state === "ARCHIVED" && returnable(l).s > 0 ? `<div class="acts"><button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button></div>` : ""}
       ${formOpen === "stage" ? fsheet(stageForm(l)) : formOpen === "delivery" ? fsheet(deliveryForm(l)) : formOpen === "lot" ? fsheet(lotForm(l)) : ""}
       ${l.isNew ? `<p class="note"><span class="wait">New lot, waiting for Excel.</span> ${l.splitOf ? `Split from ${esc(l.splitOf)}. It becomes a copy of that lot when imported.` : "The number was given on the phone and everything here works already. Excel keeps the number unless it was used on the PC in the meantime; then the lot takes the next free one and all its entries follow."}</p>` : l.phone ? `<p class="note"><span class="wait">Phone entry not in Excel yet.</span> The details here include it.</p>` : ""}
@@ -2640,13 +2780,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         ...(data.deducted[l.lot_no] ? [["Chemicals deducted", "₹" + fmtN(data.deducted[l.lot_no][0], 0)]] : []), ...(c ? [["Chemical cost", "₹" + fmtN(c.chem, 0) + " (₹" + fmtN(c.chemSqft, 2) + " / sqft)"]].concat(c.rw ? [["Rework cost", "₹" + fmtN(c.rw, 0)]] : []).concat([["Cost price", "₹" + fmtN(c.perSqft, 2) + " / sqft" + (c.rw ? " with rework" : "")]]) : rwCost(k) ? [["Rework cost", "₹" + fmtN(rwCost(k), 0)]] : []),
         ["Process page", `${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : "Not set"))}${l.recKey ? "" : `<br><span class="note">No recipe saved on this page</span>`}${canAct ? `<br><button class="mini" data-form="page:${esc(l.lot_no)}">Change process page</button>` : ""}`], ["Archived on", fmtD(l.archived_on)]])}</details>`; })()}
       ${l.remarks ? remarksHtml(l.remarks) : ""}
-      <h3>Skins and where they came from</h3>${skinsTable(k)}${entries.filter((e) => e.type === "skins_back" && e.status === "pending" && (e.data.to === k || e.data.from === k)).map((e) => `<p class="note"><span class="wait">Waiting for Excel:</span> ${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft back to ${esc(e.data.from)}${e.data.from === k ? " from " + esc(e.data.to) : ""}.</p>`).join("")}
+      <h3>Skins and where they came from</h3>${skinsTable(k)}${entries.filter((e) => e.type === "skins_back" && isWait(e) && (e.data.to === k || e.data.from === k)).map((e) => `<p class="note"><span class="wait">Waiting for Excel:</span> ${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft back to ${esc(e.data.from)}${e.data.from === k ? " from " + esc(e.data.to) : ""}.</p>`).join("")}
       <h3>Stage history</h3>${hist.length ? `<div class="tbl"><table><thead><tr><th>Moved on</th><th>From</th><th>To</th><th class="r">Days in previous</th></tr></thead><tbody>${hist.map((h) =>
         `<tr><td class="nw">${fmtS(h.moved_on)}</td><td>${esc(h.from_stage)}</td><td>${esc(h.to_stage)}</td><td class="r num">${fmtN(h.days_in_prev, 0)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No stage moves recorded through the app yet.</p>`}
       ${pd.length ? `<h3>Deliveries from the phone</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${pd.map((d) =>
         `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${store && canWrite ? ` <button class="mini" data-deledit="e:${esc(d.id)}">Edit</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
-        { const w = entries.find((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type === "DELIVERY" && !w && store && canWrite ? ` <button class="mini" data-deledit="d:${d.id}">Edit</button>` : ""}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
+        { const w = entries.find((e) => e.type === "delivery_void" && isWait(e) && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type === "DELIVERY" && !w && store && canWrite ? ` <button class="mini" data-deledit="d:${d.id}">Edit</button>` : ""}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
       ${(() => { const iv = invOfLot(k); return iv.length ? `<h3>Invoices</h3><p>${iv.map((v) => `<button class="mini" data-go="orders" data-k="inv:${esc(v.id)}">${esc(invName(v))} · ${fmtD(v.date)}</button>`).join(" ")}</p>` : ""; })()}
       ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
         const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
