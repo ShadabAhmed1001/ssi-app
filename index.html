@@ -1644,7 +1644,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 134, at: "2026-11-15T18:02:47+05:30", notes: "Purchase bills: type chemical purchase bills on the phone; Excel posts them into Tally and the stock counts them at once. Same bill already in Tally: compare and keep one, both or none." };
+  const APP_BUILD = { v: 135, at: "2026-11-15T20:40:37+05:30", notes: "Health check: old names whose ledger rows cancel out (the 7 Nov migration) are no longer listed as needing a chemical." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2504,6 +2504,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const ro = xl(wb, "CHEM REORDER");
     for (let r = 10, e = lastRow(ro); r <= e; r++) { const k = xtxt(cv(ro, "A" + r)); if (k) a.run("INSERT OR REPLACE INTO chem_min VALUES(?,?,?,?)", [k, xfl(cv(ro, "H" + r)), xfl(cv(ro, "E" + r)), xfl(cv(ro, "F" + r))]); }
     q(src, "SELECT id,entry_date,chemical,qty,entry_type,ref,section,reason,status FROM chem_ledger WHERE entry_type<>'OPENING'").forEach((m) => a.run("INSERT INTO chem_moves VALUES(?,?,?,?,?,?,?,?,?)", [m.id, m.entry_date, m.chemical, m.qty, m.entry_type, m.ref, m.section, m.reason, m.status]));
+    // OPENING rows per chemical (not copied above): needed to tell a name whose rows net to nothing
+    { const op = {}; try { q(src, "SELECT UPPER(chemical) n, SUM(qty) q FROM chem_ledger WHERE entry_type='OPENING' AND IFNULL(status,'OK')='OK' GROUP BY UPPER(chemical)").forEach((r) => { op[r.n] = r.q; }); } catch (e) { /* older db */ }
+      a.run("INSERT OR REPLACE INTO meta VALUES('chem_open',?)", [JSON.stringify(op)]); }
     // machinery rates and audit history
     const mw = xl(wb, "F. MACHINERY");
     for (let r = 2, e = lastRow(mw); r <= e; r++) { const k = xtxt(cv(mw, "A" + r)); if (k) a.run("INSERT OR REPLACE INTO machinery VALUES(?,?,?,?,?)", [k.toUpperCase(), xfl(cv(mw, "B" + r)), xfl(cv(mw, "C" + r)), xfl(cv(mw, "D" + r)), xfl(cv(mw, "E" + r))]); }
@@ -2612,8 +2615,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     Object.keys(ot).filter((k) => /^[PL]\d/.test(k)).forEach((k) => { const i0 = inn[k] || [0, 0], p0 = i0[0] - ot[k][0], s0 = i0[1] - ot[k][1]; if (p0 < -0.0001 || s0 < -0.5) out.push({ go: k[0] === "P" ? "purchases" : "lots", lot: k, area: "Skins", text: `More given out than received: ${fmtN(p0, 0)} pcs, ${fmtN(s0, 2)} sqft left`, todo: "Check the entries" }); });
     data.orders.filter((o) => !o.isNew && !o.lots.length && o.po_date && (today - toDate(o.po_date)) / DAY >= 7).forEach((o) => out.push({ go: "orders", lot: String(o.id), label: "PO " + o.po_no, area: "Orders", text: `${o.customer} - ${o.item}: not started, ${Math.round((today - toDate(o.po_date)) / DAY)} days since the PO`, todo: "Create a lot for it with New lot and pick the PO" }));
     // chemical ledger rows under a name that is not on A. CHEMICALS (and no alias points it at one): their stock is not counted anywhere
-    try { const known = new Set(data.chemicals.map((c) => UP(c.name))), al = data.alias || {};
-      rows("SELECT chemical, COUNT(*) n, SUM(qty) q FROM chem_moves WHERE status='OK' GROUP BY UPPER(chemical)").filter((r) => !known.has(UP(r.chemical)) && !al[UP(r.chemical)]).forEach((r) =>
+    try { const known = new Set(data.chemicals.map((c) => UP(c.name))), al = data.alias || {}; let op = null; try { const v = one("SELECT value FROM meta WHERE key='chem_open'"); op = v ? JSON.parse(v) : null; } catch (e) { op = null; }
+      rows("SELECT chemical, COUNT(*) n, SUM(qty) q FROM chem_moves WHERE status='OK' GROUP BY UPPER(chemical)").filter((r) => !known.has(UP(r.chemical)) && !al[UP(r.chemical)] && !(op && Math.abs((r.q || 0) + (op[UP(r.chemical)] || 0)) <= 0.0005)).forEach((r) =>
         out.push({ go: "chemicals", lot: r.chemical, area: "Chemicals", text: `${r.n} ledger entr${r.n === 1 ? "y" : "ies"} (${fmtN(r.q, 3)} kg) under '${r.chemical}', which is not on A. CHEMICALS`, todo: "Point it at the right chemical (Rename or Same as on the chemical), or add it" })); } catch (e) { /* older data */ }
     // a tick says the chemicals were taken, but no stock was taken for that section (lots after the ledger started, L533 on)
     data.lots.filter((l) => l.state !== "ARCHIVED" && !l.isNew && (parseFloat(String(l.lot_no).slice(1)) || 0) > 532).forEach((l) => [["CRUSTING", l.chem_crust], ["FINISHING", l.chem_finish]].forEach(([sec, t]) => {
