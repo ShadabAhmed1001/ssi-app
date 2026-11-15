@@ -575,7 +575,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s) };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -834,6 +834,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     $("#n-orders").textContent = data.orders.filter((o) => o.grp === 1).length + " open";
     $("#n-purchases").textContent = data.purchases.filter((p) => p.grp === 1).length + " with skins";
     $("#n-chemicals").textContent = data.chemicals.filter((c) => c.grp === 1).length + " in stock";
+    try { shAfterLoad(builtAt, live0.map((e) => e.id)); } catch (e) { console.error("app vs excel check", e); }
   }
 
   // ---------------------------------------------------------------- lists
@@ -1132,7 +1133,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 125, at: "2026-11-15T01:14:40+05:30", notes: "Stage guide, chemical usage by lot, chemical cleanup, purchase ledger and Tally lists as views; quotations and payments taken out of the menu" };
+  const APP_BUILD = { v: 126, at: "2026-11-15T09:06:28+05:30", notes: "Health check: App vs Excel, which checks after each Excel update that Excel made the same of the imported entries as the app did" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2051,9 +2052,75 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     data.orders.filter((o) => !o.isNew && !o.lots.length && o.po_date && (today - toDate(o.po_date)) / DAY >= 7).forEach((o) => out.push({ go: "orders", lot: String(o.id), label: "PO " + o.po_no, area: "Orders", text: `${o.customer} - ${o.item}: not started, ${Math.round((today - toDate(o.po_date)) / DAY)} days since the PO`, todo: "Create a lot for it with New lot and pick the PO" }));
     return out;
   }
+  // ---------------------------------------------------------------- App vs Excel check (the road to the app keeping the records)
+  // After every load the phone notes what it shows for each lot, purchase, chemical and PO line. When Excel's next data
+  // arrives with some of those entries imported, it compares what the app worked out with what Excel made of them, but only
+  // for the records those entries touched. A month of clean checks is the sign the app can do the work without Excel.
+  const shType = (k) => String(k).replace(/_/g, " ");
+  const SH_KEY = "ssi-shadow-v1", SH_LOG = "ssi-shadow-log-v1";
+  const shN = (v, d) => { const x = Number(v); return isFinite(x) ? Math.round(x * Math.pow(10, d)) / Math.pow(10, d) : 0; };
+  function shFp() {
+    const L = {}, P = {}, C = {}, O = {};
+    data.lots.forEach((l) => { const rc = l.recKey && data.recipes[l.recKey]; L[UP(l.lot_no)] = { stage: UP(l.stage || ""), state: l.state || "", pcs: shN(l.lot_pcs, 2), sqft: shN(l.lot_sqft, 2), delivered: shN(l.delivered, 2), crust: l.chem_crust === "✔" ? "done" : "not done", finish: l.chem_finish === "✔" ? "done" : "not done", page: String(l.process_page || ""), version: rc ? Number(rc.version) || 0 : 0, customer: UP(l.customer || ""), product: UP(l.product || "") }; });
+    data.purchases.forEach((p) => { P[UP(p.key)] = { pcs_in: shN(p.inP, 2), sqft_in: shN(p.inS, 2), pcs_left: shN(p.leftP, 2), sqft_left: shN(p.leftS, 2), closed: p.closed_on ? "closed" : "open" }; });
+    data.chemicals.forEach((c) => { C[UP(c.name)] = { ledger: shN((Number(c.available) || 0) - (Number(c.tally_stock) || 0), 3), rate: shN(c.rate, 2), pack: shN(c.pack_size, 2) }; });
+    data.orders.forEach((o) => { O[String(o.id)] = { po: UP(o.po_no || ""), item: UP(o.item || ""), qty: shN(o.qty_sqft, 2), rate: shN(o.rate, 2), delivered: shN(o.delv, 2), lots: (o.lots || []).map(UP).sort().join(","), closed: o.closed_on ? "closed" : o.short ? "short" : "open" }; });
+    return { L, P, C, O };
+  }
+  // which records an entry can change
+  function shTouch(e, fp, t) {
+    const add = (s) => { String(s ?? "").toUpperCase().replace(/\b([LP]\d+[A-Z0-9]*)\b/g, (m) => { (m[0] === "L" ? t.L : t.P).add(m); return m; }); };
+    const walk = (o) => { if (o === null || o === undefined) return; if (typeof o === "object") Object.values(o).forEach(walk); else add(o); };
+    walk([e.lot_no, e.base_lot, e.data, e.changes, e.cells ? null : null]);
+    const chem = (n) => { if (n && fp.C[UP(n)]) t.C.add(UP(n)); };
+    if (/^chem/.test(e.type) || e.type === "count" || e.type === "audit") { chem(e.lot_no); if (e.data) { chem(e.data.chemical); chem(e.data.to); } }
+    (e.lines || []).forEach((x) => chem(x.n));
+    if (e.type === "rework_use") rwLines(e).forEach((x) => { if (x.kind === "CHEM") chem(x.item); });
+    const po = /^PO\s+(.+)$/i.exec(String(e.lot_no || "")); if (po) Object.entries(fp.O).forEach(([id, o]) => { if (o.po === UP(po[1]).trim()) t.O.add(id); });
+  }
+  function shCompare(a, b, imp) {
+    const t = { L: new Set(), P: new Set(), C: new Set(), O: new Set() };
+    imp.forEach((e) => shTouch(e, b, t));
+    [...t.L].forEach((k) => { const l = data.lotBy[k]; if (l && l.po && l.po.line_id) t.O.add(String(l.po.line_id)); });
+    const NAMES = { L: "Lot", P: "Purchase", C: "Chemical", O: "PO line" }, out = []; let checked = 0;
+    Object.keys(t).forEach((area) => t[area].forEach((k) => {
+      const x = a[area][k], y = b[area][k], by = imp.filter((e) => JSON.stringify([e.lot_no, e.data, e.lines, e.changes, e.base_lot]).toUpperCase().includes(area === "O" && y ? y.po : k)).map((e) => e.type);
+      const name = area === "O" ? "PO " + ((y || x || {}).po || "?") + " · " + ((y || x || {}).item || "") : k;
+      if (!x && !y) return; checked++;
+      if (!x || !y) { out.push({ area: NAMES[area], key: name, field: "", app: x ? "there" : "not there", excel: y ? "there" : "not there", by: [...new Set(by)] }); return; }
+      Object.keys(y).forEach((f) => { if (String(x[f]) !== String(y[f])) out.push({ area: NAMES[area], key: name, field: f, app: x[f], excel: y[f], by: [...new Set(by)] }); });
+    }));
+    return { checked, diffs: out };
+  }
+  function shAfterLoad(builtAt, liveIds) {
+    if (entriesSeen !== true || !data.lots) return;
+    let prev = null; try { prev = JSON.parse(localStorage.getItem(SH_KEY) || "null"); } catch (e) { prev = null; }
+    const fp = shFp();
+    if (prev && prev.builtAt && builtAt && builtAt > prev.builtAt) {
+      const now = new Set(liveIds), byId = new Map(entries.map((e) => [e.id, e]));
+      const imp = (prev.ids || []).filter((id) => !now.has(id)).map((id) => byId.get(id)).filter((e) => e && e.status === "imported");
+      if (imp.length) {
+        const r = shCompare(prev.fp, fp, imp), types = {}; imp.forEach((e) => { types[e.type] = (types[e.type] || 0) + 1; });
+        let log = []; try { log = JSON.parse(localStorage.getItem(SH_LOG) || "[]") || []; } catch (e) { log = []; }
+        log.unshift({ at: new Date().toISOString(), from: prev.builtAt, to: builtAt, n: imp.length, types, checked: r.checked, diffs: r.diffs.slice(0, 200), more: Math.max(0, r.diffs.length - 200) });
+        try { localStorage.setItem(SH_LOG, JSON.stringify(log.slice(0, 30))); } catch (e) { /* full */ }
+      }
+    }
+    try { localStorage.setItem(SH_KEY, JSON.stringify({ builtAt, ids: liveIds, fp, at: new Date().toISOString() })); } catch (e) { /* full */ }
+  }
+  function shView() {
+    let log = []; try { log = JSON.parse(localStorage.getItem(SH_LOG) || "[]") || []; } catch (e) { log = []; }
+    const head = `<div class="group">App vs Excel</div><p class="note" style="margin:4px 2px">Each time Excel's data arrives, the app checks that Excel made the same of the imported entries as the app did: stages, pcs, sqft, deliveries, skins left, chemical stock, PO deliveries. A month with no differences means the app can keep the records itself.</p>`;
+    if (!log.length) return head + `<p class="note" style="margin:4px 2px">No check yet. The first one runs on this phone at the next Excel update that imports its entries.</p>`;
+    const days30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), recs = days30.reduce((t, r) => t + (r.checked || 0), 0), bad = days30.reduce((t, r) => t + new Set(r.diffs.map((d) => d.area + d.key)).size, 0);
+    return head + `<p style="margin:4px 2px"><b>Last 30 days:</b> ${days30.length} update${days30.length === 1 ? "" : "s"}, ${fmtN(recs, 0)} records checked, ${bad ? `<span class="late">${bad} differed</span>` : `<span class="ok">all matched</span>`}.</p>` +
+      log.slice(0, 10).map((r) => `<details class="hcx"${r.diffs.length && r === log[0] ? " open" : ""}><summary><b>${esc(fmtST(r.at))}</b> · ${r.n} entr${r.n === 1 ? "y" : "ies"} imported · ${r.checked} records · ${r.diffs.length ? `<span class="late">${r.diffs.length + (r.more || 0)} difference${r.diffs.length + (r.more || 0) === 1 ? "" : "s"}</span>` : `<span class="ok">matched</span>`}</summary>
+        <p class="note" style="margin:2px 0">${esc(Object.entries(r.types).map(([k, v]) => v + " " + shType(k).toLowerCase()).join(", "))}</p>
+        ${r.diffs.length ? `<div class="tbl"><table><thead><tr><th>Record</th><th>What</th><th class="r">App had</th><th class="r">Excel has</th><th>From</th></tr></thead><tbody>${r.diffs.map((d) => `<tr><td>${esc(d.area)} ${d.area === "Lot" ? lotLink(d.key) : esc(d.key)}</td><td>${esc(d.field)}</td><td class="r num">${esc(String(d.app))}</td><td class="r num">${esc(String(d.excel))}</td><td class="wrap">${esc(d.by.map((k) => shType(k).toLowerCase()).join(", ") || "changed in Excel?")}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:2px 0">A difference can also be a change made in Excel on the PC at the same time.</p>` : ""}</details>`).join("");
+  }
   function healthView() {
     const items = healthItems(), areas = ["Tracker", "Stage", "Due date", "Chemicals", "Delivery", "Skins", "Orders"];
-    return `<div class="count"><span>${items.length} items</span></div>` + (items.length ? areas.map((a) => { const x = items.filter((i) => i.area === a); return x.length ? `<div class="group">${a} · ${x.length}</div>` + x.map((i) =>
+    return shView() + `<div class="count"><span>${items.length} items</span></div>` + (items.length ? areas.map((a) => { const x = items.filter((i) => i.area === a); return x.length ? `<div class="group">${a} · ${x.length}</div>` + x.map((i) =>
       `<button class="hc" data-hgo="${i.go || "lots"}" data-k="${esc(i.lot)}"><b>${esc(i.label || i.lot)}</b><span>${esc(i.text)}</span><span class="td">${esc(i.todo)}</span></button>`).join("") : ""; }).join("") : `<p class="empty">Everything looks fine.</p>`);
   }
   const TCOLS = [["lot_no", "Lot"], ["status", "Status"], ["customer", "Customer"], ["product", "Product"], ["order_qty", "Order qty", 1], ["lot_pcs", "Pcs", 1], ["lot_sqft", "Sqft", 1], ["shaving", "Shaving"], ["order_date", "Order date", 2], ["due_date", "Due", 2], ["dueIn", "Days left", 1], ["stage", "Stage"], ["inStage", "In stage", 1], ["weight", "Weight"], ["process_page", "Process page"], ["delivered", "Delivered", 1], ["remarks", "Remarks"]];
