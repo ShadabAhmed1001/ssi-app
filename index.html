@@ -568,6 +568,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const fmtST = (s) => [fmtS(s), fmtT(s)].filter(Boolean).join(" ");
   const fmtS = (s) => { const d = toDate(s); return d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }).replace(/ /g, "-") : ""; };
   const days = (s) => { const d = toDate(s); return d ? Math.round((d - today) / DAY) : null; };
+  // used in recipes but not kept as stock (user, 16 Nov 2026): left out of stock lists, negatives, reorder, audits and shortage checks
+  const NON_STOCK = new Set(["WATER", "HOT WATER"]);
   const words = (q) => q.toLowerCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   const match = (hay, ws) => { const h = hay.toLowerCase(); return ws.every((w) => h.includes(w)); };
 
@@ -1141,9 +1143,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       of("rework_use").forEach((e) => rwLines(e).filter((x) => x.kind === "CHEM" && x.item.toUpperCase() === c.name.toUpperCase()).forEach((x) => { c.available = (c.available || 0) - x.qty; pm.push({ date: e.created_at, kind: "rework", ref: e.lot_no, qty: -x.qty, status: e.status }); }));
       of("rework_void").forEach((e) => { const q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE status='OK' AND section='REWORK' AND UPPER(chemical)=UPPER(?) AND reason LIKE ?", [c.name, "%" + e.data.use + "%"])[0].q; if (q) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "rework removed", ref: e.lot_no, qty: -q, status: e.status }); } });
       undoE.forEach((e) => { const q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=? AND UPPER(chemical)=UPPER(?)" + (e.data.what === "ALL" ? " AND IFNULL(section,'')<>'REWORK'" : " AND section=?"), e.data.what === "ALL" ? [e.lot_no, c.name] : [e.lot_no, c.name, e.data.what])[0].q; if (q) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "undo " + e.data.what.toLowerCase(), ref: e.lot_no, qty: -q, status: e.status }); } });
-      const min = m.min_stock || 0, short = min > 0 && (c.available || 0) < min ? min - (c.available || 0) : 0;
-      return Object.assign(c, { phone: ph, phoneMv: pm, min, used: m.used, avgWeek: m.avg_week, short, packs: short && c.pack_size ? Math.ceil(short / c.pack_size) : 0 });
-    }).map((c) => Object.assign(c, { grp: Math.abs(c.available || 0) > 0.0005 ? 1 : 2, hay: c.name }));
+      const nonStock = NON_STOCK.has(UP(c.name)), min = nonStock ? 0 : m.min_stock || 0, short = min > 0 && (c.available || 0) < min ? min - (c.available || 0) : 0;
+      return Object.assign(c, { phone: ph, phoneMv: pm, min, used: m.used, avgWeek: m.avg_week, short, packs: short && c.pack_size ? Math.ceil(short / c.pack_size) : 0, nonStock });
+    }).map((c) => Object.assign(c, { grp: c.nonStock ? 3 : Math.abs(c.available || 0) > 0.0005 ? 1 : 2, hay: c.name }));
 
     data.stages = rows("SELECT * FROM stages ORDER BY seq");
     const NONE = "proc:~none", procs = {};
@@ -1300,7 +1302,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots") return f === "open" ? it.grp === 1 : f === "late" ? needsAttn(it) && !isMuted(it.lot_no) : f === "done" ? it.grp === 2 : it.grp === 3;
     if (tab === "orders") return f === "open" ? it.grp === 1 : f === "start" ? (it.status === "NOT STARTED" || it.status === "PART IN PRODUCTION") : f === "small" ? smallBal(it) : it.grp === 2;
     if (tab === "purchases") return f === "open" ? it.grp === 1 : f === "over" ? it.over : it.grp === 2;
-    return f === "stock" ? it.grp === 1 : f === "reorder" ? it.short > 0 : f === "neg" ? (it.available || 0) < 0 : it.grp === 2;
+    return f === "stock" ? it.grp === 1 : f === "reorder" ? it.short > 0 : f === "neg" ? (it.available || 0) < 0 && !it.nonStock : f === "zero" ? it.grp === 2 : false;
   }
   // pages of the app found by name in the search box ("machinery", "settings", "audit chemicals")
   const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
@@ -1593,7 +1595,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function cleanupView(ws) {
     const use = {}; rows("SELECT chemical, ref, entry_date FROM chem_moves WHERE entry_type='LOT USE' AND status<>'VOID' ORDER BY entry_date").forEach((m) => { const o = use[m.chemical.toUpperCase()] = use[m.chemical.toUpperCase()] || { lots: new Set(), last: "", at: "" }; o.lots.add(m.ref); o.last = m.ref; o.at = m.entry_date; });
     const old = iso(new Date(today.getTime() - 120 * DAY));
-    const L = data.chemicals.map((c) => { const u = use[c.name.toUpperCase()] || { lots: new Set(), last: "", at: "" }, iss = [];
+    const L = data.chemicals.filter((c) => !c.nonStock).map((c) => { const u = use[c.name.toUpperCase()] || { lots: new Set(), last: "", at: "" }, iss = [];
       const inT = c.tally_stock !== null && c.tally_stock !== undefined && Number(c.tally_stock) !== 0 || Number(c.rate) > 0;
       if (Number(c.available) < -1e-6) iss.push("Negative stock");
       if (!Number(c.rate)) iss.push("No rate");
@@ -1691,7 +1693,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 137, at: "2026-11-16T00:20:32+05:30", notes: "Menu button on every page. Search finds app pages (machinery, settings, stock audit…). Machinery: add, change rates or name, delete (Excel updates F. MACHINERY)." };
+  const APP_BUILD = { v: 138, at: "2026-11-16T00:49:31+05:30", notes: "Chemical movements: Tally purchases, the ledger's opening line and waiting entries in one list with the balance after each line. Water and hot water are no longer counted as stock." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1704,7 +1706,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ["purchases", "open", "", fmtN(pcsLeft, 0), "skins not yet in a lot"]];
     const over = (l) => l.maxDays > 0 ? l.inStage - l.maxDays : 0;
     const top = bad.concat(warn).sort((a, b) => (b.flag === "bad") - (a.flag === "bad") || Math.max(over(b), -(b.dueIn ?? 0)) - Math.max(over(a), -(a.dueIn ?? 0))).slice(0, 5);
-    const overGiven = data.purchases.filter((p) => p.over).length, neg = data.chemicals.filter((c) => (c.available || 0) < 0).length;
+    const overGiven = data.purchases.filter((p) => p.over).length, neg = data.chemicals.filter((c) => (c.available || 0) < 0 && !c.nonStock).length;
     const noProc = data.processes.find((p) => p.none);
     const checks = [];
     const arch = archiveReady();
@@ -2266,7 +2268,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function auditPick(scope) {
     const seen = {}; rows("SELECT chemical, at FROM last_counted").forEach((r) => { seen[r.chemical.toUpperCase()] = r.at; });
-    const all = data.chemicals.map((c) => ({ n: c.name, b: +(c.available || 0).toFixed(6), r: c.rate || 0, p: c.pack_size || 0 }));
+    const all = data.chemicals.filter((c) => !c.nonStock).map((c) => ({ n: c.name, b: +(c.available || 0).toFixed(6), r: c.rate || 0, p: c.pack_size || 0 }));
     if (scope === "FULL") return all;
     const key = (x) => (x.b < -0.0005 ? "0" : "1" + (seen[x.n.toUpperCase()] || "0000-00-00")) + "|" + String(Math.round((1e10 - Math.abs(x.b * x.r)) * 100)).padStart(13, "0");
     const out = []; all.slice().sort((a, b) => key(a).localeCompare(key(b))).forEach((x) => { if (x.b < -0.0005 || out.length < data.auditSet.cycle) out.push(x); });
@@ -3114,8 +3116,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function chemPlan(l, what) {
     const r = getRecipe(l.recKey), secs = what === "BOTH" ? ["CRUSTING", "FINISHING"] : [what], parts = secs.map((s) => chemNeed(r, s)), m = {};
     parts.forEach((p) => p.lines.forEach((x) => { m[x.n] = (m[x.n] || 0) + x.q; }));
-    const lines = Object.keys(m).map((n) => { const c = data.chemBy[n.toUpperCase()], avail = c.available || 0, q = +m[n].toFixed(4), left = avail - q, p = c.pack_size || 0, opened = p > 0 ? Math.floor(+(Math.max(avail, 0) / p).toFixed(6)) - Math.floor(+(Math.max(left, 0) / p).toFixed(6)) : 0; return { n, q, avail, left, pack: p, opened, rate: c.rate || 0 }; });
-    return { secs, parts, lines, notFound: [...new Set(parts.flatMap((p) => p.notFound))], short: lines.filter((x) => x.left < -0.00005), zero: lines.filter((x) => Math.abs(x.left) <= 0.00005), packs: lines.filter((x) => x.opened > 0), value: lines.reduce((a, x) => a + x.q * x.rate, 0) };
+    const lines = Object.keys(m).map((n) => { const c = data.chemBy[n.toUpperCase()], avail = c.available || 0, q = +m[n].toFixed(4), left = avail - q, p = c.pack_size || 0, opened = p > 0 ? Math.floor(+(Math.max(avail, 0) / p).toFixed(6)) - Math.floor(+(Math.max(left, 0) / p).toFixed(6)) : 0; return { n, q, avail, left, pack: p, opened, rate: c.rate || 0, ns: !!c.nonStock }; });
+    return { secs, parts, lines, notFound: [...new Set(parts.flatMap((p) => p.notFound))], short: lines.filter((x) => !x.ns && x.left < -0.00005), zero: lines.filter((x) => !x.ns && Math.abs(x.left) <= 0.00005), packs: lines.filter((x) => !x.ns && x.opened > 0), value: lines.reduce((a, x) => a + x.q * x.rate, 0) };
   }
   function lotDetail(k) {
     const l = data.lotBy[k]; if (!l) return "";
@@ -3771,7 +3773,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <div class="two"><label>Pcs<input id="rwp-pcs"${n} value="${esc(r.pcs || "")}"></label><label>Weight (kg)<input id="rwp-wt"${n} value="${esc(wt || "")}"></label><label>Sqft<input id="rwp-sqft"${n} value="${esc(r.sqft || "")}"></label></div>
         <p class="note" style="margin:0">Chemical kg are worked out from the weight, as on a lot's process.</p>${formEnd}</form>`; } },
     rwadj: { title: "Rework stock", html: (a) => { const r = rwBy(a); if (!r) return `<p class="empty">This rework is no longer there.</p>`; if (!rwProc(r).k) return `<p class="empty">Save the rework's process first (Rework process), then adjust its stock.</p>`; const p = rwProc(r), now = new Date(), hm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), old = p.done.reduce((t, x) => t + x.amt, 0);
-      const row = (x) => { const c = x.kind === "CHEM" ? data.chemBy[x.item.toUpperCase()] : null, back = x.kind === "CHEM" ? p.done.filter((y) => y.kind === "CHEM" && y.item.toUpperCase() === x.item.toUpperCase()).reduce((t, y) => t + y.qty, 0) : 0, short = c && x.qty > (c.available || 0) + back + 0.0005;
+      const row = (x) => { const c = x.kind === "CHEM" ? data.chemBy[x.item.toUpperCase()] : null, back = x.kind === "CHEM" ? p.done.filter((y) => y.kind === "CHEM" && y.item.toUpperCase() === x.item.toUpperCase()).reduce((t, y) => t + y.qty, 0) : 0, short = c && !c.nonStock && x.qty > (c.available || 0) + back + 0.0005;
         return `<tr><td>${esc(x.item)}${short ? `<br><span class="soon">${fmtN((c.available || 0) + back, 3)} kg in stock</span>` : ""}</td><td class="r num">${x.kind === "CHEM" ? fmtN(x.qty, 3) + " kg" : fmtN(x.qty, 0) + " rnd"}</td><td class="r num">${fmtN(x.kind === "CHEM" ? x.qty * ((c || {}).rate || 0) : x.amt, 0)}</td></tr>`; };
       return `<form class="fm" id="fm-rwadj" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}</h3><p class="note" style="margin:0">From the rework process v${esc(String(p.rc.version || 1))}. ${p.uses.length ? `What was taken before (₹${fmtN(old, 0)}) is put back, and this is taken instead.` : "These come off stock and the cost is added to the rework."}</p>
         ${p.need.notFound.length ? `<p class="soon" style="margin:0">Not on A. CHEMICALS, so left out: ${esc(p.need.notFound.join(", "))}.</p>` : ""}
@@ -3842,7 +3844,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="acts" style="margin:0"><button class="btn" type="submit" id="fq-next">Save and next</button><button class="btn alt" type="submit" id="fq-save">Save</button>${e ? `<button class="btn alt" type="button" data-cntdel="${esc(e.id)}">Remove count</button>` : ""}<button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     audit_start: { title: "Start an audit", html: () => { const stale = data.asOf !== fmtD(iso(today)), lots = data.lots.filter((l) => l.state !== "ARCHIVED" && l.chem_check).map((l) => l.lot_no);
       return `<form class="fm" id="fm-audit_start"><p class="note" style="margin:0">Book stock is frozen now, from data of ${data.asOf} plus phone entries.${stale ? " Update from Excel first if you bought or used chemicals since then." : ""}</p>
-      <label>What to count<select id="fa-scope"><option value="FULL">Full audit: all ${data.chemicals.length} chemicals</option><option value="CYCLE">Cycle count: ${data.auditSet.cycle} chemicals, negative stock first</option></select></label>
+      <label>What to count<select id="fa-scope"><option value="FULL">Full audit: all ${data.chemicals.filter((c) => !c.nonStock).length} chemicals</option><option value="CYCLE">Cycle count: ${data.auditSet.cycle} chemicals, negative stock first</option></select></label>
       ${lots.length ? `<p class="missing" style="margin:0">Chemicals of these lots are not entered yet: ${esc(lots.join(", "))}. Entries made for them later count as used before the freeze.</p>` : ""}${formEnd}</form>`; } },
     page: { title: "Change process page", html: (a) => { const l = data.lotBy[a], pages = [...new Set(data.pages.concat(l.process_page ? [l.process_page] : []))];
       return `<form class="fm" id="fm-page" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc([l.customer, l.product].filter(Boolean).join(" · "))}. Now on ${esc(l.process_page || "no process page")}.</p>
@@ -4994,7 +4996,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         else { if (!it) return bad("Say what the ₹" + am + " is for."); if (am <= 0) return bad("Type the ₹ amount for " + it + "."); ls.push({ kind: k, item: it, qty: 1, unit: "", rate: am, amt: +am.toFixed(2) }); }
       }
       if (!ls.length && !how) return bad("Say how it was done, or type the chemicals, machine passes or costs of this step.");
-      const short = ls.filter((x) => x.kind === "CHEM" && x.qty > x.avail + 0.0005);
+      const short = ls.filter((x) => x.kind === "CHEM" && !NON_STOCK.has(UP(x.item)) && x.qty > x.avail + 0.0005);
       if (short.length && warnOnce(f, "Not enough in stock: " + short.map((x) => x.item + " (" + fmtN(x.avail, 3) + " kg)").join(", ") + ".")) return;
       const d = { rw: r.key, lot: r.lot, parent: r.parent, date, time, step, how, by }; ls.forEach((x, i) => { d["l" + (i + 1)] = [x.kind, x.item, x.qty, x.unit, x.rate, x.amt, x.note || ""].map((y) => String(y ?? "").replace(/~\^~/g, " ")).join("~^~"); });
       return saveNew({ type: "rework_use", lot_no: r.lot, data: d }, "Step saved" + (ls.length ? ": ₹" + fmtN(ls.reduce((t, x) => t + x.amt, 0), 0) + " added to the rework" : "") + ". It is waiting for Excel.", msg, btn);
@@ -5013,7 +5015,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const r = rwBy(f.dataset.rw), p = rwProc(r), date = need("#rw-date"), time = need("#rw-time"), by = need("#rw-by");
       if (checkDate(date)) return bad(checkDate(date)); if (date < String(r.date || "")) return bad("The date is before the rework started (" + fmtD(r.date) + ").");
       if (p.wait) return bad("The last adjustment is still waiting for Excel. Adjust again once it is imported.");
-      const short = p.need.chem.filter((x) => { const c = data.chemBy[x.item.toUpperCase()], back = p.done.filter((y) => y.kind === "CHEM" && y.item.toUpperCase() === x.item.toUpperCase()).reduce((t, y) => t + y.qty, 0); return c && x.qty > (c.available || 0) + back + 0.0005; });
+      const short = p.need.chem.filter((x) => { const c = data.chemBy[x.item.toUpperCase()], back = p.done.filter((y) => y.kind === "CHEM" && y.item.toUpperCase() === x.item.toUpperCase()).reduce((t, y) => t + y.qty, 0); return c && !c.nonStock && x.qty > (c.available || 0) + back + 0.0005; });
       if (short.length && warnOnce(f, "Not enough in stock: " + short.map((x) => x.item).join(", ") + ". Tap Save again to take it anyway.")) return;
       const d = { rw: r.key, lot: r.lot, parent: r.parent, date, time, step: RW_PROC + " v" + (p.rc.version || 1), how: "Taken from the rework process (" + rwPLot(r) + " on " + p.rc.process + ").", by };
       p.all.forEach((x, i) => { const c = x.kind === "CHEM" ? data.chemBy[x.item.toUpperCase()] || {} : null, rate = c ? c.rate || 0 : x.rate || 0, amt = c ? +(x.qty * rate).toFixed(2) : x.amt;
@@ -5379,16 +5381,26 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function chemDetail(n) {
     const c = data.chemicals.find((x) => x.name === n); if (!c) return "";
-    const mv = rows("SELECT * FROM chem_moves WHERE UPPER(chemical)=UPPER(?) ORDER BY id DESC LIMIT 60", [n]);
+    const mv = rows("SELECT * FROM chem_moves WHERE UPPER(chemical)=UPPER(?) ORDER BY entry_date, id", [n]);
+    // one ledger: Tally purchases (+), the app's ledger, and entries waiting for Excel, oldest first with the balance after each line
+    const tp = [], N = UP(n); trows("SELECT vno, vdate, party, ref, lines FROM tally_purchases").forEach((t) => String(t.lines || "").split("~^~").forEach((ln) => { const x = ln.split("|"); if (UP(x[0]) === N && Number(x[1])) tp.push({ date: String(t.vdate).replace(/^(\d{4})(\d\d)(\d\d)$/, "$1-$2-$3"), kind: "purchase", ref: "Tally " + t.vno, qty: Number(x[1]), why: t.party + (t.ref ? " bill " + t.ref : ""), tally: 1 }); }));
+    const tpSum = tp.reduce((a, x) => a + x.qty, 0), tallyOther = (Number(c.tally_stock) || 0) - tpSum;
+    const L0 = mv.map((m) => ({ date: String(m.entry_date || ""), kind: String(m.entry_type || "").toLowerCase(), ref: m.ref, sec: m.section, qty: Number(m.qty) || 0, why: m.reason, m, void: m.status === "VOID" }))
+      .concat(tp).concat((() => { let op = 0; try { op = Number((JSON.parse(one("SELECT value FROM meta WHERE key='chem_open'") || "{}") || {})[N]) || 0; } catch (e) { op = 0; }
+        return Math.abs(op) > 0.0005 ? [{ date: "2026-10-21 21:31", kind: "opening", ref: "", qty: op, why: "Stock ledger started: use before then, and its corrections" }] : []; })())
+      .concat(c.phone.map((e) => ({ date: String(e.data.date || e.created_at || ""), kind: String(e.data.kind || "").toLowerCase(), ref: "", qty: e.data.kind === "CORRECTION" ? Number(e.data.qty) : -Math.abs(Number(e.data.qty)), why: e.data.reason, wait: 1 })))
+      .concat(c.phoneMv.map((x) => ({ date: String(x.date || ""), kind: x.kind, ref: x.ref, qty: Number(x.qty) || 0, why: "", wait: 1 })))
+      .sort((a, b) => a.date.slice(0, 10).localeCompare(b.date.slice(0, 10)) || (b.tally || 0) - (a.tally || 0) || a.date.localeCompare(b.date));
+    const counted = L0.filter((x) => !x.void).reduce((a, x) => a + x.qty, 0), start = (Number(c.available) || 0) - counted;
+    let bal = start; L0.forEach((x) => { if (!x.void) bal += x.qty; x.bal = bal; });
+    const SHOW = 150, shown = L0.slice(-SHOW).reverse();
     return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${store && canWrite ? `<div class="acts"><button class="btn" data-form="chem:${esc(n)}">Record use or correction</button>${c.isNew ? "" : `<button class="btn alt" data-form="chem_edit:${esc(n)}">Edit</button><button class="btn alt" data-form="chem_rename:${esc(n)}">Rename</button><button class="btn alt" data-form="chem_delete:${esc(n)}">Delete</button>`}</div>` : ""}
       ${kv([["Available", fmtN(c.available, 3)], ["Tally purchased", fmtN(c.tally_stock, 3)], ["Ledger +/-", fmtN(c.ledger_qty, 3)], ["Pack size", fmtN(c.pack_size, 0)],
       ["Rate", c.rate ? "₹" + fmtN(c.rate, 2) : ""], ["Value", c.rate ? "₹" + fmtN((c.available || 0) * c.rate, 0) : ""], ["Min stock", c.min ? fmtN(c.min, 2) : ""], ["Short by", c.short ? `<span class="late">${fmtN(c.short, 2)}</span>` : ""], ["Packs to order", c.packs || ""],
       ["Used (period)", fmtN(c.used, 2)], ["Use per week", fmtN(c.avgWeek, 2)], ["As of", data.asOf]])}
-      ${c.phone.length ? `<h3>Waiting for Excel</h3><div class="tbl"><table><tbody>${c.phone.map((e) => `<tr><td class="nw">${fmtD(e.data.date)}</td><td>${esc(e.data.kind.toLowerCase())}</td><td class="r num">${fmtN(e.data.kind === "CORRECTION" ? e.data.qty : -Math.abs(e.data.qty), 3)}</td><td>${esc(e.data.reason)}</td></tr>`).join("")}</tbody></table></div>` : ""}
-      ${c.phoneMv.length ? `<h3>Lot entries from the phone</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Lot</th><th class="r">Qty</th><th></th></tr></thead><tbody>${c.phoneMv.map((m) => `<tr><td class="nw">${fmtS(m.date)}</td><td>${esc(m.kind)}</td><td class="nw">${data.lotBy[m.ref] ? lotLink(m.ref) : esc(m.ref)}</td><td class="r num">${fmtN(m.qty, 3)}</td><td><span class="wait">${m.status === "pending" ? "waiting for Excel" : "imported"}</span></td></tr>`).join("")}</tbody></table></div>
-      <p class="note">Available above already includes these. Movements below fill in after Update from Excel.</p>` : ""}
-      <h3>Movements</h3>${mv.length ? `<div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th class="r">Qty</th><th>Reason</th></tr></thead><tbody>${mv.map((m) =>
-        `<tr class="${m.status === "VOID" ? "void" : ""}"><td class="nw">${fmtS(m.entry_date)}</td><td class="nw">${esc(String(m.entry_type).toLowerCase())}</td><td class="nw">${data.lotBy[m.ref] ? lotLink(m.ref) : esc(m.ref)}${m.section ? " " + esc(String(m.section).toLowerCase()) : ""}</td><td class="r num">${fmtN(m.qty, 3)}</td><td>${esc(m.reason)}${store && canWrite && m.status === "OK" && ["SAMPLING", "WASTAGE", "ISSUED OTHER", "CORRECTION"].includes(String(m.entry_type).toUpperCase()) && !entries.some((e) => e.type === "chem_void" && e.status === "pending" && Number(e.data.id) === m.id) ? ` <button class="mini" data-form="chem_void:${m.id}">Void</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No movements since the ledger started.</p>`}`;
+      <h3>Movements</h3>${L0.length ? `<p class="note" style="margin:0 0 6px">Newest first. Purchases come from Tally${tp.length ? " (" + tp.length + " this year, " + fmtN(tpSum, 3) + " kg)" : ""}; use and corrections from the stock ledger. Balance is the stock after each line.${Math.abs(start) > 0.0005 ? ` Stock before the first line: <b>${fmtN(start, 3)}</b>${Math.abs(tallyOther) > 0.0005 ? ` (Tally shows ${fmtN(tallyOther, 3)} besides purchases)` : ""}.` : ""}</p>
+      <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th class="r">Qty</th><th class="r">Balance</th><th>Reason</th></tr></thead><tbody>${shown.map((x) => { const m = x.m;
+        return `<tr class="${x.void ? "void" : ""}"><td class="nw">${fmtS(x.date)}</td><td class="nw">${esc(x.kind)}${x.wait ? ` <span class="wait">waiting</span>` : ""}</td><td class="nw">${x.ref && data.lotBy[x.ref] ? lotLink(x.ref) : esc(x.ref || "")}${x.sec ? " " + esc(String(x.sec).toLowerCase()) : ""}</td><td class="r num"${x.qty > 0 ? ' style="color:var(--ok,#15803d)"' : ""}>${x.qty > 0 ? "+" : ""}${fmtN(x.qty, 3)}</td><td class="r num"${x.bal < -0.0005 ? ' style="color:var(--bad,#b91c1c)"' : ""}>${x.void ? "" : fmtN(x.bal, 3)}</td><td>${esc(x.why || "")}${m && store && canWrite && m.status === "OK" && ["SAMPLING", "WASTAGE", "ISSUED OTHER", "CORRECTION"].includes(String(m.entry_type).toUpperCase()) && !entries.some((e) => e.type === "chem_void" && e.status === "pending" && Number(e.data.id) === m.id) ? ` <button class="mini" data-form="chem_void:${m.id}">Void</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>${L0.length > SHOW ? `<p class="note">Showing the latest ${SHOW} of ${L0.length} lines.</p>` : ""}` : `<p class="note">No movements yet.</p>`}`;
   }
   function closeOrStay() { const kept = edKeepDraft(), y = ed; formOpen = null; ed = null; flash = kept ? "Not saved. Your changes are kept: tap Edit recipe to carry on." : ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
   // ---------------------------------------------------------------- page polish: summary card, folding sections, action menus, sheets
