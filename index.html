@@ -624,7 +624,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // Excel's macros do, and notes it in app_applied. The database is rebuilt from the base (baseBytes: the last data loaded)
   // whenever an entry already written is changed, cancelled, or arrives out of order. Entry types without an applier yet
   // stay on the overlay in load(), so the mode can grow type by type. Switched on per phone for testing (ssi-records = app).
-  let baseBytes = null, engineErr = {}, enApplied = new Set();
+  let baseBytes = null, engineErr = {}, enApplied = new Set(), enFolded = new Set();
   // still waiting: pending and not yet written by the app itself
   const isWait = (e) => e.status === "pending" && !enApplied.has(e.id);
   const recMode = () => { try { return localStorage.getItem("ssi-records") === "app"; } catch (e) { return false; } };
@@ -926,19 +926,42 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // write the entries the app can apply; returns the ids now in the database
   function engineSync() {
     if (!recMode() || !baseBytes || !window.__SQL) return new Set();
-    const ev = entries.filter((e) => ENGINE[e.type] && (e.status === "pending" || e.status === "applied")).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
-    const ensure = () => db.run("CREATE TABLE IF NOT EXISTS app_applied(id TEXT PRIMARY KEY, sig TEXT, made TEXT, ok INTEGER, err TEXT); CREATE TABLE IF NOT EXISTS app_keys(entry_id TEXT PRIMARY KEY, key TEXT)");
+    const ensure = () => db.run("CREATE TABLE IF NOT EXISTS app_applied(id TEXT PRIMARY KEY, sig TEXT, made TEXT, ok INTEGER, err TEXT); CREATE TABLE IF NOT EXISTS app_keys(entry_id TEXT PRIMARY KEY, key TEXT); CREATE TABLE IF NOT EXISTS app_folded(id TEXT PRIMARY KEY, sig TEXT, made TEXT)");
     ensure();
+    // entries already closed into the base (compacted) are not written again; one changed or cancelled since can't be undone
+    const folded = new Map(rows("SELECT id, sig FROM app_folded").map((r) => [r.id, r.sig])); enFolded = new Set(folded.keys());
+    entries.filter((e) => folded.has(e.id)).forEach((e) => { const gone = e.status === "cancelled", ch = !gone && enSig(e) !== folded.get(e.id);
+      if (gone || ch) engineErr[e.id] = "already closed into the records on OneDrive, so it can't be " + (gone ? "cancelled" : "changed") + " any more. Enter a correction instead."; else delete engineErr[e.id]; });
+    const ev = entries.filter((e) => ENGINE[e.type] && !folded.has(e.id) && (e.status === "pending" || e.status === "applied")).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
     const want = new Map(ev.map((e) => [e.id, enSig(e)])), have = rows("SELECT id, sig, made FROM app_applied");
     const lastMade = have.reduce((m, h) => h.made > m ? h.made : m, "");
-    if (have.some((h) => want.get(h.id) !== h.sig) || ev.some((e) => !have.some((h) => h.id === e.id) && String(e.created_at) < lastMade)) { db = new window.__SQL.Database(baseBytes); ensure(); engineErr = {}; }
+    if (have.some((h) => want.get(h.id) !== h.sig) || ev.some((e) => !have.some((h) => h.id === e.id) && String(e.created_at) < lastMade)) { db = new window.__SQL.Database(baseBytes); ensure(); Object.keys(engineErr).forEach((k) => { if (!folded.has(k)) delete engineErr[k]; }); }
     const done = new Set(rows("SELECT id FROM app_applied").map((r) => r.id));
     ev.filter((e) => !done.has(e.id)).forEach((e) => {
       db.run("SAVEPOINT en");
       try { ENGINE[e.type](enRemap(e)); db.run("INSERT INTO app_applied VALUES(?,?,?,1,NULL)", [e.id, want.get(e.id), String(e.created_at)]); db.run("RELEASE en"); delete engineErr[e.id]; }
       catch (err) { db.run("ROLLBACK TO en"); db.run("RELEASE en"); engineErr[e.id] = String(err && err.message || err); db.run("INSERT INTO app_applied VALUES(?,?,?,0,?)", [e.id, want.get(e.id), String(e.created_at), engineErr[e.id]]); }
     });
-    return new Set(rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id));
+    return new Set(rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id).concat([...folded.keys()]));
+  }
+  // compaction: a new base with the entries made before `cutoff` written into it, in order, up to the first one that could not be
+  // written. Their ids and signatures go in app_folded so no phone writes them again. Returns null when fewer than `min` would fold.
+  function enCompact(cutoff, min) {
+    if (!recMode() || !baseBytes) return null;
+    const cur = db, nb = new window.__SQL.Database(baseBytes);
+    try {
+      db = nb; db.run("CREATE TABLE IF NOT EXISTS app_folded(id TEXT PRIMARY KEY, sig TEXT, made TEXT); CREATE TABLE IF NOT EXISTS app_keys(entry_id TEXT PRIMARY KEY, key TEXT)");
+      const fold = new Set(rows("SELECT id FROM app_folded").map((r) => r.id));
+      const okIds = new Set((() => { db = cur; try { return rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id); } catch (e) { return []; } finally { db = nb; } })());
+      const ev = entries.filter((e) => ENGINE[e.type] && !fold.has(e.id) && (e.status === "pending" || e.status === "applied")).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
+      const take = []; for (const e of ev) { if (String(e.created_at) >= cutoff || !okIds.has(e.id)) break; take.push(e); }
+      if (take.length < (min || 1)) return null;
+      take.forEach((e) => { db.run("SAVEPOINT f"); try { ENGINE[e.type](enRemap(e)); db.run("RELEASE f"); } catch (x) { db.run("ROLLBACK TO f"); db.run("RELEASE f"); throw new Error("entry " + e.id + " (" + e.type + ") could not be closed: " + (x && x.message || x)); }
+        db.run("INSERT INTO app_folded VALUES(?,?,?)", [e.id, enSig(e), String(e.created_at)]); });
+      db.run("DROP TABLE IF EXISTS app_applied"); db.run("INSERT OR REPLACE INTO meta(key, value) VALUES('compacted_at', ?)", [new Date().toISOString().slice(0, 19)]);
+      db.run("VACUUM");
+      return { bytes: db.export(), n: take.length };
+    } finally { db = cur; try { nb.close(); } catch (e) { /* closed */ } }
   }
   function load() {
     const enDone = engineSync(); enApplied = enDone;
@@ -1458,7 +1481,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 131, at: "2026-11-15T11:18:21+05:30", notes: "The app checks its own records against Excel at every Excel update; owner switch for the app to keep the records on OneDrive (Tally stock and prices still from Excel); more health checks" };
+  const APP_BUILD = { v: 132, at: "2026-11-15T11:38:23+05:30", notes: "The app's records are tidied once a day: entries older than 3 days are closed into the records file on OneDrive so phones load quickly" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2373,6 +2396,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // records kept by the app: the base all phones start from, and Tally's stock and prices from Excel's files
     waitingForExcel: () => entries.filter((e) => e.status === "pending").length,
     baseBytes: () => baseBytes,
+    compact: (cutoff, min) => enCompact(cutoff, min),
     useBase: async (bytes) => { await publishSnapshot(bytes, () => {}); open(window.__SQL, bytes, "base"); },
     tallyMerge: async (xb, dbb) => {
       if (!window.XLSX) await loadJs("xlsx.mini.min.js");
@@ -4993,13 +5017,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function entriesView() {
     if (!store) return `<p class="empty">Phone entries are not available in this view.</p>`;
     if (!entriesSeen) return `<p class="empty">Loading phone entries…</p>`;
-    const f = filter.entries || "pending", cnt = 0, list = entries.filter((e) => e.type !== "count" && (f === "all" || e.status === f)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const f = filter.entries || "pending", cnt = 0, list = entries.filter((e) => e.type !== "count" && (f === "all" || e.status === f)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), allN = list.length;
+    list.splice(300);
     const n = data.pending.length, rec = recMode(), nErr = Object.keys(engineErr).length;
     const tools = rec ? `<p class="note" style="margin-top:8px">The app keeps the records: each entry is written as soon as it is saved.${nErr ? ` <span class="late">${nErr} could not be written; the reason is on each one. Cancel it and enter it again corrected.</span>` : ""}</p>` : n && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn" data-export>Send to Excel</button><button class="btn alt" data-copycsv>Copy</button><button class="btn alt" data-markall>Mark ${n} as imported</button></div><p class="note">Tap Send to Excel, choose OneDrive and save in your Phone entries folder. Then press Import from phone in Excel. (If OneDrive sync is switched on in the top bar, this happens by itself.) Update from Excel marks them as imported. If you won't update yet, mark them here.</p><div id="csvout"></div>` : "";
-    return `${entriesSeen === "late" ? `<p class="note">Phone entries can't be reached yet, so this list may be out of date.</p>` : ""}${tools}<div class="count"><span>${list.length + (cnt ? 1 : 0)} shown</span></div>${cnt ? `<div class="ent"><span class="k">Stock count</span><button class="mini" data-jump="chemicals" data-f="count">Open</button><span class="tx">${cnt} chemicals counted</span></div>` : ""}` +
+    return `${entriesSeen === "late" ? `<p class="note">Phone entries can't be reached yet, so this list may be out of date.</p>` : ""}${tools}<div class="count"><span>${list.length + (cnt ? 1 : 0)} shown${allN > list.length ? ` (the latest ${list.length} of ${allN})` : ""}</span></div>${cnt ? `<div class="ent"><span class="k">Stock count</span><button class="mini" data-jump="chemicals" data-f="count">Open</button><span class="tx">${cnt} chemicals counted</span></div>` : ""}` +
       (list.length || cnt ? list.map((e) => `<div class="ent"><span class="k">${data.lotBy[e.lot_no] ? `<button class="link" data-lot="${esc(e.lot_no)}">${esc(e.lot_no)}</button>` : esc(e.lot_no)}</span>
-        ${e.status === "pending" && canWrite ? `<button class="mini" data-cancel="${esc(e.id)}">Cancel</button>` : `<span class="pill ${e.status === "cancelled" ? "idle" : "ok"}">${esc(e.status)}</span>`}
-        <span class="tx">${rec && e.status === "pending" ? (enApplied.has(e.id) ? `<span class="pill ok">recorded</span> ` : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
+        ${e.status === "pending" && canWrite && !enFolded.has(e.id) ? `<button class="mini" data-cancel="${esc(e.id)}">Cancel</button>` : rec && enFolded.has(e.id) && e.status === "pending" ? `<span class="pill idle">closed</span>` : `<span class="pill ${e.status === "cancelled" ? "idle" : "ok"}">${esc(e.status)}</span>`}
+        <span class="tx">${rec && e.status === "pending" ? (engineErr[e.id] && enFolded.has(e.id) ? `<span class="pill bad">${esc(engineErr[e.id])}</span> ` : enApplied.has(e.id) ? (enFolded.has(e.id) ? "" : `<span class="pill ok">recorded</span> `) : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
         <span class="by">${fmtD(e.entry_date || (e.data && e.data.date) || e.created_at)} · <span${e.entered_by ? ` data-uid="${esc(e.entered_by)}"` : ""}>Someone</span></span></div>`).join("") : `<p class="empty">${f === "pending" && rec ? "No entries yet." : f === "pending" ? "Nothing is waiting for Excel. Open a lot and use Move stage or Record delivery." : "No entries here."}</p>`);
   }
   async function exportCsv() {

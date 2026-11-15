@@ -270,6 +270,22 @@
           await setMeta("dataAt", new Date().toISOString());
           await setMeta("dataSummary", summary);
         }
+        // 3b. app mode: once a day, close entries older than 3 days into a new base so phones replay less (at least 50)
+        if (appMode && H.compact && Date.now() - Date.parse(rec.compacted_at || rec.since || 0) > 864e5) {
+          const r = H.compact(new Date(Date.now() - 3 * 864e5).toISOString(), 50);
+          if (r) {
+            const now = new Date().toISOString(), name = "base-" + now.replace(/[-:]/g, "").slice(0, 15) + ".sqlite";
+            await upload(app + "/base/" + name, r.bytes, tok, "application/octet-stream");
+            await setMeta("recTag", undefined); const again = await readRecords(tok);
+            if (again && again.mode === "app" && again.base === rec.base) {
+              await g("PUT", itemUrl(app + "/records.json") + ":/content", JSON.stringify(Object.assign({}, again, { base: name, compacted_at: now, compacted_by: me.name || me.id, folded: (again.folded || 0) + r.n })), "application/json", tok);
+              await setMeta("recTag", undefined); await setMeta("baseName", name); await H.useBase(r.bytes);
+              // keep the last three bases in OneDrive
+              const olds = (await listFolder(app + "/base", tok)).filter((it) => it.file && /^base-.*\.sqlite$/.test(it.name)).sort((x, y) => y.name.localeCompare(x.name));
+              for (const it of olds.slice(3)) await g("DELETE", itemUrl(app + "/base/" + it.name), null, "", tok);
+            } else await g("DELETE", itemUrl(app + "/base/" + name), null, "", tok);
+          }
+        }
         // 4. pending entries as a file for Excel's Import from phone
         // records kept by the app: nothing goes to Excel any more
         let recApp = false; try { recApp = localStorage.getItem("ssi-records") === "app"; } catch (e) { /* default */ }
