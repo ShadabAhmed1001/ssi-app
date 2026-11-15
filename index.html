@@ -575,7 +575,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k) };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -670,6 +670,59 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       enRun("INSERT OR REPLACE INTO lot_recipes" + q, vals); enRun("INSERT OR REPLACE INTO lot_recipe_versions" + q, vals);
       enRun("UPDATE lot_recipe_versions SET versions=? WHERE lot_no=? AND process=?", [v, lot, pr]);
     },
+    // ---- skins: purchases, new lots, skins given to and taken back from lots, lot moves and splits (purchase ledger)
+    _key(t) { const re = t === "P" ? /^P(\d+)$/ : /^L(\d+)$/, list = t === "P" ? rows("SELECT purchase_no k FROM purchases") : rows("SELECT lot_no k FROM lots UNION SELECT to_key FROM purchase_ledger UNION SELECT from_key FROM purchase_ledger");
+      const n = list.reduce((m, r) => { const x = re.exec(String(r.k || "").toUpperCase()); return x ? Math.max(m, Number(x[1])) : m; }, 0) + 1; return t === "P" ? "P" + String(n).padStart(3, "0") : "L" + n; },
+    _led(dt, from, to, pcs, sqft, type, e, note) { enRun("INSERT INTO purchase_ledger(entry_date, from_key, to_key, pcs, sqft, entry_type, status, entered_by, note, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", [String(dt || "").slice(0, 10), UP(from), UP(to), Number(pcs) || 0, Number(sqft) || 0, type, "OK", e.entered_by || "", note || "", e.created_at || enNow()]); },
+    // the tracker's LOT PCS / LOT SQF; DELIVERED QUANTITY follows while it is still the 90% formula
+    _lotQty(k, gp, gs) { const l = enLot(k), was = Number(l.lot_sqft) || 0, ns = +(was + gs).toFixed(2), formula = was && Math.abs((Number(l.delivered_est) || 0) - was * 0.9) < 0.01;
+      enRun("UPDATE lots SET lot_pcs=?, lot_sqft=?" + (formula ? ", delivered_est=" + +(ns * 0.9).toFixed(3) : "") + " WHERE lot_no=?", [+((Number(l.lot_pcs) || 0) + gp).toFixed(2), ns, l.lot_no]); },
+    _purch(k) { const p = enOne("SELECT * FROM purchases WHERE UPPER(purchase_no)=UPPER(?)", [k]); if (!p) throw new Error("purchase " + k + " is not in the records"); return p; },
+    _newPurch(e, d, note) { const k = ENGINE._key("P");
+      enRun("INSERT INTO purchases(purchase_no, supplier, animal, grade, received_date, closed_on, note, created_by, created_at, rate, rate_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?)", [k, String(d.supplier || "").toUpperCase(), d.animal || "", d.grade || "", String(d.date || "").slice(0, 10), null, note ?? d.note ?? "", e.entered_by || "", e.created_at || enNow(), Number(d.rate) || null, d.per || "SQFT"]);
+      enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", [e.id, k]); return k; },
+    // PostEntry: a purchase whose skins are all given out is closed
+    _purchUsed(k, e) { const K = UP(k), b = enOne("SELECT (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(to_key)=?1 AND status<>'VOID') - (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(from_key)=?1 AND status<>'VOID') p, (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(to_key)=?1 AND status<>'VOID') - (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(from_key)=?1 AND status<>'VOID') s", [K]);
+      if (b && b.p <= 0 && Math.abs(b.s) <= 1) enRun("UPDATE purchases SET closed_on=? WHERE UPPER(purchase_no)=? AND (closed_on IS NULL OR closed_on='')", [String(e.created_at || enNow()).slice(0, 10), K]); },
+    purchase(e) { const d = e.data || {}, k = ENGINE._newPurch(e, d); ENGINE._led(d.date, "SUPPLIER", k, d.pcs, d.sqft, "RECEIPT", e, d.note); },
+    new_lot(e) {
+      const d = e.data || {}, want = UP(d.lot_no), free = /^L\d+$/.test(want) && !enOne("SELECT 1 x FROM lots WHERE UPPER(lot_no)=? UNION SELECT 1 FROM purchase_ledger WHERE UPPER(to_key)=? OR UPPER(from_key)=?", [want, want, want]);
+      const k = free ? want : ENGINE._key("L"), from = UP(d.from); ENGINE._purch(from);
+      const wt = String(d.weight || "").replace(",", "."), sq = Number(d.sqft) || 0;
+      enRun("INSERT INTO lots(lot_no, customer, product, order_qty, lot_pcs, shaving, lot_sqft, order_date, due_date, stage, stage_since, weight, remarks, process_page, delivered_est, state, chem_crust, chem_finish, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [k, UP(d.customer || ""), UP(d.product || ""), d.order_qty ? Number(d.order_qty) : null, Number(d.pcs) || 0, d.shaving || "", sq, d.order_date || null, d.due_date || null, d.stage || "", String(d.date || "").slice(0, 10), wt && isFinite(Number(wt)) ? wt : d.weight || "", d.remarks || "", d.process_page || "", +(sq * 0.9).toFixed(3), "OPEN", "—", "—", e.created_at || enNow()]);
+      ENGINE._led(d.date, from, k, d.pcs, d.sqft, "ALLOCATION", e, d.note); ENGINE._purchUsed(from, e);
+      if (Number(d.line_id) > 0) enRun("INSERT OR REPLACE INTO lot_orders(lot_no, line_id, linked_at, linked_by) VALUES(?,?,?,?)", [k, Number(d.line_id), e.created_at || enNow(), e.entered_by || ""]);
+      enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", [e.id, k]);
+    },
+    skins(e) { const d = e.data || {}; ENGINE._purch(d.from); enLot(d.to); ENGINE._led(d.date, d.from, d.to, d.pcs, d.sqft, "ALLOCATION", e, d.note); ENGINE._lotQty(d.to, Number(d.pcs) || 0, Number(d.sqft) || 0); ENGINE._purchUsed(d.from, e); },
+    // AfRemoveGiven / AfCorrectGiven: the given row is cancelled, and what stays given is posted again
+    skins_back(e) { const d = e.data || {}, r = enOne("SELECT * FROM purchase_ledger WHERE id=? AND status<>'VOID'", [Number(d.id)]);
+      if (!r) throw new Error("the skins entry " + d.id + " is not in the records any more");
+      const bp = Number(d.pcs) || 0, bs = Number(d.sqft) || 0, kp = +(r.pcs - bp).toFixed(2), ks = +(r.sqft - bs).toFixed(2);
+      enRun("UPDATE purchase_ledger SET status='VOID' WHERE id=?", [r.id]);
+      if (kp > 0.0001 || ks > 0.005) ENGINE._led(r.entry_date, r.from_key, r.to_key, kp, ks, r.entry_type, e, (r.note || "") + " (corrected)");
+      if (/^L/i.test(r.to_key) && enOne("SELECT 1 x FROM lots WHERE lot_no=?", [r.to_key])) ENGINE._lotQty(r.to_key, -bp, -bs); },
+    lot_move(e) { const d = e.data || {}, from = UP(d.from), to = UP(d.to), src = enLot(from);
+      if (d.is_new === "1" && !enOne("SELECT 1 x FROM lots WHERE UPPER(lot_no)=?", [to])) {
+        const cols = rows("PRAGMA table_info(lots)").map((c) => c.name).filter((c) => !["lot_no", "lot_pcs", "lot_sqft", "delivered_est", "remarks", "order_qty", "weight", "state", "archived_on"].includes(c));
+        enRun("INSERT INTO lots(lot_no, lot_pcs, lot_sqft, delivered_est, remarks, order_qty, weight, state, " + cols.join(", ") + ") SELECT ?, 0, 0, 0, '', NULL, NULL, 'OPEN', " + cols.join(", ") + " FROM lots WHERE lot_no=?", [to, src.lot_no]); }
+      enLot(to); ENGINE._led(d.date, from, to, d.pcs, d.sqft, "TRANSFER", e, d.note); ENGINE._lotQty(from, -(Number(d.pcs) || 0), -(Number(d.sqft) || 0)); ENGINE._lotQty(to, Number(d.pcs) || 0, Number(d.sqft) || 0); },
+    purchase_close(e) { const d = e.data || {}, p = ENGINE._purch(d.key || e.lot_no); enRun("UPDATE purchases SET closed_on=? WHERE purchase_no=?", [d.close === "1" ? String(e.created_at || enNow()).slice(0, 10) : null, p.purchase_no]); },
+    purchase_delete(e) { const p = ENGINE._purch((e.data || {}).key || e.lot_no), K = UP(p.purchase_no);
+      if (enOne("SELECT COUNT(*) n FROM purchase_ledger WHERE UPPER(from_key)=? AND status<>'VOID'", [K]).n) throw new Error(K + " has skins given to lots");
+      enRun("UPDATE purchase_ledger SET status='VOID' WHERE UPPER(to_key)=?", [K]); enRun("DELETE FROM purchases WHERE purchase_no=?", [p.purchase_no]); },
+    // EditPurchase: details, and the received quantity set to what was typed
+    purchase_edit(e) { const d = e.data || {}, p = ENGINE._purch(d.key || e.lot_no), K = UP(p.purchase_no), q = enOne("SELECT IFNULL(SUM(pcs),0) p, IFNULL(SUM(sqft),0) s FROM purchase_ledger WHERE UPPER(to_key)=? AND status<>'VOID'", [K]);
+      enRun("UPDATE purchases SET supplier=?, animal=?, grade=?, rate=?, rate_basis=?, received_date=? WHERE purchase_no=?", [UP(d.supplier || p.supplier || ""), d.animal ?? p.animal, d.grade ?? p.grade, Number(d.rate) || null, d.per || p.rate_basis, String(d.date || p.received_date || "").slice(0, 10), p.purchase_no]);
+      const gp = +((Number(d.pcs) || 0) - q.p).toFixed(2), gs = +((Number(d.sqft) || 0) - q.s).toFixed(2);
+      if (Math.abs(gp) > 0.0001 || Math.abs(gs) > 0.005) ENGINE._led(d.date || p.received_date, "SUPPLIER", K, gp, gs, "ADJUSTMENT", e, "Received quantity corrected"); },
+    purchase_split(e) { const d = e.data || {}, p = ENGINE._purch(d.key || e.lot_no), K = UP(p.purchase_no);
+      ENGINE._led(d.date, "SUPPLIER", K, -(Number(d.pcs) || 0), -(Number(d.sqft) || 0), "ADJUSTMENT", e, "Split off: " + (d.note || ""));
+      const k = ENGINE._newPurch(e, { supplier: d.supplier, animal: d.animal, grade: d.grade, rate: d.rate, per: d.per, date: d.date }, d.note || "Split from " + K);
+      ENGINE._led(d.date, "SUPPLIER", k, d.pcs, d.sqft, "RECEIPT", e, "Split from " + K); },
+    purchase_merge(e) { const d = e.data || {}, a = ENGINE._purch(d.from), b = ENGINE._purch(d.to), A = UP(a.purchase_no), B = UP(b.purchase_no);
+      enRun("UPDATE purchase_ledger SET to_key=? WHERE UPPER(to_key)=?", [B, A]); enRun("UPDATE purchase_ledger SET from_key=? WHERE UPPER(from_key)=?", [B, A]); enRun("DELETE FROM purchases WHERE purchase_no=?", [a.purchase_no]); },
     // Edit lot: the tracker cells; a lot size change moves DELIVERED QUANTITY when it was still the 90% formula
     lot_edit(e) {
       const l = enLot(e.lot_no), ch = e.changes || {}, cols = new Set(rows("PRAGMA table_info(lots)").map((c) => c.name)), set = [], vals = [];
@@ -679,11 +732,21 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     },
   };
   const enSig = (e) => { const s = JSON.stringify([e.type, e.lot_no, e.data, e.changes, e.to_stage, e.entry_date, e.pcs, e.sqft, e.doc_no, e.note, e.status, e.process, e.after, e.base_version, e.load_cur, e.base_lot]); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); };
+  // an entry on a purchase or lot made on the phone names it by the number the phone showed; follow the number it got
+  function enRemap(e) {
+    const keyOf = (id) => (enOne("SELECT key FROM app_keys WHERE entry_id=?", [id]) || {}).key;
+    let o = e;
+    if (e.data && e.data.from_entry) { const k = keyOf(e.data.from_entry); if (k) o = Object.assign({}, o, { data: Object.assign({}, o.data, { from: k }) }); }
+    if (e.nl_map) String(e.nl_map).split(",").forEach((p) => { const [was, id] = p.split(">"), now = keyOf(id); if (!was || !now || now === was) return;
+      const sw = (v) => v === was ? now : typeof v === "string" && v.startsWith(was + "|") ? now + v.slice(was.length) : v, mapO = (x) => x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, sw(v)])) : x;
+      o = Object.assign({}, o, { lot_no: sw(o.lot_no), data: mapO(o.data), base_lot: sw(o.base_lot) }); });
+    return o;
+  }
   // write the entries the app can apply; returns the ids now in the database
   function engineSync() {
     if (!recMode() || !baseBytes || !window.__SQL) return new Set();
     const ev = entries.filter((e) => ENGINE[e.type] && (e.status === "pending" || e.status === "applied")).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
-    const ensure = () => db.run("CREATE TABLE IF NOT EXISTS app_applied(id TEXT PRIMARY KEY, sig TEXT, made TEXT, ok INTEGER, err TEXT)");
+    const ensure = () => db.run("CREATE TABLE IF NOT EXISTS app_applied(id TEXT PRIMARY KEY, sig TEXT, made TEXT, ok INTEGER, err TEXT); CREATE TABLE IF NOT EXISTS app_keys(entry_id TEXT PRIMARY KEY, key TEXT)");
     ensure();
     const want = new Map(ev.map((e) => [e.id, enSig(e)])), have = rows("SELECT id, sig, made FROM app_applied");
     const lastMade = have.reduce((m, h) => h.made > m ? h.made : m, "");
@@ -691,7 +754,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const done = new Set(rows("SELECT id FROM app_applied").map((r) => r.id));
     ev.filter((e) => !done.has(e.id)).forEach((e) => {
       db.run("SAVEPOINT en");
-      try { ENGINE[e.type](e); db.run("INSERT INTO app_applied VALUES(?,?,?,1,NULL)", [e.id, want.get(e.id), String(e.created_at)]); db.run("RELEASE en"); delete engineErr[e.id]; }
+      try { ENGINE[e.type](enRemap(e)); db.run("INSERT INTO app_applied VALUES(?,?,?,1,NULL)", [e.id, want.get(e.id), String(e.created_at)]); db.run("RELEASE en"); delete engineErr[e.id]; }
       catch (err) { db.run("ROLLBACK TO en"); db.run("RELEASE en"); engineErr[e.id] = String(err && err.message || err); db.run("INSERT INTO app_applied VALUES(?,?,?,0,?)", [e.id, want.get(e.id), String(e.created_at), engineErr[e.id]]); }
     });
     return new Set(rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id));
@@ -710,6 +773,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const plog = {}; try { rows("SELECT entry_id, result FROM phone_log").forEach((r) => { plog[r.entry_id] = String(r.result || ""); }); } catch (e) { /* older data */ }
       const known = new Set(rows("SELECT lot_no FROM lots").map((r) => String(r.lot_no || "").toUpperCase())), nl = {}, taken = new Set();
       entries.filter((e) => e.type === "new_lot").forEach((e) => { const m = /new lot (?:is )?(L\d+)/i.exec(plog[e.id] || ""); if (m) nl[e.id] = m[1].toUpperCase(); });
+      try { rows("SELECT entry_id, key FROM app_keys").forEach((r) => { if (/^L/.test(r.key)) nl[r.entry_id] = r.key; }); } catch (e) { /* not in records mode */ }
       let hi = [...known].concat(Object.values(nl), live0.filter((e) => e.type === "lot_move" && e.data && e.data.is_new === "1").map((e) => e.data.to)).reduce((m, k) => { const x = /^L(\d+)$/.exec(String(k || "").toUpperCase()); return x ? Math.max(m, Number(x[1])) : m; }, 0);
       live0.filter((e) => e.type === "new_lot" && !nl[e.id]).forEach((e) => { let w = String((e.data && e.data.lot_no) || "").toUpperCase(); const x = /^L(\d+)$/.exec(w);
         if (!x || known.has(w) || taken.has(w)) w = "L" + (++hi); else hi = Math.max(hi, Number(x[1])); taken.add(w); nl[e.id] = w; });
@@ -1213,7 +1277,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 127, at: "2026-11-15T09:17:38+05:30", notes: "Groundwork for the app keeping the records itself (not switched on yet)" };
+  const APP_BUILD = { v: 128, at: "2026-11-15T09:29:04+05:30", notes: "Groundwork: the app can now write purchases, new lots, skins, lot moves and purchase changes into its own records (not switched on yet)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
