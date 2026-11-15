@@ -374,7 +374,23 @@
     w.querySelector("form").onsubmit = (e) => {
       e.preventDefault(); const o = {};
       new FormData(e.target).forEach((v, k) => { v = String(v).trim(); if (v !== String(CFG0[k] || "")) o[k] = v; });
-      lsSet(LSK, o); w.remove(); setMeta("dataTag", undefined).then(() => location.reload());
+      const save = () => { lsSet(LSK, o); w.remove(); setMeta("dataTag", undefined).then(() => location.reload()); };
+      // a new phone entries folder: check it is there and that Excel looks in it, or entries would wait unseen
+      const nf = String((o.entriesFolder ?? CFG0.entriesFolder) || "").replace(/^\/+|\/+$/g, "");
+      if (o.entriesFolder !== undefined) o.entriesFolder = nf;
+      if (!account || nf === String(cfg().entriesFolder || "")) return save();
+      const say = w.querySelector(".odfolder") || w.querySelector("form").appendChild(Object.assign(document.createElement("span"), { className: "odfolder" }));
+      say.style.cssText = "font-size:13px;color:#b45309"; say.textContent = "Checking the folder in OneDrive…";
+      (async () => {
+        let msg = "";
+        try { const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive first.");
+          if (!nf || !(await g("GET", itemUrl(nf), null, "", tok))) msg = "There is no folder '" + nf + "' in your OneDrive.";
+          else if (!(await g("GET", itemUrl(nf + "/excel-status.json"), null, "", tok))) msg = "Excel has not looked in '" + nf + "' yet. In Excel run SetPhoneEntriesFolder and pick the same folder, or entries will wait there unseen.";
+        } catch (x) { msg = "Could not check the folder: " + (x.message || x); }
+        if (!msg) return save();
+        if (say.dataset.sure === nf) return save();
+        say.dataset.sure = nf; say.textContent = msg + " Tap Save again to use it anyway.";
+      })();
     };
   }
 

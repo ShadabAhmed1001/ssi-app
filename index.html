@@ -1644,7 +1644,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 135, at: "2026-11-15T20:40:37+05:30", notes: "Health check: old names whose ledger rows cancel out (the 7 Nov migration) are no longer listed as needing a chemical." };
+  const APP_BUILD = { v: 136, at: "2026-11-15T20:52:01+05:30", notes: "Phone entries folder (OneDrive settings): checked when changed; warns if the folder is missing or Excel does not look there." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
