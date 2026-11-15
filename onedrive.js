@@ -151,9 +151,9 @@
   const snapName = (day) => day + "_" + device + "_" + slug(me.name) + ".json";
   const snapParse = (n) => { const m = /^(\d{4}-\d{2}-\d{2})_([a-z0-9]+)_(.*)\.json$/i.exec(n); return m ? { day: m[1], device: m[2], who: m[3].replace(/-/g, " ") } : null; };
   // files over 4 MB need an upload session; small ones go in one PUT
-  async function upload(path, text, tok) {
-    const blob = new Blob([text], { type: "application/json" });
-    if (blob.size < 3.9e6) return g("PUT", itemUrl(path) + ":/content", blob, "application/json", tok);
+  async function upload(path, text, tok, type) {
+    const blob = new Blob([text], { type: type || "application/json" });
+    if (blob.size < 3.9e6) return g("PUT", itemUrl(path) + ":/content", blob, type || "application/json", tok);
     const ses = await g("POST", itemUrl(path) + ":/createUploadSession", JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "replace" } }), "application/json", tok);
     const step = 320 * 1024 * 10;
     for (let i = 0; i < blob.size; i += step) {
@@ -162,7 +162,40 @@
       if (!r.ok) throw new Error("OneDrive upload " + r.status);
     }
   }
+  // ---------- who keeps the records ----------
+  // <entries folder>/app/records.json says it for every phone: {mode: "app" | "excel", base, since, by}. In app mode every phone
+  // starts from the same base file (app/base/<name>.sqlite, Excel's data when the app took over) and writes the entries itself;
+  // Excel's files only bring Tally's chemical stock and prices. Giving the records back lets Excel import every entry since.
+  const recLocal = (on) => { try { if (on) localStorage.setItem("ssi-records", "app"); else localStorage.removeItem("ssi-records"); } catch (e) {} };
+  const recIsOn = () => { try { return localStorage.getItem("ssi-records") === "app"; } catch (e) { return false; } };
+  async function readRecords(tok) {
+    const it = await g("GET", itemUrl(cfg().entriesFolder + "/app/records.json"), null, "", tok);
+    if (!it) return null;
+    if (it.eTag === meta.recTag && meta.records) return meta.records;
+    const r = await (await download(it, tok)).json(); await setMeta("records", r); await setMeta("recTag", it.eTag); return r;
+  }
+  async function records(to) {
+    const H = window.__ssiHooks, tok = await token(); if (!tok) throw new Error("Sign in to OneDrive first.");
+    if (!H || !H.ready()) throw new Error("The app is still loading. Try again in a moment.");
+    const app = cfg().entriesFolder + "/app", by = me.name || me.id, since = new Date().toISOString();
+    if (to === "app") {
+      await sync("records"); while (syncing) await new Promise((r) => setTimeout(r, 300));
+      if (H.waitingForExcel() > 0) throw new Error(H.waitingForExcel() + " entries are still waiting for Excel. Let Excel import them first.");
+      const bytes = H.baseBytes(); if (!bytes) throw new Error("Excel's data is not loaded yet.");
+      const name = "base-" + since.replace(/[-:]/g, "").slice(0, 15) + ".sqlite";
+      await upload(app + "/base/" + name, bytes, tok, "application/octet-stream");
+      await g("PUT", itemUrl(app + "/records.json") + ":/content", JSON.stringify({ mode: "app", base: name, since, by }), "application/json", tok);
+      await setMeta("baseName", name); await setMeta("recTag", undefined); recLocal(true);
+      await H.useBase(bytes); setStatus("The app keeps the records", "ok");
+      return "Done. From now on the app keeps the records. Other phones switch at their next sync.";
+    }
+    await g("PUT", itemUrl(app + "/records.json") + ":/content", JSON.stringify({ mode: "excel", since, by }), "application/json", tok);
+    recLocal(false); await setMeta("baseName", undefined); await setMeta("dataTag", undefined); await setMeta("recTag", undefined);
+    kick(300);
+    return "Done. Excel keeps the records again and will import the entries made since the app took over.";
+  }
   window.__ssiOD = {
+    records,
     ready: () => configured() && !!account && !needLogin,
     syncNow: async () => { await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300)); },
     list: async () => {
@@ -216,15 +249,23 @@
         }
       }
       await setMeta("etags", tags);
-      // 3. fresh data from Excel
+      // 3. who keeps the records, then fresh data from Excel
       const H = window.__ssiHooks;
       if (H && H.ready()) {
+        const rec = await readRecords(tok), appMode = !!rec && rec.mode === "app";
+        if (appMode && rec.base && rec.base !== meta.baseName) {
+          setStatus("Getting the app's records from OneDrive…", "");
+          const bi = await g("GET", itemUrl(app + "/base/" + rec.base), null, "", tok);
+          if (!bi) throw new Error("The records file " + rec.base + " is missing in OneDrive");
+          recLocal(true); await H.useBase(new Uint8Array(await (await download(bi, tok)).arrayBuffer()));
+          await setMeta("baseName", rec.base); await setMeta("dataTag", undefined);
+        } else if (!appMode && recIsOn()) { recLocal(false); await setMeta("baseName", undefined); await setMeta("dataTag", undefined); }
         const [xi, di] = await Promise.all([g("GET", itemUrl(c.dataFolder + "/" + c.xlsm), null, "", tok), g("GET", itemUrl(c.dataFolder + "/" + c.db), null, "", tok)]);
         if (!xi || !di) setStatus("Excel files not found in OneDrive/" + c.dataFolder, "bad");
         else if (xi.eTag + "|" + di.eTag !== meta.dataTag) {
-          setStatus("Reading Excel data from OneDrive…", "");
+          setStatus(appMode ? "Reading Tally stock and prices from Excel…" : "Reading Excel data from OneDrive…", "");
           const [xb, dbb] = await Promise.all([(await download(xi, tok)).arrayBuffer(), (await download(di, tok)).arrayBuffer()]);
-          const summary = await H.autoUpdate(xb, dbb);
+          const summary = appMode ? await H.tallyMerge(xb, dbb) : await H.autoUpdate(xb, dbb);
           await setMeta("dataTag", xi.eTag + "|" + di.eTag);
           await setMeta("dataAt", new Date().toISOString());
           await setMeta("dataSummary", summary);
@@ -257,7 +298,7 @@
       }
       await setMeta("syncAt", new Date().toISOString());
       lastErr = "";
-      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText(), "ok");
+      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + (recIsOn() ? "records kept by the app · Tally stock " + (meta.dataAt ? hhmm(meta.dataAt) : "not read yet") : "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText()), "ok");
     } catch (e) {
       lastErr = e && e.message ? e.message : String(e);
       setStatus("Sync problem: " + lastErr + " · entries are safe on this phone", "bad", needLogin ? "signin" : "retry");

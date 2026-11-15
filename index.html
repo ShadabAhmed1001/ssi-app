@@ -575,10 +575,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k) };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
+    const prevBytes = label === "new" ? baseBytes : null;
     db = new SQL.Database(bytes); baseBytes = bytes;
     const asof = one("SELECT value FROM meta WHERE key='data_as_of'") || one("SELECT value FROM meta WHERE key='built_at'");
     data.asOf = asof ? fmtD(asof) : label;
@@ -586,6 +587,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     load();
     route();
     if (!connected) { connected = true; connectEntries(); }
+    if (prevBytes) setTimeout(() => { const r = enCheck(prevBytes); if (r && tab === "health") render(); }, 50);
     tourAuto();
   }
   function srcLine() { $("#src").textContent = "Data of " + data.asOf + (store && canWrite ? "" : " · view only"); }
@@ -1152,7 +1154,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 
     const att = data.lots.filter((l) => l.grp === 1 && (l.flag === "bad" || l.flag === "warn")).length;
     $("#n-today").textContent = att + " to check";
-    data.pending = entries.filter((e) => e.status === "pending");
+    data.pending = entries.filter((e) => isWait(e));
     $("#n-lots").textContent = data.lots.filter((l) => l.grp === 1).length + " open";
     $("#n-orders").textContent = data.orders.filter((o) => o.grp === 1).length + " open";
     $("#n-purchases").textContent = data.purchases.filter((p) => p.grp === 1).length + " with skins";
@@ -1456,7 +1458,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 130, at: "2026-11-15T10:00:04+05:30", notes: "Records engine: POs, archive, lot and process delete, dye tables, parts sent ahead, pieces not delivered, customer returns, reject sales and rework written by the app" };
+  const APP_BUILD = { v: 131, at: "2026-11-15T11:18:21+05:30", notes: "The app checks its own records against Excel at every Excel update; owner switch for the app to keep the records on OneDrive (Tally stock and prices still from Excel); more health checks" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1475,6 +1477,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const arch = archiveReady();
     { const una = data.lots.filter((l) => l.state === "DISPATCHED" && trackedLot(l.lot_no) && notDelivered(l).dp > 0 && notDelivered(l).sh > 0);
       if (una.length) checks.push([`data-go="lots" data-k="${esc(una[0].lot_no)}"`, una.length + (una.length === 1 ? " dispatched lot has" : " dispatched lots have") + " pieces not delivered and not accounted for (" + una.slice(0, 6).map((l) => l.lot_no).join(", ") + (una.length > 6 ? "…" : "") + "). They can't be archived until you say where they went."]); }
+    { const nE = recMode() ? Object.keys(engineErr).length : 0; if (nE) checks.push(["data-jump=\"entries\" data-f=\"pending\"", nE + (nE === 1 ? " entry" : " entries") + " could not be recorded"]); }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
     if (bkOverdue()) checks.push(["data-jump=\"settings\" data-f=\"\"", lastBackup() ? "This phone's last backup was " + bkAgo(lastBackup()) + ". Back it up in Settings" : "This phone has never been backed up. Back it up in Settings"]);
     const hc = healthItems().length;
@@ -1733,7 +1736,21 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${row('data-jump="health" data-f=""', "Health check", hc ? hc + " to look at" : "nothing to look at")}
       ${row('data-jump="lots" data-f="late"', "Muted lots", muted ? muted + " muted for a day" : "none muted")}
       </div>
-      ${canAdmin ? `<div class="group">Data</div><p class="note" style="margin:0">Data is from ${esc(data.asOf || "not loaded")}.</p><div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>` : ""}`;
+      ${canAdmin ? (recMode() ? `<div class="group">Data</div><p class="note" style="margin:0">The app keeps the records. Chemical stock and prices from Tally come in through Excel${(() => { const t = one("SELECT value FROM meta WHERE key='tally_merged_at'"); return t ? ", last on " + esc(fmtST(t)) : ""; })()}.</p>` : `<div class="group">Data</div><p class="note" style="margin:0">Data is from ${esc(data.asOf || "not loaded")}.</p><div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>`) + recView() : ""}`;
+  }
+  // who keeps the records: Excel (phones send entries, Excel imports them) or the app (records written by the app itself)
+  function recView() {
+    if (!window.__ssiOD || !window.__ssiOD.records) return "";
+    let log = []; try { log = JSON.parse(localStorage.getItem(EN_LOG) || "[]") || []; } catch (e) { log = []; }
+    const d30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), n = d30.reduce((t, r) => t + r.n, 0), bad = d30.reduce((t, r) => t + r.diffs.length + (r.more || 0) + r.errs.length, 0);
+    const fails = Object.keys(engineErr).length, wait = entries.filter((e) => e.status === "pending").length;
+    if (recMode()) return `<div class="group">Who keeps the records</div><div class="alert" style="display:block"><b>The app</b> keeps the records on OneDrive. Excel only brings Tally's chemical stock and prices.
+      ${fails ? `<br><span class="late">${fails} entr${fails === 1 ? "y" : "ies"} could not be recorded. See Phone entries.</span>` : ""}
+      <div class="acts"><button class="btn alt" data-recmode="excel">Give the records back to Excel</button></div><small class="note">Excel then imports every entry made since the app took over, in order. Nothing is lost.</small><p class="note" id="recmsg"></p></div>`;
+    return `<div class="group">Who keeps the records</div><div class="alert" style="display:block"><b>Excel</b> keeps the records now: phones send entries and Excel imports them.
+      <br>Side by side, last 30 days: ${d30.length ? `${n} entries written by the app as Excel imported them, ${bad ? `<span class="late">${bad} difference${bad === 1 ? "" : "s"}</span>` : `<span class="ok">all the same as Excel</span>`}` : "no check yet"}.
+      ${wait ? `<br>${wait} entr${wait === 1 ? "y is" : "ies are"} still waiting for Excel; Excel must import ${wait === 1 ? "it" : "them"} before the app can take over.` : ""}
+      <div class="acts"><button class="btn alt" data-recmode="app"${wait ? " disabled" : ""}>Let the app keep the records</button></div><small class="note">For every phone. The app's records are saved in OneDrive › Phone entries › app. Give them back to Excel any time.</small><p class="note" id="recmsg"></p></div>`;
   }
   function aboutView() {
     return `<div class="group">About</div><div class="appver" style="text-align:left"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}<br>S S International · production, dispatch, invoices and chemicals<br>${window.__ssiCheckUpdate ? `<button class="btn alt" data-chkupd style="margin-top:8px">Check for updates</button> <span id="updmsg"></span>` : "This Claude version always opens the latest release."}</div>`;
@@ -2307,6 +2324,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     a.run("COMMIT");
     const done = q(src, "SELECT 1 FROM sqlite_master WHERE name='phone_import_log'").length ? q(src, "SELECT entry_id FROM phone_import_log").map((r) => r.entry_id) : [];
     a.run("CREATE TABLE IF NOT EXISTS phone_log(entry_id TEXT, result TEXT)"); a.run("DELETE FROM phone_log");
+    a.run("CREATE TABLE IF NOT EXISTS phone_done(entry_id TEXT PRIMARY KEY)"); a.run("DELETE FROM phone_done"); done.forEach((id) => a.run("INSERT OR IGNORE INTO phone_done VALUES(?)", [String(id)]));
     if (done.length) q(src, "SELECT entry_id, result FROM phone_import_log WHERE entry_type='new_lot'").forEach((r) => a.run("INSERT INTO phone_log VALUES(?,?)", [r.entry_id, r.result])); a.run("VACUUM");
     const bytes = a.export(); a.close(); src.close();
     return { bytes, summary: `${nLots} tracker lots, ${nRec} recipes, ${nChem} chemicals`, done };
@@ -2327,6 +2345,23 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       closeForm("Updated: " + r.summary + (hit.length ? ". " + hit.length + " phone entries marked as imported." : "."));
     } catch (e) { btn.disabled = false; status(""); msg.textContent = e && e.message ? e.message : "The files could not be read."; }
   }
+  // records kept by the app: from a snapshot of Excel's files take only what comes from Tally (chemical stock and prices, Tally's
+  // masters and sales) and the PDF list; the app's own ledger stays. New chemicals on A. CHEMICALS are added with no ledger.
+  function tallyInto(baseB, xlB) {
+    const SQL = window.__SQL, b = new SQL.Database(baseB), x = new SQL.Database(xlB), q = (d, sql, p) => { const st = d.prepare(sql); if (p) st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
+    let upd = 0, add = 0; const stamp = new Date().toISOString().slice(0, 19);
+    b.run("BEGIN");
+    q(x, "SELECT name, rate, tally_stock FROM chemicals").forEach((c) => { const cur = q(b, "SELECT name, rate, tally_stock FROM chemicals WHERE UPPER(name)=UPPER(?)", [c.name])[0];
+      if (cur) { if (Number(cur.rate) !== Number(c.rate) || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [c.rate, c.tally_stock, c.tally_stock, stamp, cur.name]); }
+      else { add++; b.run("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [c.name, c.rate, c.tally_stock, 0, Number(c.tally_stock) || 0, null, stamp]); } });
+    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
+      const cols = q(x, `PRAGMA table_info(${t})`).map((c) => c.name); b.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols.join(", ")})`); b.run(`DELETE FROM ${t}`);
+      q(x, `SELECT * FROM ${t}`).forEach((r) => b.run(`INSERT INTO ${t}(${cols.join(", ")}) VALUES(${cols.map(() => "?").join(",")})`, cols.map((c) => r[c]))); });
+    b.run("INSERT OR REPLACE INTO meta(key, value) VALUES('tally_merged_at', ?)", [stamp]);
+    b.run("COMMIT");
+    const bytes = b.export(); b.close(); x.close();
+    return { bytes, summary: `${upd} chemical stock${upd === 1 ? "" : "s"} or prices changed from Tally${add ? ", " + add + " new chemical" + (add === 1 ? "" : "s") : ""}` };
+  }
   // hooks for the standalone (OneDrive) build; unused inside Claude
   window.__ssiHooks = {
     ready: () => !!db && !!store,
@@ -2335,6 +2370,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     exportCsv: () => exportCsv(),
     backupBody: () => bkBody(),
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
+    // records kept by the app: the base all phones start from, and Tally's stock and prices from Excel's files
+    waitingForExcel: () => entries.filter((e) => e.status === "pending").length,
+    baseBytes: () => baseBytes,
+    useBase: async (bytes) => { await publishSnapshot(bytes, () => {}); open(window.__SQL, bytes, "base"); },
+    tallyMerge: async (xb, dbb) => {
+      if (!window.XLSX) await loadJs("xlsx.mini.min.js");
+      const r = buildSnapshot(xb, dbb, baseBytes), merged = tallyInto(baseBytes, r.bytes);
+      await publishSnapshot(merged.bytes, () => {}); open(window.__SQL, merged.bytes, "base");
+      return merged.summary;
+    },
     autoUpdate: async (xb, dbb) => {
       if (!window.XLSX) await loadJs("xlsx.mini.min.js");
       const r = buildSnapshot(xb, dbb, db.export());
@@ -2373,6 +2418,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const inn = {}, ot = {}; rows("SELECT from_key f, to_key t, pcs p, sqft s FROM purchase_ledger WHERE status<>'VOID'").forEach((e) => { const a0 = inn[e.t] = inn[e.t] || [0, 0], b0 = ot[e.f] = ot[e.f] || [0, 0]; a0[0] += e.p || 0; a0[1] += e.s || 0; b0[0] += e.p || 0; b0[1] += e.s || 0; });
     Object.keys(ot).filter((k) => /^[PL]\d/.test(k)).forEach((k) => { const i0 = inn[k] || [0, 0], p0 = i0[0] - ot[k][0], s0 = i0[1] - ot[k][1]; if (p0 < -0.0001 || s0 < -0.5) out.push({ go: k[0] === "P" ? "purchases" : "lots", lot: k, area: "Skins", text: `More given out than received: ${fmtN(p0, 0)} pcs, ${fmtN(s0, 2)} sqft left`, todo: "Check the entries" }); });
     data.orders.filter((o) => !o.isNew && !o.lots.length && o.po_date && (today - toDate(o.po_date)) / DAY >= 7).forEach((o) => out.push({ go: "orders", lot: String(o.id), label: "PO " + o.po_no, area: "Orders", text: `${o.customer} - ${o.item}: not started, ${Math.round((today - toDate(o.po_date)) / DAY)} days since the PO`, todo: "Create a lot for it with New lot and pick the PO" }));
+    // chemical ledger rows under a name that is not on A. CHEMICALS (and no alias points it at one): their stock is not counted anywhere
+    try { const known = new Set(data.chemicals.map((c) => UP(c.name))), al = data.alias || {};
+      rows("SELECT chemical, COUNT(*) n, SUM(qty) q FROM chem_moves WHERE status='OK' GROUP BY UPPER(chemical)").filter((r) => !known.has(UP(r.chemical)) && !al[UP(r.chemical)]).forEach((r) =>
+        out.push({ go: "chemicals", lot: r.chemical, area: "Chemicals", text: `${r.n} ledger entr${r.n === 1 ? "y" : "ies"} (${fmtN(r.q, 3)} kg) under '${r.chemical}', which is not on A. CHEMICALS`, todo: "Point it at the right chemical (Rename or Same as on the chemical), or add it" })); } catch (e) { /* older data */ }
+    // a tick says the chemicals were taken, but no stock was taken for that section (lots after the ledger started, L533 on)
+    data.lots.filter((l) => l.state !== "ARCHIVED" && !l.isNew && (parseFloat(String(l.lot_no).slice(1)) || 0) > 532).forEach((l) => [["CRUSTING", l.chem_crust], ["FINISHING", l.chem_finish]].forEach(([sec, t]) => {
+      if (t === "✔" && !one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=UPPER(?) AND section=?", [rwRoot(l.lot_no), sec]) && !(data.chemWait[l.lot_no] || {})[sec]) out.push({ lot: l.lot_no, area: "Chemicals", text: `${sec.toLowerCase()} is ticked but nothing was taken from stock for it`, todo: "Use Adjust under Chemical entries, or untick it if it was run with another lot" }); }));
     return out;
   }
   // ---------------------------------------------------------------- App vs Excel check (the road to the app keeping the records)
@@ -2441,9 +2493,74 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <p class="note" style="margin:2px 0">${esc(Object.entries(r.types).map(([k, v]) => v + " " + shType(k).toLowerCase()).join(", "))}</p>
         ${r.diffs.length ? `<div class="tbl"><table><thead><tr><th>Record</th><th>What</th><th class="r">App had</th><th class="r">Excel has</th><th>From</th></tr></thead><tbody>${r.diffs.map((d) => `<tr><td>${esc(d.area)} ${d.area === "Lot" ? lotLink(d.key) : esc(d.key)}</td><td>${esc(d.field)}</td><td class="r num">${esc(String(d.app))}</td><td class="r num">${esc(String(d.excel))}</td><td class="wrap">${esc(d.by.map((k) => shType(k).toLowerCase()).join(", ") || "changed in Excel?")}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:2px 0">A difference can also be a change made in Excel on the PC at the same time.</p>` : ""}</details>`).join("");
   }
+  // ---------------------------------------------------------------- records engine check (side by side with Excel)
+  // When Excel's new data arrives, the entries Excel imported since the last data are written by the app's own engine into the
+  // last data, and the result is compared with Excel's. A record the engine changed that ends up different is a mismatch; one only
+  // Excel changed (typed in Excel, Tally refresh) is left out. Kept per phone, last 30 updates.
+  const EN_LOG = "ssi-encheck-v1";
+  function enFp() {
+    const T = (q, p) => { try { return rows(q, p); } catch (e) { return []; } }, n = (x, d) => +(Number(x) || 0).toFixed(d), F = {};
+    const del = {}; T("SELECT UPPER(lot_no) k, COUNT(*) c, SUM(pcs) p, SUM(sqft) s FROM lot_deliveries WHERE status='OK' GROUP BY UPPER(lot_no)").forEach((r) => { del[r.k] = r; });
+    const ver = {}; T("SELECT UPPER(lot_no) k, process, version FROM lot_recipes").forEach((r) => { ver[r.k] = (ver[r.k] || []).concat(r.process + " v" + r.version); });
+    const po = {}; T("SELECT UPPER(lot_no) k, line_id FROM lot_orders").forEach((r) => { po[r.k] = r.line_id; });
+    const bal = {}; T("SELECT UPPER(lot_no) k, COUNT(*) c, SUM(pcs) p FROM lot_balance WHERE status='OK' GROUP BY UPPER(lot_no)").forEach((r) => { bal[r.k] = r.c + " / " + n(r.p, 2); });
+    T("SELECT * FROM lots").forEach((l) => { const k = UP(l.lot_no), d = del[k] || {};
+      F["Lot|" + k] = { stage: UP(l.stage), state: l.state || "", pcs: n(l.lot_pcs, 2), sqft: n(l.lot_sqft, 2), delivered: n(d.s ?? l.delivered_est, 2), deliveries: d.c || 0, crust: l.chem_crust === "✔" ? "done" : "not done", finish: l.chem_finish === "✔" ? "done" : "not done",
+        customer: UP(l.customer), product: UP(l.product), page: String(l.process_page || "").trim(), processes: (ver[k] || []).sort().join(", "), po: po[k] || "", balance: bal[k] || "" }; });
+    T(`SELECT p.purchase_no, p.closed_on, p.supplier, p.rate, (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(to_key)=UPPER(p.purchase_no) AND status<>'VOID') ip, (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(to_key)=UPPER(p.purchase_no) AND status<>'VOID') isq,
+      (SELECT IFNULL(SUM(pcs),0) FROM purchase_ledger WHERE UPPER(from_key)=UPPER(p.purchase_no) AND status<>'VOID') op, (SELECT IFNULL(SUM(sqft),0) FROM purchase_ledger WHERE UPPER(from_key)=UPPER(p.purchase_no) AND status<>'VOID') osq FROM purchases p`).forEach((p) => {
+      F["Stock line|" + UP(p.purchase_no)] = { supplier: UP(p.supplier), rate: n(p.rate, 2), pcs_in: n(p.ip, 2), sqft_in: n(p.isq, 2), pcs_left: n(p.ip - p.op, 2), sqft_left: n(p.isq - p.osq, 2), closed: p.closed_on ? "closed" : "open" }; });
+    T("SELECT name, ledger_qty, available, tally_stock FROM chemicals").forEach((c) => { F["Chemical|" + UP(c.name)] = { ledger: n((Number(c.available) || 0) - (Number(c.tally_stock) || 0), 3) }; });
+    T("SELECT l.*, o.po_no, o.customer, o.po_date FROM order_lines l JOIN orders o ON o.id=l.order_id").forEach((o) => { F["PO item|" + o.id] = { po: UP(o.po_no), customer: UP(o.customer), date: String(o.po_date || "").slice(0, 10), item: UP(o.item), qty: n(o.qty_sqft, 2), rate: n(o.rate, 2), closed: o.closed_on ? "closed" : "open", short: o.short_on ? "short" : "" }; });
+    T("SELECT rw_key, status, lot_no, parent_lot FROM lot_rework").forEach((r) => { F["Rework|" + r.rw_key] = { lot: UP(r.lot_no), status: r.status }; });
+    T("SELECT rw_key, COUNT(*) c, SUM(amount) a FROM lot_rework_cost WHERE status='OK' GROUP BY rw_key").forEach((r) => { const f = F["Rework|" + r.rw_key]; if (f) Object.assign(f, { lines: r.c, cost: n(r.a, 0) }); });
+    T("SELECT process, rows FROM process_dyes").forEach((r) => { let h = 0; const s = String(r.rows || ""); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; F["Dye table|" + UP(r.process)] = { rows: h }; });
+    return F;
+  }
+  function enCheck(prevBytes) {
+    if (!prevBytes || !window.__SQL || entriesSeen !== true) return;
+    const cur = db, ids = (d) => { try { const r = d.exec("SELECT entry_id FROM phone_done"); return new Set(r.length ? r[0].values.map((v) => String(v[0])) : []); } catch (e) { return null; } };
+    let prevDb = null;
+    try {
+      prevDb = new window.__SQL.Database(prevBytes);
+      const before = ids(prevDb), after = ids(cur); if (!before || !after) return;
+      const newIds = [...after].filter((x) => !before.has(x)); if (!newIds.length) return;
+      const byId = new Map(entries.map((e) => [e.id, e])), ev = newIds.map((id) => byId.get(id)).filter(Boolean).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
+      const skip = ev.filter((e) => !ENGINE[e.type]), run = ev.filter((e) => ENGINE[e.type]); if (!run.length) return;
+      db = prevDb; db.run("CREATE TABLE IF NOT EXISTS app_keys(entry_id TEXT PRIMARY KEY, key TEXT)");
+      const fp0 = enFp(), errs = [], touched = new Set();
+      run.forEach((e) => { db.run("SAVEPOINT c"); try { ENGINE[e.type](enRemap(e)); db.run("RELEASE c"); } catch (x) { db.run("ROLLBACK TO c"); db.run("RELEASE c"); errs.push({ id: e.id, type: e.type, lot: e.lot_no || "", err: String(x && x.message || x) }); } });
+      const fpE = enFp(); db = cur; const fpX = enFp(), diffs = [], xonly = [], named = new Set();
+      run.forEach((e) => { const d = e.data || {}; [e.lot_no, d.lot, d.from, d.to, d.new_lot, d.to_lot, d.key, d.parent].forEach((k) => { if (k) named.add(UP(k)); }); });
+      new Set([...Object.keys(fpE), ...Object.keys(fpX)]).forEach((k) => {
+        const e = fpE[k] || {}, x = fpX[k] || {}, p = fp0[k] || {}, [area, key] = k.split("|");
+        new Set([...Object.keys(e), ...Object.keys(x)]).forEach((f) => { const a = JSON.stringify(e[f] ?? null), b = JSON.stringify(x[f] ?? null), was = JSON.stringify(p[f] ?? null);
+          if (a === b) return; const row = { area, key, field: f, app: e[f] ?? "—", excel: x[f] ?? "—" };
+          if (a !== was || ((area === "Lot" || area === "Stock line") && named.has(key))) diffs.push(row); else xonly.push(row); });
+        if (JSON.stringify(e) !== JSON.stringify(p)) touched.add(k); });
+      const types = {}; run.forEach((e) => { types[e.type] = (types[e.type] || 0) + 1; });
+      let log = []; try { log = JSON.parse(localStorage.getItem(EN_LOG) || "[]") || []; } catch (e) { log = []; }
+      log.unshift({ at: new Date().toISOString(), n: run.length, skipped: skip.length, missing: newIds.length - ev.length, types, checked: touched.size, errs: errs.slice(0, 50), diffs: diffs.slice(0, 200), more: Math.max(0, diffs.length - 200), xonly: xonly.slice(0, 100), xmore: Math.max(0, xonly.length - 100) });
+      try { localStorage.setItem(EN_LOG, JSON.stringify(log.slice(0, 30))); } catch (e) { /* full */ }
+      return log[0];
+    } catch (e) { console.warn("engine check", e); }
+    finally { db = cur; if (prevDb) try { prevDb.close(); } catch (e) { /* closed */ } }
+  }
+  function enView() {
+    let log = []; try { log = JSON.parse(localStorage.getItem(EN_LOG) || "[]") || []; } catch (e) { log = []; }
+    const head = `<div class="group">App's own records vs Excel</div><p class="note" style="margin:4px 2px">Each time Excel's data arrives, the app also writes the entries Excel imported into the last data itself, the way it will once it keeps the records, and compares the result with Excel's.</p>`;
+    if (!log.length) return head + `<p class="note" style="margin:4px 2px">No check yet. It runs at the next Excel update that imports entries.</p>`;
+    const d30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), n = d30.reduce((t, r) => t + r.n, 0), bad = d30.reduce((t, r) => t + r.diffs.length + (r.more || 0) + r.errs.length, 0);
+    return head + `<p style="margin:4px 2px"><b>Last 30 days:</b> ${d30.length} update${d30.length === 1 ? "" : "s"}, ${n} entries written, ${bad ? `<span class="late">${bad} difference${bad === 1 ? "" : "s"}</span>` : `<span class="ok">all matched</span>`}.</p>` +
+      log.slice(0, 10).map((r) => { const nb = r.diffs.length + (r.more || 0) + r.errs.length; return `<details class="hcx"${nb && r === log[0] ? " open" : ""}><summary><b>${esc(fmtST(r.at))}</b> · ${r.n} entr${r.n === 1 ? "y" : "ies"} · ${r.checked} records · ${nb ? `<span class="late">${nb} difference${nb === 1 ? "" : "s"}</span>` : `<span class="ok">matched</span>`}</summary>
+        <p class="note" style="margin:2px 0">${esc(Object.entries(r.types).map(([k, v]) => v + " " + shType(k).toLowerCase()).join(", "))}${r.missing ? ` · ${r.missing} imported entr${r.missing === 1 ? "y is" : "ies are"} not on this phone` : ""}</p>
+        ${r.errs.length ? `<p class="note late" style="margin:2px 0">${r.errs.map((x) => esc(shType(x.type) + " " + x.lot + ": " + x.err)).join("<br>")}</p>` : ""}
+        ${r.diffs.length ? `<div class="tbl"><table><thead><tr><th>Record</th><th>What</th><th class="r">App made</th><th class="r">Excel made</th></tr></thead><tbody>${r.diffs.map((d) => `<tr><td>${esc(d.area)} ${d.area === "Lot" ? lotLink(d.key) : esc(d.key)}</td><td>${esc(d.field)}</td><td class="r num">${esc(String(d.app))}</td><td class="r num">${esc(String(d.excel))}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        ${(r.xonly || []).length ? `<details><summary class="note">${r.xonly.length + (r.xmore || 0)} change${r.xonly.length + (r.xmore || 0) === 1 ? "" : "s"} made only in Excel (typed there, Tally refresh)</summary><p class="note" style="margin:2px 0">${r.xonly.map((d) => esc(d.area + " " + d.key + " " + d.field + ": " + d.app + " → " + d.excel)).join("<br>")}</p></details>` : ""}</details>`; }).join("");
+  }
   function healthView() {
     const items = healthItems(), areas = ["Tracker", "Stage", "Due date", "Chemicals", "Delivery", "Skins", "Orders"];
-    return shView() + `<div class="count"><span>${items.length} items</span></div>` + (items.length ? areas.map((a) => { const x = items.filter((i) => i.area === a); return x.length ? `<div class="group">${a} · ${x.length}</div>` + x.map((i) =>
+    return shView() + enView() + `<div class="count"><span>${items.length} items</span></div>` + (items.length ? areas.map((a) => { const x = items.filter((i) => i.area === a); return x.length ? `<div class="group">${a} · ${x.length}</div>` + x.map((i) =>
       `<button class="hc" data-hgo="${i.go || "lots"}" data-k="${esc(i.lot)}"><b>${esc(i.label || i.lot)}</b><span>${esc(i.text)}</span><span class="td">${esc(i.todo)}</span></button>`).join("") : ""; }).join("") : `<p class="empty">Everything looks fine.</p>`);
   }
   const TCOLS = [["lot_no", "Lot"], ["status", "Status"], ["customer", "Customer"], ["product", "Product"], ["order_qty", "Order qty", 1], ["lot_pcs", "Pcs", 1], ["lot_sqft", "Sqft", 1], ["shaving", "Shaving"], ["order_date", "Order date", 2], ["due_date", "Due", 2], ["dueIn", "Days left", 1], ["stage", "Stage"], ["inStage", "In stage", 1], ["weight", "Weight"], ["process_page", "Process page"], ["delivered", "Delivered", 1], ["remarks", "Remarks"]];
@@ -2708,7 +2825,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!st.r) return []; const had = chemDeducted(l.lot_no), need = {};
     if (!Object.keys(had).length) return [];
     ["CRUSTING", "FINISHING"].filter((s) => st[s] === "done" && one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=? AND section=?", [l.lot_no, s]) > 0).forEach((s) => chemNeed(st.r, s).lines.forEach((x) => { need[x.n] = (need[x.n] || 0) + x.q; }));
-    return [...new Set(Object.keys(had).concat(Object.keys(need)))].map((n) => { const h = +(had[n] || 0).toFixed(4), w = +(need[n] || 0).toFixed(4); return { n, had: h, need: w, q: +(w - h).toFixed(4), rate: data.rate[n.toUpperCase()] || 0 }; }).filter((x) => Math.abs(x.q) > 0.01);
+    return [...new Set(Object.keys(had).concat(Object.keys(need)))].map((n) => { const h = +(had[n] || 0).toFixed(6), w = +(need[n] || 0).toFixed(6); return { n, had: h, need: w, q: +(w - h).toFixed(6), rate: data.rate[n.toUpperCase()] || 0 }; }).filter((x) => Math.abs(x.q) > 0.0005); // Excel: TOLQ 0.0005
   }
   // which saved version of this lot's recipe is closest to what was actually taken from stock
   function chemBest(l, st) {
@@ -4397,7 +4514,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       closeForm(done);
     } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
-  function closeForm(done) { formOpen = null; ed = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; flash = done; refresh(); showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
+  const recWord = (t) => !recMode() || typeof t !== "string" ? t : t.replace(/\s*(It is|They are) waiting for Excel\./g, "").replace(/,? ?waiting for Excel/gi, "");
+  function closeForm(done) { formOpen = null; ed = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; flash = recWord(done); refresh(); showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
   const nextUncounted = (name) => { const ws = words($("#q").value), l = openAudit().lines.filter((c) => match(c.n, ws) && c.n !== name && !countOf(c.n)).sort((a, b) => a.n.localeCompare(b.n)); return (l.find((c) => c.n.localeCompare(name) > 0) || l[0] || {}).n || ""; };
   function countCalc(f) {
     const full = $("#fq-full").value, loose = $("#fq-loose").value, recv = $("#fq-recv").value, out = $("#fq-calc");
@@ -4876,13 +4994,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!store) return `<p class="empty">Phone entries are not available in this view.</p>`;
     if (!entriesSeen) return `<p class="empty">Loading phone entries…</p>`;
     const f = filter.entries || "pending", cnt = 0, list = entries.filter((e) => e.type !== "count" && (f === "all" || e.status === f)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    const n = data.pending.length;
-    const tools = n && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn" data-export>Send to Excel</button><button class="btn alt" data-copycsv>Copy</button><button class="btn alt" data-markall>Mark ${n} as imported</button></div><p class="note">Tap Send to Excel, choose OneDrive and save in your Phone entries folder. Then press Import from phone in Excel. (If OneDrive sync is switched on in the top bar, this happens by itself.) Update from Excel marks them as imported. If you won't update yet, mark them here.</p><div id="csvout"></div>` : "";
+    const n = data.pending.length, rec = recMode(), nErr = Object.keys(engineErr).length;
+    const tools = rec ? `<p class="note" style="margin-top:8px">The app keeps the records: each entry is written as soon as it is saved.${nErr ? ` <span class="late">${nErr} could not be written; the reason is on each one. Cancel it and enter it again corrected.</span>` : ""}</p>` : n && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn" data-export>Send to Excel</button><button class="btn alt" data-copycsv>Copy</button><button class="btn alt" data-markall>Mark ${n} as imported</button></div><p class="note">Tap Send to Excel, choose OneDrive and save in your Phone entries folder. Then press Import from phone in Excel. (If OneDrive sync is switched on in the top bar, this happens by itself.) Update from Excel marks them as imported. If you won't update yet, mark them here.</p><div id="csvout"></div>` : "";
     return `${entriesSeen === "late" ? `<p class="note">Phone entries can't be reached yet, so this list may be out of date.</p>` : ""}${tools}<div class="count"><span>${list.length + (cnt ? 1 : 0)} shown</span></div>${cnt ? `<div class="ent"><span class="k">Stock count</span><button class="mini" data-jump="chemicals" data-f="count">Open</button><span class="tx">${cnt} chemicals counted</span></div>` : ""}` +
       (list.length || cnt ? list.map((e) => `<div class="ent"><span class="k">${data.lotBy[e.lot_no] ? `<button class="link" data-lot="${esc(e.lot_no)}">${esc(e.lot_no)}</button>` : esc(e.lot_no)}</span>
         ${e.status === "pending" && canWrite ? `<button class="mini" data-cancel="${esc(e.id)}">Cancel</button>` : `<span class="pill ${e.status === "cancelled" ? "idle" : "ok"}">${esc(e.status)}</span>`}
-        <span class="tx">${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
-        <span class="by">${fmtD(e.entry_date || (e.data && e.data.date) || e.created_at)} · <span${e.entered_by ? ` data-uid="${esc(e.entered_by)}"` : ""}>Someone</span></span></div>`).join("") : `<p class="empty">${f === "pending" ? "Nothing is waiting for Excel. Open a lot and use Move stage or Record delivery." : "No entries here."}</p>`);
+        <span class="tx">${rec && e.status === "pending" ? (enApplied.has(e.id) ? `<span class="pill ok">recorded</span> ` : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
+        <span class="by">${fmtD(e.entry_date || (e.data && e.data.date) || e.created_at)} · <span${e.entered_by ? ` data-uid="${esc(e.entered_by)}"` : ""}>Someone</span></span></div>`).join("") : `<p class="empty">${f === "pending" && rec ? "No entries yet." : f === "pending" ? "Nothing is waiting for Excel. Open a lot and use Move stage or Record delivery." : "No entries here."}</p>`);
   }
   async function exportCsv() {
     const ids = [...new Set(data.pending.map((e) => e.entered_by).filter(Boolean))], ps = people && ids.length ? await people.profiles(ids) : {};
@@ -5215,6 +5333,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const b = e.target.closest("[data-ledt]"); if (b) { filter.ledT = b.dataset.ledt; render(); return; } }
     { const b = e.target.closest("[data-tallyt]"); if (b) { filter.tallyT = b.dataset.tallyt; render(); return; } }
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
+    { const b = e.target.closest("[data-recmode]"); if (b) { const to = b.dataset.recmode, m = $("#recmsg");
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = to === "app" ? "Tap again: the app keeps the records from now" : "Tap again: Excel imports the entries again"; return; }
+      b.disabled = true; if (m) m.textContent = "Working…";
+      try { const r = await window.__ssiOD.records(to); if (m) m.textContent = r || "Done."; setTimeout(() => render(), 1500); } catch (err) { b.disabled = false; delete b.dataset.sure; b.textContent = to === "app" ? "Let the app keep the records" : "Give the records back to Excel"; if (m) m.textContent = err && err.message ? err.message : String(err); }
+      return; } }
     { const rp = e.target.closest("[data-rwper]"); if (rp) { filter.rwPer = rp.dataset.rwper; render(); return; } }
     { const ia = e.target.closest("[data-ipa]"); if (ia && ia.closest("#list")) { const a = ia.dataset.ipa, cu = ia.dataset.cu, mine = () => invCands("", null, invArch).filter((c) => (UP((data.lotBy[c.lot] || {}).customer) || "(no customer)") === cu);
       if (a === "arch") { invArch = !invArch; render(); return; }
