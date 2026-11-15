@@ -723,6 +723,45 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ENGINE._led(d.date, "SUPPLIER", k, d.pcs, d.sqft, "RECEIPT", e, "Split from " + K); },
     purchase_merge(e) { const d = e.data || {}, a = ENGINE._purch(d.from), b = ENGINE._purch(d.to), A = UP(a.purchase_no), B = UP(b.purchase_no);
       enRun("UPDATE purchase_ledger SET to_key=? WHERE UPPER(to_key)=?", [B, A]); enRun("UPDATE purchase_ledger SET from_key=? WHERE UPPER(from_key)=?", [B, A]); enRun("DELETE FROM purchases WHERE purchase_no=?", [a.purchase_no]); },
+    // ---- chemicals: the chemical ledger (chem_moves) and column E of A. CHEMICALS (ledger_qty; available = Tally + ledger)
+    _chem(n) { const c = enOne("SELECT * FROM chemicals WHERE UPPER(name)=UPPER(?)", [n]); if (!c) throw new Error(n + " is not on A. CHEMICALS"); return c; },
+    _mv(e, n, qty, type, ref, sec, reason) { const c = ENGINE._chem(n), q = +Number(qty).toFixed(6);
+      enRun("INSERT INTO chem_moves(entry_date, chemical, qty, entry_type, ref, section, reason, status) VALUES(?,?,?,?,?,?,?,?)", [String(e.created_at || enNow()).replace("T", " ").slice(0, 19), c.name, q, type, ref || "", sec || "", reason || "", "OK"]);
+      enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)+?, available=IFNULL(available,0)+? WHERE name=?", [q, q, c.name]); },
+    // Adjust Stocks from the phone: LOT USE rows for the lot and section, and the crusting / finishing tick on the tracker
+    chem_adjust(e) { const d = e.data || {}, l = enLot(e.lot_no), secs = [d.crust === "1" ? "CRUSTING" : "", d.fin === "1" ? "FINISHING" : ""].filter(Boolean);
+      const parts = e.by_sec || (secs.length === 1 ? [{ s: secs[0], lines: e.lines || [] }] : [{ s: secs[0] || "CRUSTING", lines: e.lines || [] }]);
+      parts.forEach((p) => (p.lines || []).forEach((x) => { if (Number(x.q)) ENGINE._mv(e, x.n, -Math.abs(Number(x.q)), "LOT USE", l.lot_no, p.s, ""); }));
+      if (d.crust === "1") enRun("UPDATE lots SET chem_crust='✔' WHERE lot_no=?", [l.lot_no]); if (d.fin === "1") enRun("UPDATE lots SET chem_finish='✔' WHERE lot_no=?", [l.lot_no]); },
+    // re-adjust after the process changed: the difference, more taken (LOT USE) or given back (LOT RETURN)
+    chem_readjust(e) { const l = enLot(e.lot_no); (e.lines || []).forEach((x) => { const q = Number(x.q) || 0; if (q) ENGINE._mv(e, x.n, -q, q > 0 ? "LOT USE" : "LOT RETURN", l.lot_no, "RE-ADJUST", ""); }); },
+    // DtUndoChem: the lot's ledger rows of the section are cancelled and their chemicals come back
+    chem_undo(e) { const d = e.data || {}, l = enLot(e.lot_no), all = d.what === "ALL";
+      const mv = rows("SELECT * FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=UPPER(?)" + (all ? " AND IFNULL(section,'')<>'REWORK'" : " AND section=?"), all ? [l.lot_no] : [l.lot_no, d.what]);
+      mv.forEach((m) => { enRun("UPDATE chem_moves SET status='VOID' WHERE id=?", [m.id]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE UPPER(name)=UPPER(?)", [m.qty, m.qty, m.chemical]); });
+      if (all || d.what === "CRUSTING") enRun("UPDATE lots SET chem_crust='—' WHERE lot_no=?", [l.lot_no]); if (all || d.what === "FINISHING") enRun("UPDATE lots SET chem_finish='—' WHERE lot_no=?", [l.lot_no]); },
+    // Record use / correction on one chemical
+    chem(e) { const d = e.data || {}, q = Math.abs(Number(d.qty) || 0); ENGINE._mv(e, d.chemical, d.kind === "CORRECTION" ? Number(d.qty) || 0 : -q, d.kind || "USE", "", "", [d.date, d.reason].filter(Boolean).join(" ")); },
+    // a posted stock audit: one AUDIT ADJ row per counted chemical that differed
+    audit(e) { (e.lines || []).forEach((x) => { if (Number(x.diff)) ENGINE._mv(e, x.n, Number(x.diff), "AUDIT ADJ", e.lot_no, "", "Stock audit " + e.lot_no); });
+      try { enRun("INSERT INTO chem_audits(audit_no, scope, status, posted_at, n_counted, n_adjusted, value_short, value_excess) VALUES(?,?,?,?,?,?,?,?)", [e.lot_no, (e.data || {}).scope || "", "POSTED", String(e.created_at || enNow()).slice(0, 19).replace("T", " "), (e.data || {}).n_counted || null, (e.lines || []).length, (e.data || {}).short || null, (e.data || {}).excess || null]); } catch (x) { /* older table */ } },
+    chem_add(e) { const d = e.data || {}, n = String(d.name || e.lot_no).trim(); if (enOne("SELECT 1 x FROM chemicals WHERE UPPER(name)=UPPER(?)", [n])) throw new Error(n + " is already on A. CHEMICALS");
+      enRun("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [n, Number(d.rate) || 0, 0, 0, 0, Number(d.pack) || null, enNow()]);
+      if (Number(d.qty)) ENGINE._mv(e, n, Number(d.qty), "CORRECTION", "", "", "Opening stock when added"); },
+    chem_edit(e) { const d = e.data || {}, c = ENGINE._chem(e.lot_no), set = [], v = [];
+      if (d.rate !== undefined && d.rate !== "") { set.push("rate=?"); v.push(Number(d.rate) || 0); } if (d.pack !== undefined && d.pack !== "") { set.push("pack_size=?"); v.push(Number(d.pack) || null); }
+      if (d.name && d.name !== c.name) { set.push("name=?"); v.push(d.name); enRun("UPDATE chem_moves SET chemical=? WHERE chemical=?", [d.name, c.name]); }
+      if (set.length) enRun("UPDATE chemicals SET " + set.join(", ") + " WHERE name=?", v.concat([c.name])); },
+    // its history moves to the other chemical
+    chem_rename(e) { const d = e.data || {}, a = ENGINE._chem(d.from || e.lot_no), b = ENGINE._chem(d.to), q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE chemical=? AND status='OK'", [a.name])[0].q;
+      enRun("UPDATE chem_moves SET chemical=? WHERE chemical=?", [b.name, a.name]);
+      enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE name=?", [q, q, a.name]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)+?, available=IFNULL(available,0)+? WHERE name=?", [q, q, b.name]); ENGINE.chem_alias({ lot_no: a.name, data: { name: a.name, to: b.name } }); },
+    chem_delete(e) { const c = ENGINE._chem((e.data || {}).name || e.lot_no); enRun("DELETE FROM chemicals WHERE name=?", [c.name]); },
+    chem_void(e) { const d = e.data || {}, m = enOne("SELECT * FROM chem_moves WHERE id=? AND status='OK'", [Number(d.id)]); if (!m) throw new Error("ledger entry " + d.id + " is not in the records");
+      enRun("UPDATE chem_moves SET status='VOID' WHERE id=?", [m.id]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE UPPER(name)=UPPER(?)", [m.qty, m.qty, m.chemical]); },
+    // CHEM ALIASES: a recipe name that means this chemical
+    chem_alias(e) { const d = e.data || {}; let m = {}; try { m = JSON.parse((enOne("SELECT value FROM meta WHERE key='chem_aliases'") || {}).value || "{}") || {}; } catch (x) { m = {}; }
+      m[UP(d.name || e.lot_no)] = d.to; enRun("INSERT OR REPLACE INTO meta(key, value) VALUES('chem_aliases', ?)", [JSON.stringify(m)]); },
     // Edit lot: the tracker cells; a lot size change moves DELIVERED QUANTITY when it was still the 90% formula
     lot_edit(e) {
       const l = enLot(e.lot_no), ch = e.changes || {}, cols = new Set(rows("PRAGMA table_info(lots)").map((c) => c.name)), set = [], vals = [];
@@ -731,7 +770,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (set.length) enRun("UPDATE lots SET " + set.join(", ") + " WHERE lot_no=?", vals.concat([l.lot_no]));
     },
   };
-  const enSig = (e) => { const s = JSON.stringify([e.type, e.lot_no, e.data, e.changes, e.to_stage, e.entry_date, e.pcs, e.sqft, e.doc_no, e.note, e.status, e.process, e.after, e.base_version, e.load_cur, e.base_lot]); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); };
+  const enSig = (e) => { const s = JSON.stringify([e.type, e.lot_no, e.data, e.changes, e.to_stage, e.entry_date, e.pcs, e.sqft, e.doc_no, e.note, e.status, e.process, e.after, e.base_version, e.load_cur, e.base_lot, e.lines, e.by_sec]); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); };
   // an entry on a purchase or lot made on the phone names it by the number the phone showed; follow the number it got
   function enRemap(e) {
     const keyOf = (id) => (enOne("SELECT key FROM app_keys WHERE entry_id=?", [id]) || {}).key;
@@ -1277,7 +1316,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 128, at: "2026-11-15T09:29:04+05:30", notes: "Groundwork: the app can now write purchases, new lots, skins, lot moves and purchase changes into its own records (not switched on yet)" };
+  const APP_BUILD = { v: 129, at: "2026-11-15T09:36:11+05:30", notes: "Groundwork: the app can now write chemical stock adjustments, re-adjustments, undo, audits and chemical changes into its own records (not switched on yet)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4296,7 +4335,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (loose.length) return bad(`Open ${l.lot_no}'s process and press Save once first (no changes needed). ${loose.length} finishing line${loose.length === 1 ? " has" : "s have"} no weight of ${loose.length === 1 ? "its" : "their"} own, and saving gives Excel the same weights the app shows, so the totals match.`); }
       if (p.short.length && warnOnce(f, p.short.length + (p.short.length === 1 ? " chemical goes" : " chemicals go") + " negative. Save again to go ahead.")) return;
       const tot = (s) => { const i = p.secs.indexOf(s); return i < 0 ? "" : p.parts[i].total; };
-      return saveNew({ type: "chem_adjust", lot_no: l.lot_no, lines: p.lines.map((x) => ({ n: x.n, q: x.q })), data: { lot: l.lot_no, crust: p.secs.includes("CRUSTING") ? "1" : "0", fin: p.secs.includes("FINISHING") ? "1" : "0", crust_total: tot("CRUSTING"), fin_total: tot("FINISHING") } }, "Stock adjustment saved. It is waiting for Excel.", msg, btn);
+      return saveNew({ type: "chem_adjust", lot_no: l.lot_no, lines: p.lines.map((x) => ({ n: x.n, q: x.q })), by_sec: p.secs.map((s, i) => ({ s, lines: p.parts[i].lines.map((x) => ({ n: x.n, q: x.q })) })), data: { lot: l.lot_no, crust: p.secs.includes("CRUSTING") ? "1" : "0", fin: p.secs.includes("FINISHING") ? "1" : "0", crust_total: tot("CRUSTING"), fin_total: tot("FINISHING") } }, "Stock adjustment saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-chem_readjust") { const l = data.lotBy[f.dataset.lot], ch = chemChanges(l, chemState(l)); return saveNew({ type: "chem_readjust", lot_no: l.lot_no, lines: ch.map((x) => ({ n: x.n, q: x.q })), data: { lot: l.lot_no, n: ch.length } }, "Re-adjust saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-delivery_void") { const d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(f.dataset.id)])[0];
