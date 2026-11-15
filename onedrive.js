@@ -289,7 +289,7 @@
         // 4. pending entries as a file for Excel's Import from phone
         // records kept by the app: nothing goes to Excel any more
         let recApp = false; try { recApp = localStorage.getItem("ssi-records") === "app"; } catch (e) { /* default */ }
-        const nP = recApp ? 0 : H.pending(), name = c.entriesFolder + "/phone-entries-" + device + ".csv";
+        const nP = H.pending(), name = c.entriesFolder + "/phone-entries-" + device + ".csv";
         if (nP > 0) {
           const text = await H.exportCsv();
           // put it back if Excel's Import from phone moved it to Done but some entries are still waiting

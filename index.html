@@ -1,4 +1,8 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#ffffff"><meta name="mobile-web-app-capable" content="yes"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-180.png"></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}  .cmpcard { border: 1px solid var(--line, #ccc); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: var(--card, transparent); }
+  .pbch label.chk { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+  .pbl .nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #fm-chem_purchase .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#ffffff"><meta name="mobile-web-app-capable" content="yes"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-180.png"></head><body>
 <meta charset="utf-8">
 <title>SSI Production App</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -575,7 +579,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp() };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -1106,11 +1110,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     data.orders = data.orders.filter((o) => !poDelE.some((e) => Number(e.data.order_id) === o.order_id));
     const mins = {}; rows("SELECT * FROM chem_min").forEach((m) => mins[m.chemical.toUpperCase()] = m);
     chemEdE.forEach((e) => { if (e.data.min !== undefined && e.data.min !== "") { const k = e.lot_no.toUpperCase(); mins[k] = Object.assign({ chemical: e.lot_no }, mins[k], { min_stock: Number(e.data.min) }); } });
+    const pbQ = pbPendingQty();
     data.chemicals = rows("SELECT * FROM chemicals").filter((c) => !chemDelE.some((e) => e.lot_no === c.name)).concat(chemAddE.map((e) => ({ name: e.lot_no, rate: Number(e.data.rate) || 0, tally_stock: 0, ledger_qty: 0, available: Number(e.data.qty) || 0, pack_size: Number(e.data.pack) || null, isNew: true }))).map((c) => {
       const ph = chemE.filter((e) => e.data.chemical === c.name), m = mins[c.name.toUpperCase()] || {};
       ph.forEach((e) => { const q = Math.abs(Number(e.data.qty) || 0); c.available = (c.available || 0) + (e.data.kind === "CORRECTION" ? Number(e.data.qty) : -q); });
       auditE.forEach((e) => { const u = (e.lines || []).find((x) => x.n === c.name); if (u) c.available = (c.available || 0) + u.diff; });
       const pm = [];
+      (pbQ[UP(c.name)] || []).forEach((x) => { c.available = (c.available || 0) + x.qty; pm.push({ date: x.bill.e.created_at, kind: "purchase bill, not in Tally's stock yet", ref: x.bill.party + " bill " + x.bill.ref, qty: x.qty, status: x.bill.e.status }); });
       chemEdE.filter((e) => e.lot_no === c.name && e.data.pack !== undefined && e.data.pack !== "").forEach((e) => { c.pack_size = Number(e.data.pack); });
       chemVoidE.filter((e) => e.lot_no === c.name).forEach((e) => { c.available = (c.available || 0) - Number(e.data.qty); pm.push({ date: e.created_at, kind: "void entry", ref: e.data.type || "", qty: -Number(e.data.qty), status: e.status }); });
       renameE.forEach((e) => { const q = Number(e.data.qty) || 0; if (e.lot_no === c.name) { c.available = (c.available || 0) - q; pm.push({ date: e.created_at, kind: "history moved to", ref: e.data.to, qty: -q, status: e.status }); } if (e.data.to === c.name) { c.available = (c.available || 0) + q; pm.push({ date: e.created_at, kind: "history moved from", ref: e.lot_no, qty: q, status: e.status }); } });
@@ -1195,7 +1201,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stage guide"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
     orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["ledger", "Ledger"], ["all", "All"]],
-    chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
+    chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
     settings: [],
     about: [],
@@ -1303,6 +1309,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "usage") { $("#list").innerHTML = usageView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
+    if (tab === "chemicals" && filter.chemicals === "bills") { $("#list").innerHTML = billsView(ws); return; }
     if (tab === "purchases" && filter.purchases === "ledger") { $("#list").innerHTML = ledgerView(ws); return; }
     if (tab === "orders" && filter.orders === "invpend") { $("#list").innerHTML = invPendView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
@@ -1382,6 +1389,160 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <tfoot><tr><td>Cost ₹</td>${cols.map((k) => `<td class="r num">${fmtN(tot(k), 0)}</td>`).join("")}<td class="r num"><b>${fmtN(cols.reduce((a, k) => a + tot(k), 0), 0)}</b></td></tr></tfoot></table></div>${nav}`;
   }
   // what to check on each chemical, as Excel's CHEM CLEANUP
+  // ---------------------------------------------------------------- purchase bills: phone -> Excel -> Tally (15-Nov-2026)
+  // A chemical purchase bill typed on the phone counts in stock at once. Excel posts it to Tally as a Purchase voucher
+  // (module TallyPurchase) unless the same bill is already there; then the phone shows both and the user chooses.
+  const TALLY_TYPES = ["chem_purchase", "purchase_decision", "tally_delete"];
+  const PB = { vtype: "Purchase", purchase: "Purchase", cgst: "Input CGST", sgst: "Input SGST", igst: "Input IGST", round: "Rounding Off", godown: "Main Location", home: "West Bengal" };
+  const pbNorm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=.)/, "");
+  const pbCred = () => trows("SELECT * FROM tally_creditors ORDER BY name");
+  const pbCredOf = (n) => trows("SELECT * FROM tally_creditors WHERE UPPER(name)=UPPER(?)", [String(n || "").trim()])[0];
+  const pbTally = () => trows("SELECT * FROM tally_purchases ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC");
+  const pbRow = (id) => trows("SELECT * FROM app_tally WHERE entry_id=?", [id])[0];
+  const pbStockAt = () => (trows("SELECT MAX(v) v FROM tally_meta WHERE k='stock_at'")[0] || {}).v || "";
+  const pbUnit = (n) => ((trows("SELECT unit FROM tally_items WHERE UPPER(name)=UPPER(?)", [n])[0] || {}).unit || "kgs.").trim();
+  const pbLines = (e) => Object.keys(e.data || {}).filter((k) => /^l\d+$/.test(k)).sort((a, b) => a.slice(1) - b.slice(1)).map((k) => { const p = String(e.data[k]).split("~^~"); return { n: p[0], q: Number(p[1]) || 0, r: Number(p[2]) || 0, d: Number(p[3]) || 0, g: Number(p[4]) || 0 }; });
+  const pbTLines = (t) => String(t.lines || "").split("~^~").filter(Boolean).map((x) => { const p = x.split("|"); return { n: p[0], q: Number(p[1]) || 0, r: Number(p[2]) || 0, d: Number(p[3]) || 0, a: Number(p[4]) || 0 }; });
+  // the bill's money, as Tally works it out: each line and each tax rounded to paise, the total to the rupee
+  function pbCalc(b) {
+    const cr = pbCredOf(b.party) || {}, st = b.state || cr.state || PB.home, intra = !st || st.toUpperCase() === PB.home.toUpperCase();
+    const lines = (b.lines || []).map((x) => { const amt = r2(x.q * x.r * (1 - (x.d || 0) / 100)); return Object.assign({}, x, { amt, tax: x.g ? (intra ? 2 * r2(amt * x.g / 200) : r2(amt * x.g / 100)) : 0, half: x.g ? r2(amt * x.g / 200) : 0, full: x.g ? r2(amt * x.g / 100) : 0 }); });
+    const taxable = r2(lines.reduce((t, x) => t + x.amt, 0)), cgst = intra ? r2(lines.reduce((t, x) => t + x.half, 0)) : 0, igst = intra ? 0 : r2(lines.reduce((t, x) => t + x.full, 0));
+    const raw = r2(taxable + 2 * cgst + igst), total = Math.round(raw), ro = r2(total - raw);
+    return { lines, taxable, cgst, sgst: cgst, igst, ro, total, intra, gstin: b.gstin || cr.gstin || "", state: st };
+  }
+  // the Tally voucher (Excel fills in the voucher number)
+  function pbXml(b, id) {
+    const t = pbCalc(b), am = (n) => r2(n).toFixed(2), T = (tag, val) => val === "" || val == null ? "" : `<${tag}>${xe(val)}</${tag}>`;
+    const led = (name, amt, extra = "") => `<LEDGERENTRIES.LIST>${T("LEDGERNAME", name)}<ISDEEMEDPOSITIVE>${amt < 0 ? "Yes" : "No"}</ISDEEMEDPOSITIVE><AMOUNT>${am(amt)}</AMOUNT>${extra}</LEDGERENTRIES.LIST>`;
+    const inv = t.lines.map((x) => { const u = pbUnit(x.n), q = r2(x.q).toFixed(2) + " " + u;
+      return `<ALLINVENTORYENTRIES.LIST>${T("STOCKITEMNAME", x.n)}<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><RATE>${xe(r2(x.r).toFixed(2) + "/" + u)}</RATE>${x.d ? T("DISCOUNT", x.d) : ""}<AMOUNT>${am(-x.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY>`
+        + `<BATCHALLOCATIONS.LIST>${T("GODOWNNAME", PB.godown)}<BATCHNAME>Primary Batch</BATCHNAME>${x.d ? T("BATCHDISCOUNT", x.d) : ""}<AMOUNT>${am(-x.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY></BATCHALLOCATIONS.LIST>`
+        + `<ACCOUNTINGALLOCATIONS.LIST>${T("LEDGERNAME", PB.purchase)}<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>${am(-x.amt)}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>`; }).join("");
+    const narr = [b.note, "From the phone [APP " + id + "]"].filter(Boolean).join(". ");
+    return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(PB.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
+      + `<DATE>${td(b.date)}</DATE><EFFECTIVEDATE>${td(b.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", PB.vtype)}<VOUCHERNUMBER>{VNO}</VOUCHERNUMBER>${T("REFERENCE", b.ref)}${T("REFERENCEDATE", td(b.date))}`
+      + `${T("PARTYLEDGERNAME", b.party)}${T("PARTYNAME", b.party)}${T("BASICBASEPARTYNAME", b.party)}${T("PARTYMAILINGNAME", b.party)}${t.gstin ? T("PARTYGSTIN", t.gstin) + "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" : ""}${T("STATENAME", t.state)}${T("PLACEOFSUPPLY", PB.home)}`
+      + `${T("NARRATION", narr)}<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><VCHENTRYMODE>Item Invoice</VCHENTRYMODE><ISINVOICE>Yes</ISINVOICE>`
+      + led(b.party, t.total, `<ISPARTYLEDGER>Yes</ISPARTYLEDGER><BILLALLOCATIONS.LIST>${T("NAME", b.ref)}<BILLTYPE>New Ref</BILLTYPE><AMOUNT>${am(t.total)}</AMOUNT></BILLALLOCATIONS.LIST>`)
+      + inv + (t.intra ? (t.cgst ? led(PB.cgst, -t.cgst) + led(PB.sgst, -t.sgst) : "") : (t.igst ? led(PB.igst, -t.igst) : ""))
+      + (t.ro ? led(PB.round, -t.ro) : "") + `</VOUCHER></TALLYMESSAGE>`;
+  }
+  // Tally vouchers that look like this bill: same supplier and bill no, or same supplier, total within Rs 1 and date within 3 days
+  function pbDups(b, id) {
+    const days = (a, c) => Math.abs((toDate(a) - toDate(c)) / DAY), tot = pbCalc(b).total, n = pbNorm(b.ref);
+    return pbTally().filter((t) => (!id || t.app_id !== id) && UP(t.party) === UP(b.party) && ((n && pbNorm(t.ref) === n) || (Math.abs((Number(t.amount) || 0) - tot) <= 1 && days(b.date, String(t.vdate).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")) <= 3)));
+  }
+  // every bill typed on a phone, with where it stands
+  function pbBills() {
+    const at = pbStockAt(), dec = {};
+    entries.filter((e) => e.type === "purchase_decision" && e.status !== "cancelled").forEach((e) => { dec[e.data.entry] = e; });
+    return entries.filter((e) => e.type === "chem_purchase" && e.status !== "cancelled").map((e) => {
+      const b = { id: e.id, party: e.data.party, ref: e.data.ref, date: e.data.date, gstin: e.data.gstin, state: e.data.state, note: e.data.note, lines: pbLines(e), e }, t = pbCalc(b), row = pbRow(e.id), d = dec[e.id], wait = d && d.status === "pending";
+      let st = row ? row.state : "NOT_SENT"; if (d && !row) st = "NOT_SENT";
+      const choice = d ? d.data.choice : row ? row.choice : e.data.choice || "";
+      const counts = wait ? ["app", "both"].includes(choice) : ({ NOT_SENT: true, WAITING: true, ERROR: true, POSTED: !!row && (!at || !row.posted_at || row.posted_at > at), DUPLICATE: false, KEPT_TALLY: false, CANCELLED: false })[st];
+      const label = wait ? "Your choice (keep " + ({ tally: "Tally's", app: "the app's", both: "both", none: "none" })[choice] + ") is on its way to Excel"
+        : ({ NOT_SENT: recMode() ? "Waiting to go to Excel" : "Waiting for Excel", WAITING: "With Excel, waiting for Tally" + (row && row.msg ? " (" + row.msg + ")" : " (is Tally open?)"), ERROR: "Tally refused it: " + (row && row.msg || ""), POSTED: "In Tally, purchase " + (row && row.vno || ""), DUPLICATE: "Looks like a bill already in Tally. Compare and choose", KEPT_TALLY: "Same as the bill in Tally, so not posted again", CANCELLED: "Dropped" + (row && row.msg ? " (" + row.msg + ")" : "") })[st];
+      return Object.assign(b, { calc: t, row, st, choice, counts, label, dup: st === "DUPLICATE" && !wait, bad: st === "ERROR" });
+    }).sort((a, b) => String(b.e.created_at).localeCompare(String(a.e.created_at)));
+  }
+  // qty still to come into Tally's stock, per chemical
+  function pbPendingQty() {
+    const q = {}; pbBills().filter((b) => b.counts).forEach((b) => b.lines.forEach((x) => { const k = UP(x.n); q[k] = (q[k] || []).concat({ qty: x.q, bill: b }); })); return q;
+  }
+  const pbStateCls = (b) => b.dup || b.bad ? "bad" : b.st === "POSTED" || b.st === "KEPT_TALLY" ? "ok" : b.st === "CANCELLED" ? "idle" : "warn";
+  function billsView(ws) {
+    const bills = pbBills().filter((b) => match([b.party, b.ref, b.label, b.lines.map((x) => x.n).join(" ")].join(" "), ws)), need = bills.filter((b) => b.dup || b.bad), rest = bills.filter((b) => !b.dup && !b.bad);
+    const tl = pbTally().filter((t) => match([t.party, t.ref, t.vno, t.lines].join(" "), ws)).slice(0, 40), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
+    const row = (b) => `<button class="row" data-go="chemicals" data-k="bill:${esc(b.id)}"><span class="k">${esc(fmtD(b.date))}</span><span class="d"><b>${esc(b.party)}</b> · bill ${esc(b.ref)}<br><small><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span></small></span><span class="r num">₹${fmtN(b.calc.total, 0)}</span></button>`;
+    return `<div class="acts" style="margin:4px 0 8px">${canWrite ? `<button class="btn" data-new="chem_purchase">New purchase bill</button>` : ""}</div>
+      <p class="note" style="margin:0 2px 8px">A bill typed here counts in stock at once. Excel then makes the Purchase voucher in Tally${meta.purch_at ? " (Excel last read Tally " + esc(fmtST(meta.purch_at)) + ")" : ""}. If the same bill is already in Tally, you are asked which to keep.</p>
+      ${need.length ? `<div class="group">Needs you · ${need.length}</div>${need.map(row).join("")}` : ""}
+      <div class="group">Typed on phones · ${rest.length}</div>${rest.length ? rest.map(row).join("") : `<p class="empty">No bills typed on a phone yet.</p>`}
+      <div class="group">In Tally this year · latest ${tl.length}</div>${tl.length ? tl.map((t) => `<button class="row" data-go="chemicals" data-k="tbill:${esc(t.guid)}"><span class="k">${esc(fmtD(String(t.vdate).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")))}</span><span class="d"><b>${esc(t.party)}</b> · bill ${esc(t.ref || "-")}<br><small>Purchase ${esc(t.vno)}${t.app_id ? " · from a phone" : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`).join("") : `<p class="empty">Excel has not read Tally's purchases yet.</p>`}`;
+  }
+  const pbLinesTable = (ls, money) => `<div class="tbl"><table><thead><tr><th>Chemical</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Disc %</th>${money ? `<th class="r">GST %</th>` : ""}<th class="r">Amount</th></tr></thead><tbody>${ls.map((x) => `<tr><td>${esc(x.n)}</td><td class="r num">${fmtN(x.q, 3)}</td><td class="r num">${fmtN(x.r, 2)}</td><td class="r num">${x.d ? fmtN(x.d, 2) : ""}</td>${money ? `<td class="r num">${x.g ? fmtN(x.g, 2) : "0"}</td>` : ""}<td class="r num">${fmtN(x.amt ?? x.a, 2)}</td></tr>`).join("")}</tbody></table></div>`;
+  const pbTotals = (t) => `<p style="margin:6px 2px">Taxable ₹${fmtN(t.taxable, 2)}${t.intra ? (t.cgst ? ` · CGST ₹${fmtN(t.cgst, 2)} · SGST ₹${fmtN(t.sgst, 2)}` : "") : t.igst ? ` · IGST ₹${fmtN(t.igst, 2)}` : ""}${t.ro ? ` · round off ${t.ro > 0 ? "+" : ""}${fmtN(t.ro, 2)}` : ""}<br><b>Bill total ₹${fmtN(t.total, 2)}</b></p>`;
+  function billDetail(k) {
+    if (k.startsWith("tbill:")) { const t = pbTally().find((x) => x.guid === k.slice(6)); if (!t) return `<p class="empty">This Tally voucher is no longer in the data.</p>`;
+      const delW = entries.some((e) => e.type === "tally_delete" && e.status === "pending" && e.data.guid === t.guid) || trows("SELECT 1 x FROM app_tally WHERE kind='delete' AND guid=? AND state='DELETE_WAIT'", [t.guid]).length;
+      return `<h2>Purchase ${esc(t.vno)} in Tally</h2><p class="sub">${esc(t.party)} · bill ${esc(t.ref || "-")} · ${esc(fmtD(String(t.vdate).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")))}${t.app_id ? " · made from a phone bill" : ""}</p>
+        ${pbLinesTable(pbTLines(t), false)}<p style="margin:6px 2px"><b>Bill total ₹${fmtN(t.amount, 2)}</b></p>${t.narration ? `<p class="note">${esc(t.narration)}</p>` : ""}
+        ${canWrite ? (delW ? `<p class="note warn">Excel will delete this voucher in Tally at its next run.</p>` : `<div class="acts"><button class="btn alt" data-form="tally_delete:${esc(t.guid)}">Delete in Tally</button></div>`) : ""}`; }
+    const b = pbBills().find((x) => x.id === k.slice(5)); if (!b) return `<p class="empty">This bill is no longer there.</p>`;
+    const dups = b.dup ? String((b.row || {}).dup || "").split(",").map((g) => pbTally().find((t) => t.guid === g)).filter(Boolean) : [];
+    return `<h2>${esc(b.party)} · bill ${esc(b.ref)}</h2><p class="sub">${esc(fmtD(b.date))}${b.calc.gstin ? " · GSTIN " + esc(b.calc.gstin) : ""} · typed ${esc(fmtST(b.e.created_at))}</p>
+      <p><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span>${b.counts ? ` <span class="note">Counted in chemical stock until Tally's stock has it.</span>` : ""}</p>
+      ${pbLinesTable(b.calc.lines, true)}${pbTotals(b.calc)}${b.note ? `<p class="note">${esc(b.note)}</p>` : ""}
+      ${canWrite ? `<div class="acts">${b.dup ? `<button class="btn" data-form="pb_compare:${esc(b.id)}">Compare with Tally</button>` : ""}${b.st === "NOT_SENT" && b.e.status === "pending" ? `<button class="btn alt" data-cancel="${esc(b.id)}">Cancel this bill</button>` : ""}${["WAITING", "ERROR"].includes(b.st) ? `<button class="btn alt" data-form="pb_drop:${esc(b.id)}">Drop this bill</button>` : ""}</div>` : ""}
+      ${dups.length ? `<p class="note">Tally has ${dups.map((t) => "purchase " + esc(t.vno) + " (bill " + esc(t.ref || "-") + ", ₹" + fmtN(t.amount, 0) + ")").join(", ")}.</p>` : ""}`;
+  }
+  // the bill form: lines are plain inputs; the totals follow as you type
+  const pbLineHtml = (i, x = {}) => `<div class="er ln pbl" data-i="${i}"><input id="pb-${i}-n" class="pb-n" list="pb-chems" value="${esc(x.n || "")}" placeholder="Chemical (as in Tally)" aria-label="Chemical" autocomplete="off"><div class="nums"><input id="pb-${i}-q" class="pb-q" value="${x.q ?? ""}" placeholder="Qty kg" aria-label="Qty" inputmode="decimal"><input id="pb-${i}-r" class="pb-r" value="${x.r ?? ""}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="pb-${i}-d" class="pb-d" value="${x.d ?? ""}" placeholder="Disc %" aria-label="Discount %" inputmode="decimal"><input id="pb-${i}-g" class="pb-g" value="${x.g ?? 18}" placeholder="GST %" aria-label="GST %" inputmode="decimal"></div></div>`;
+  function pbRead(f) {
+    const lines = [...f.querySelectorAll(".pbl")].map((r) => ({ n: r.querySelector(".pb-n").value.trim(), q: parseFloat(r.querySelector(".pb-q").value) || 0, r: parseFloat(r.querySelector(".pb-r").value) || 0, d: parseFloat(r.querySelector(".pb-d").value) || 0, g: parseFloat(r.querySelector(".pb-g").value) || 0 })).filter((x) => x.n || x.q || x.r);
+    const party = $("#pb-party").value.trim(), cr = pbCredOf(party) || {};
+    return { party: cr.name || party, gstin: cr.gstin || "", state: cr.state || "", ref: $("#pb-ref").value.trim(), date: $("#pb-date").value, note: $("#pb-note").value.trim(), paper: $("#pb-paper").value.trim(), lines };
+  }
+  function pbLive(f) {
+    const b = pbRead(f), t = pbCalc(b), out = $("#pb-tot"), cr = pbCredOf(b.party);
+    if (out) out.innerHTML = (b.party && !cr ? `<span class="late">${esc(b.party)} is not a supplier in Tally. Pick one from the list.</span><br>` : cr ? `<small class="note">${esc(cr.state || "")}${cr.gstin ? " · " + esc(cr.gstin) : ""}${t.intra ? " · CGST + SGST" : " · IGST"}</small><br>` : "") + (b.lines.length ? pbTotals(t) : "")
+      + (b.paper && Math.abs((parseFloat(b.paper) || 0) - t.total) > 1 ? `<span class="late">The bill says ₹${esc(b.paper)}, these lines make ₹${fmtN(t.total, 2)}. Check the rates, discounts and GST.</span>` : "");
+    // last price of a chemical, when the rate is empty
+    f.querySelectorAll(".pbl").forEach((r) => { const n = r.querySelector(".pb-n").value.trim(), rate = r.querySelector(".pb-r"); if (n && !rate.value && !rate.dataset.tried) { rate.dataset.tried = "1"; const last = pbTally().flatMap((t) => pbTLines(t).filter((x) => UP(x.n) === UP(n)).map((x) => Object.assign(x, { party: t.party })))[0]; if (last) { rate.placeholder = "Rate (last " + fmtN(last.r, 2) + ")"; const d = r.querySelector(".pb-d"); if (!d.value && last.d) d.placeholder = "Disc % (last " + fmtN(last.d, 0) + ")"; } } });
+  }
+  let pbDraft = null;
+  function pbValidate(b) {
+    if (!b.party) return "Pick the supplier."; if (!pbCredOf(b.party)) return b.party + " is not a supplier (Sundry Creditor) in Tally. Pick one from the list, or add it in Tally first.";
+    if (!b.ref) return "Type the bill number."; if (checkDate(b.date)) return checkDate(b.date);
+    if (!b.lines.length) return "Add at least one chemical.";
+    const unknown = b.lines.find((x) => !data.chemBy[UP(x.n)] && !trows("SELECT 1 x FROM tally_items WHERE UPPER(name)=UPPER(?)", [x.n]).length); if (unknown) return unknown.n + " is not a stock item in Tally. Type the name exactly as in Tally.";
+    if (b.lines.some((x) => !(x.q > 0) || !(x.r > 0))) return "Each line needs a qty and a rate above 0.";
+    if (b.lines.some((x) => x.d < 0 || x.d >= 100 || ![0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 12, 18, 28].includes(x.g))) return "Discount must be under 100%, and GST one of 0, 5, 12, 18 or 28 %.";
+    return "";
+  }
+  function pbBody(b, extra = {}) {
+    const d = Object.assign({ party: b.party, gstin: b.gstin, state: b.state, ref: b.ref, date: b.date, note: b.note, total: pbCalc(b).total }, extra);
+    b.lines.forEach((x, i) => { d["l" + (i + 1)] = [x.n, x.q, x.r, x.d, x.g].join("~^~"); });
+    return d;
+  }
+  async function pbSave(b, extra, done, msg, btn) {
+    const ref = store.collection("entries").doc(), id = ref.id, d = pbBody(b, extra); d.xml = pbXml(b, id);
+    btn.disabled = true; msg.textContent = "";
+    try { await writeEntry(ref, { type: "chem_purchase", lot_no: b.party, doc_no: b.ref, entry_date: b.date, data: d, status: "pending", entered_by: uid, created_at: new Date().toISOString() }); closeForm(done); }
+    catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
+  // compare: this bill (draft, or saved and flagged by Excel) against the Tally voucher(s) it looks like
+  function pbCompareHtml(a) {
+    const draft = a === "draft", b = draft ? pbDraft : pbBills().find((x) => x.id === a); if (!b) return `<p class="empty">Nothing to compare.</p>`;
+    const t = draft ? pbDups(b, "") : String((b.row || {}).dup || "").split(",").map((g) => pbTally().find((x) => x.guid === g)).filter(Boolean), c = draft ? pbCalc(b) : b.calc;
+    const posted = !draft && b.row && b.row.guid;
+    return `<form class="fm" id="fm-pb_compare" data-a="${esc(a)}"><h3>Is this bill already in Tally?</h3>
+      <div class="cmpcard"><b>${draft ? "Typed now" : "Typed on the phone"}${posted ? " (also in Tally as purchase " + esc(b.row.vno) + ")" : ""}</b><br>${esc(b.party)} · bill ${esc(b.ref)} · ${esc(fmtD(b.date))}${pbLinesTable(c.lines, true)}<b>₹${fmtN(c.total, 2)}</b></div>
+      ${t.map((v) => `<div class="cmpcard"><b>In Tally: purchase ${esc(v.vno)}</b><br>${esc(v.party)} · bill ${esc(v.ref || "-")} · ${esc(fmtD(String(v.vdate).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")))}${pbLinesTable(pbTLines(v), false)}<b>₹${fmtN(v.amount, 2)}</b></div>`).join("") || `<p class="note">The Tally voucher is no longer in the data.</p>`}
+      <p class="note" style="margin:4px 2px">Choose what Tally should end up with:</p>
+      <div class="pbch">
+        <label class="chk"><input type="radio" name="pbc" value="tally"> <span><b>Keep Tally's only</b> · same bill; ${draft ? "this one is not saved" : posted ? "the phone's copy is deleted in Tally" : "the phone's is not posted"}</span></label>
+        <label class="chk"><input type="radio" name="pbc" value="app"> <span><b>Keep this one only</b> · Tally's is deleted, this one is posted</span></label>
+        <label class="chk"><input type="radio" name="pbc" value="both"> <span><b>Keep both</b> · two different bills</span></label>
+        <label class="chk"><input type="radio" name="pbc" value="none"> <span><b>Keep none</b> · both are wrong; Tally's is deleted${draft ? "" : " and this one dropped"}</span></label>
+      </div>${formEnd}</form>`;
+  }
+  async function pbCompareSave(f, msg, btn) {
+    const a = f.dataset.a, ch = (f.querySelector("[name=pbc]:checked") || {}).value, bad = (t) => { msg.textContent = t; };
+    if (!ch) return bad("Choose one of the four.");
+    if ((ch === "app" || ch === "none") && warnOnce(f, "This deletes the voucher in Tally (Excel does it at its next run). Save again to confirm.")) return;
+    if (a === "draft") {
+      const b = pbDraft, dup = pbDups(b, "").map((t) => t.guid);
+      if (ch === "tally") { pbDraft = null; return closeForm("Not saved: Tally already has this bill."); }
+      if (ch === "none") { btn.disabled = true; try { for (const g of dup) { const t = pbTally().find((x) => x.guid === g); await writeEntry(store.collection("entries").doc(), { type: "tally_delete", lot_no: t.party, doc_no: t.ref, data: { guid: g, vno: t.vno, party: t.party, ref: t.ref, why: "keep none" }, status: "pending", entered_by: uid, created_at: new Date().toISOString() }); } pbDraft = null; closeForm("Not saved, and Tally's voucher will be deleted."); } catch (e) { btn.disabled = false; msg.textContent = saveError(e); } return; }
+      pbDraft = null; return pbSave(b, { choice: ch, drop: ch === "app" ? dup.join(",") : "" }, ch === "app" ? "Saved. Excel deletes Tally's copy and posts this one." : "Saved as a different bill. Excel posts it to Tally.", msg, btn);
+    }
+    const b = pbBills().find((x) => x.id === a); if (!b) return bad("This bill is no longer there.");
+    const dup = String((b.row || {}).dup || "").split(",").filter(Boolean);
+    return saveNew({ type: "purchase_decision", lot_no: b.party, doc_no: b.ref, data: { entry: b.id, choice: ch, drop: ch === "app" || ch === "none" ? dup.join(",") : "" } }, "Saved. Excel does it at its next run.", msg, btn);
+  }
   function cleanupView(ws) {
     const use = {}; rows("SELECT chemical, ref, entry_date FROM chem_moves WHERE entry_type='LOT USE' AND status<>'VOID' ORDER BY entry_date").forEach((m) => { const o = use[m.chemical.toUpperCase()] = use[m.chemical.toUpperCase()] || { lots: new Set(), last: "", at: "" }; o.lots.add(m.ref); o.last = m.ref; o.at = m.entry_date; });
     const old = iso(new Date(today.getTime() - 120 * DAY));
@@ -1483,7 +1644,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 133, at: "2026-11-15T14:29:37+05:30", notes: "Fixes from a full test of every form: safer delete-lot and merge-rework checks, rename moves a chemical's whole stock as Excel does, rework stock needs its process first, and a clear first screen on a phone with no data yet" };
+  const APP_BUILD = { v: 134, at: "2026-11-15T18:02:47+05:30", notes: "Purchase bills: type chemical purchase bills on the phone; Excel posts them into Tally and the stock counts them at once. Same bill already in Tally: compare and keep one, both or none." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1502,6 +1663,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const arch = archiveReady();
     { const una = data.lots.filter((l) => l.state === "DISPATCHED" && trackedLot(l.lot_no) && notDelivered(l).dp > 0 && notDelivered(l).sh > 0);
       if (una.length) checks.push([`data-go="lots" data-k="${esc(una[0].lot_no)}"`, una.length + (una.length === 1 ? " dispatched lot has" : " dispatched lots have") + " pieces not delivered and not accounted for (" + una.slice(0, 6).map((l) => l.lot_no).join(", ") + (una.length > 6 ? "…" : "") + "). They can't be archived until you say where they went."]); }
+    { const nb = pbBills().filter((b) => b.dup || b.bad).length; if (nb) checks.push(["data-jump=\"chemicals\" data-f=\"bills\"", nb + (nb === 1 ? " purchase bill needs" : " purchase bills need") + " you (Tally)"]); }
     { const nE = recMode() ? Object.keys(engineErr).length : 0; if (nE) checks.push(["data-jump=\"entries\" data-f=\"pending\"", nE + (nE === 1 ? " entry" : " entries") + " could not be recorded"]); }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
     if (bkOverdue()) checks.push(["data-jump=\"settings\" data-f=\"\"", lastBackup() ? "This phone's last backup was " + bkAgo(lastBackup()) + ". Back it up in Settings" : "This phone has never been backed up. Back it up in Settings"]);
@@ -2316,7 +2478,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     try { q(src, "SELECT id, rw_key, use_key, lot_no, parent_lot, entry_date, kind, item, qty, unit, rate, amount, note, entered_by, status FROM lot_rework_cost").forEach((r) => a.run("INSERT INTO lot_rework_cost VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [r.id, r.rw_key, r.use_key, String(r.lot_no || "").toUpperCase(), String(r.parent_lot || "").toUpperCase(), r.entry_date, r.kind, r.item, r.qty, r.unit, r.rate, r.amount, r.note, r.entered_by, r.status])); } catch (e) { /* not in this database yet */ }
     // Tally masters read by Excel (TallyLink "Refresh from Tally", from 09-Nov-2026)
     [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
-     ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
+     ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"],
+     ["tally_purchases", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, app_id TEXT, lines TEXT", "guid, vno, vdate, party, ref, amount, narration, app_id, lines"], ["tally_creditors", "name TEXT, gstin TEXT, state TEXT", "name, gstin, state"],
+     ["app_tally", "entry_id TEXT, kind TEXT, party TEXT, ref TEXT, vdate TEXT, total REAL, state TEXT, vno TEXT, guid TEXT, dup TEXT, msg TEXT, choice TEXT, posted_at TEXT, updated_at TEXT", "entry_id, kind, party, ref, vdate, total, state, vno, guid, dup, msg, choice, posted_at, updated_at"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
       a.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols})`); a.run(`DELETE FROM ${t}`);
       try { const n = sel.split(",").length; q(src, `SELECT ${sel} FROM ${t}`).forEach((r) => a.run(`INSERT INTO ${t} VALUES(${Array(n).fill("?").join(",")})`, Object.values(r))); } catch (e) { /* Excel has not read Tally yet */ }
     });
@@ -2382,7 +2546,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     q(x, "SELECT name, rate, tally_stock FROM chemicals").forEach((c) => { const cur = q(b, "SELECT name, rate, tally_stock FROM chemicals WHERE UPPER(name)=UPPER(?)", [c.name])[0];
       if (cur) { if (Number(cur.rate) !== Number(c.rate) || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [c.rate, c.tally_stock, c.tally_stock, stamp, cur.name]); }
       else { add++; b.run("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [c.name, c.rate, c.tally_stock, 0, Number(c.tally_stock) || 0, null, stamp]); } });
-    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
+    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
       const cols = q(x, `PRAGMA table_info(${t})`).map((c) => c.name); b.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols.join(", ")})`); b.run(`DELETE FROM ${t}`);
       q(x, `SELECT * FROM ${t}`).forEach((r) => b.run(`INSERT INTO ${t}(${cols.join(", ")}) VALUES(${cols.map(() => "?").join(",")})`, cols.map((c) => r[c]))); });
     b.run("INSERT OR REPLACE INTO meta(key, value) VALUES('tally_merged_at', ?)", [stamp]);
@@ -2393,7 +2557,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // hooks for the standalone (OneDrive) build; unused inside Claude
   window.__ssiHooks = {
     ready: () => !!db && !!store,
-    pending: () => data.pending.length,
+    pending: () => (recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).length,
     chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
     exportCsv: () => exportCsv(),
     backupBody: () => bkBody(),
@@ -3441,6 +3605,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (mv || used) return `<p class="empty">${esc(a)} can't be deleted: ${used ? `it shows ${fmtN(c.available, 3)} in stock` : `it has ${mv} ledger entries`}. Use Rename to move its history to the right name.</p>`;
       return `<form class="fm" id="fm-chem_delete" data-name="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">Excel removes it from A. CHEMICALS. If Tally still has it, the next Refresh Chemicals adds it back.</p>${formEnd}</form>`; } },
     chem_void: { title: "Void entry", html: (a) => { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(a)])[0]; return `<form class="fm" id="fm-chem_void" data-id="${esc(a)}"><h3>${esc(m.chemical)}</h3><p style="margin:0">${esc(String(m.entry_type).toLowerCase())} ${fmtN(m.qty, 3)} on ${fmtS(m.entry_date)}. ${esc(m.reason)}</p><p class="note" style="margin:0">The entry stays in the ledger marked void, and the stock goes back.</p>${formEnd}</form>`; } },
+    chem_purchase: { title: "Purchase bill", html: () => `<form class="fm" id="fm-chem_purchase"><label>Supplier (as in Tally)<input id="pb-party" list="pb-creds" autocomplete="off" placeholder="Start typing the supplier"></label>${dl("pb-creds", pbCred().map((c) => c.name))}
+      <div class="row2"><label>Bill no<input id="pb-ref" autocomplete="off"></label><label>Bill date<input id="pb-date" type="date" value="${iso(today)}"></label></div>
+      <div class="group" style="margin-top:8px">Chemicals</div><div id="pb-lines">${[0, 1, 2].map((i) => pbLineHtml(i)).join("")}</div>${dl("pb-chems", data.chemicals.map((c) => c.name).concat(trows("SELECT name FROM tally_items WHERE unit LIKE 'kg%'").map((r) => r.name)))}
+      <button type="button" class="btn alt" data-pbadd>Add a line</button>
+      <label>Bill total on the paper (to check)<input id="pb-paper" inputmode="decimal" placeholder="optional"></label><div id="pb-tot" class="note"></div>
+      <label>Note<input id="pb-note" autocomplete="off" placeholder="optional"></label>
+      <p class="note" style="margin:0">The chemicals count in stock at once. Excel makes the Purchase voucher in Tally; if the same bill is already there, you are asked which to keep.</p>${formEnd}</form>` },
+    pb_compare: { title: "Compare with Tally", html: (a) => pbCompareHtml(a) },
+    pb_drop: { title: "Drop this bill", html: (a) => { const b = pbBills().find((x) => x.id === a); return b ? `<form class="fm" id="fm-pb_drop" data-a="${esc(a)}"><p>${esc(b.party)} · bill ${esc(b.ref)} · ₹${fmtN(b.calc.total, 0)}</p><p class="note">Excel has it but it is not in Tally yet. Dropping it stops it going to Tally and takes its chemicals out of stock again.</p>${formEnd}</form>` : `<p class="empty">This bill is no longer there.</p>`; } },
+    tally_delete: { title: "Delete in Tally", html: (g) => { const t = pbTally().find((x) => x.guid === g); return t ? `<form class="fm" id="fm-tally_delete" data-g="${esc(g)}"><p>Purchase ${esc(t.vno)} · ${esc(t.party)} · bill ${esc(t.ref || "-")} · ₹${fmtN(t.amount, 0)}</p><label>Why<input id="td-why" autocomplete="off" placeholder="e.g. typed twice"></label><p class="note">Excel deletes this voucher in Tally at its next run. Tally's stock goes down with it.</p>${formEnd}</form>` : `<p class="empty">This voucher is no longer in the data.</p>`; } },
     chem_alias: { title: "Point name to a chemical", html: (a) => `<form class="fm" id="fm-chem_alias" data-name="${esc(a)}"><h3>${esc(a)}</h3><label>This name means<input id="fi-to" list="fi-chems" autocomplete="off" placeholder="Start typing a chemical"></label>${dl("fi-chems", data.chemicals.map((c) => c.name))}<p class="note" style="margin:0">Excel adds this to CHEM ALIASES. Future stock adjustments deduct that chemical. Past adjustments aren't changed.</p>${formEnd}</form>` },
     skinsio: { title: "Add / remove skins", html: (a) => { const back = backRows(a).length;
       return `<div class="fm"><h3>${esc(a)}</h3><p class="note" style="margin:0">Add skins from a purchase or another lot, or send skins back to where they came from.</p>
@@ -4612,6 +4786,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); if (!data.chemicals.some((x) => x.name === n0)) return bad(n0 + " is no longer on the chemical list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_delete") return saveNew({ type: "chem_delete", lot_no: f.dataset.name, data: { name: f.dataset.name } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-chem_void") { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(f.dataset.id)])[0]; return saveNew({ type: "chem_void", lot_no: m.chemical, data: { id: m.id, qty: m.qty, type: String(m.entry_type).toLowerCase() } }, "Void saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-chem_purchase") {
+      const b = pbRead(f), err = pbValidate(b); if (err) return bad(err);
+      if (b.paper && Math.abs((parseFloat(b.paper) || 0) - pbCalc(b).total) > 1 && warnOnce(f, "The total does not match the paper bill. Save again to keep it anyway.")) return;
+      if (entries.some((e) => e.type === "chem_purchase" && e.status !== "cancelled" && UP(e.data.party) === UP(b.party) && pbNorm(e.data.ref) === pbNorm(b.ref) && pbRow(e.id)?.state !== "CANCELLED") && warnOnce(f, "Bill " + b.ref + " of " + b.party + " was already typed on a phone. Save again only if it is a different bill.")) return;
+      if (pbDups(b, "").length) { pbDraft = b; sel[tab] = "form:pb_compare:draft"; formOpen = "form"; showDetail(); $("#detail").scrollTop = 0; return; }
+      return pbSave(b, {}, "Bill saved. Its chemicals count in stock now; Excel makes it in Tally.", msg, btn);
+    }
+    if (f.id === "fm-pb_compare") return pbCompareSave(f, msg, btn);
+    if (f.id === "fm-pb_drop") return saveNew({ type: "purchase_decision", lot_no: "", data: { entry: f.dataset.a, choice: "none", drop: "" } }, "Saved. Excel drops the bill.", msg, btn);
+    if (f.id === "fm-tally_delete") { const t = pbTally().find((x) => x.guid === f.dataset.g); if (!t) return bad("This voucher is no longer in the data."); const why = need("#td-why"); if (!why) return bad("Say why."); if (warnOnce(f, "Purchase " + t.vno + " will be deleted in Tally. Save again to confirm.")) return; return saveNew({ type: "tally_delete", lot_no: t.party, doc_no: t.ref, data: { guid: t.guid, vno: t.vno, party: t.party, ref: t.ref, why } }, "Saved. Excel deletes it in Tally at its next run.", msg, btn); }
     if (f.id === "fm-chem_alias") { const c = data.chemBy[need("#fi-to").toUpperCase()]; if (!c) return bad("Pick a chemical from the list."); return saveNew({ type: "chem_alias", lot_no: f.dataset.name, data: { name: f.dataset.name, to: c.name } }, "Saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-load") return loadProcess(data.lotBy[f.dataset.lot], need("#fo-src"));
     if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src); }
@@ -4977,6 +5161,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "lot_edit") return "Lot edit: " + Object.keys(e.changes).map((k) => k === "process_page" ? "process page to " + (e.changes[k] || "none") : LOT_NAMES[k]).join(", ");
     const d = e.data || {};
     if (e.type === "archive") return "Archive dispatched lots: " + d.lots;
+    if (e.type === "chem_purchase") return "Purchase bill " + d.ref + " · " + d.party + " · ₹" + fmtN(Number(d.total) || 0, 0) + (d.choice === "both" ? " (a different bill from Tally's)" : d.choice === "app" ? " (replaces Tally's)" : "");
+    if (e.type === "purchase_decision") return "Bill " + (e.doc_no || "") + " vs Tally: keep " + ({ tally: "Tally's", app: "the app's", both: "both", none: "none" })[d.choice];
+    if (e.type === "tally_delete") return "Delete in Tally: purchase " + d.vno + " · " + d.party + " · bill " + (d.ref || "-") + (d.why ? " (" + d.why + ")" : "");
     if (e.type === "audit") return `Stock audit posted: ${d.n_counted} counted, ${d.n_adj} adjusted, short ₹${fmtN(d.short, 0) || 0}, excess ₹${fmtN(d.excess, 0) || 0}`;
     if (e.type === "dye") return "Dye combinations · " + e.process + " · " + Object.keys(e.cells).length + " changes";
     if (e.type === "lot_balance") return "Not delivered: " + BAL.filter(([x]) => Number(d[x + "_pcs"]) > 0).map(([x, t]) => fmtN(d[x + "_pcs"], 0) + " pcs " + t.toLowerCase() + (x === "lot" ? " " + d.to_lot : "")).join(", ") + (d.note ? " (" + d.note + ")" : "");
@@ -5041,7 +5228,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const head = ["entry_id", "type", "lot_no", "entry_date", "from_stage", "to_stage", "pcs", "sqft", "doc_no", "note", "entered_by", "created_at", "payload", "before", "process", "base_version", "base_lot", "details"];
     const enc = (t) => String(t ?? "").replace(/\r?\n/g, "{nl}").replace(/\|~\|/g, "|");
     const pack = (o) => Object.entries(o || {}).map(([k, x]) => k + "=" + enc(x)).join("|~|");
-    const list = data.pending.slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const list = (recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     return [head.join(",")].concat(list.map((e) => [e.id, e.type, e.lot_no, e.entry_date || "", e.from_stage, e.to_stage, e.pcs, e.sqft, e.doc_no, e.note, (ps[e.entered_by] || {}).name || "", e.created_at, pack(Object.assign({}, e.type === "lot_edit" ? e.changes : e.type === "recipe" && e.load_cur !== undefined ? Object.assign(fullCells(e.after), { C1: e.lot_no }) : e.cells || e.data, e.nl_map ? { nl_map: e.nl_map } : {})), pack(e.before), e.process, e.base_version, e.load_cur !== undefined ? [e.base_lot, e.base_process, e.base_version, e.load_cur].join("|") : e.base_process ? e.base_lot + "|" + e.base_process : e.base_lot, enc(e.details)].map(q).join(","))).join("\r\n") + "\r\n";
   }
   function showCsv(text) { $("#csvout").innerHTML = `<textarea class="copybox" id="csvbox" readonly aria-label="Entries for Excel">${esc(text)}</textarea>`; $("#csvbox").select(); }
@@ -5204,6 +5391,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }
     if (tab === "orders" && String(k).startsWith("q:")) { const q = quotes.find((x) => "q:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(q ? "Quotation " + q.no : "Quotation")}</h2></div>${qDetail(k)}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("pay:")) { const p = payments.find((x) => "pay:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(p ? (p.dir === "in" ? "From " : "To ") + p.party : "Payment")}</h2></div>${payDetail(k)}`; d.classList.add("open"); return; }
+    if (tab === "chemicals" && /^t?bill:/.test(String(k))) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${String(k).startsWith("tbill:") ? "Tally purchase" : "Purchase bill"}</h2></div>${billDetail(String(k))}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
     const title = isProc ? (data.processes.find((p) => p.key === k) || {}).name : isRec ? k.slice(4).split("|")[0] + " recipe" + (k.includes("@v") ? " v" + k.split("@v")[1] : "") : { lots: k, orders: (() => { const o = data.orders.find((x) => String(x.id) === String(k)); return o ? "PO " + o.po_no : ""; })(), purchases: k, chemicals: k }[tab];
@@ -5366,6 +5554,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const b = e.target.closest("[data-ledt]"); if (b) { filter.ledT = b.dataset.ledt; render(); return; } }
     { const b = e.target.closest("[data-tallyt]"); if (b) { filter.tallyT = b.dataset.tallyt; render(); return; } }
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
+    if (e.target.closest("[data-pbadd]")) { const box = $("#pb-lines"); box.insertAdjacentHTML("beforeend", pbLineHtml(box.querySelectorAll(".pbl").length)); return; }
     { const b = e.target.closest("[data-recmode]"); if (b) { const to = b.dataset.recmode, m = $("#recmsg");
       if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = to === "app" ? "Tap again: the app keeps the records from now" : "Tap again: Excel imports the entries again"; return; }
       b.disabled = true; if (m) m.textContent = "Working…";
@@ -5557,6 +5746,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const f = e.target.closest("form"); if (!f) return;
     delete f.dataset.warned; $("#fm-msg").textContent = "";
     if (f.id === "fm-invoice") { invInput(e.target); return; }
+    if (f.id === "fm-chem_purchase") { pbLive(f); return; }
     const t = e.target, row = t.closest(".er");
     if (f.id === "fm-recipe" && /^e-c-\d+-c$/.test(t.id)) { const w = $("#ewt-" + t.id.split("-")[2]); if (w) w.textContent = crustWt(t.value); }
     if (f.id === "fm-recipe" && (/^e-[cfm]-\d+-[cde]$/.test(t.id) || /^eh-(animal|pcs)$/.test(t.id))) setTimeout(edRatesRefresh, 0);
