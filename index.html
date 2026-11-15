@@ -575,11 +575,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
-    db = new SQL.Database(bytes);
+    db = new SQL.Database(bytes); baseBytes = bytes;
     const asof = one("SELECT value FROM meta WHERE key='data_as_of'") || one("SELECT value FROM meta WHERE key='built_at'");
     data.asOf = asof ? fmtD(asof) : label;
     srcLine();
@@ -617,13 +617,93 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const rows = (sql, p = []) => { const st = db.prepare(sql); st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
   const one = (sql, p = []) => { const r = rows(sql, p); return r.length ? Object.values(r[0])[0] : null; };
 
+  // ---------------------------------------------------------------- the app keeps the records (records mode, being built)
+  // In records mode the phones' entries are not imported by Excel: the app writes each one into its own database, the way
+  // Excel's macros do, and notes it in app_applied. The database is rebuilt from the base (baseBytes: the last data loaded)
+  // whenever an entry already written is changed, cancelled, or arrives out of order. Entry types without an applier yet
+  // stay on the overlay in load(), so the mode can grow type by type. Switched on per phone for testing (ssi-records = app).
+  let baseBytes = null, engineErr = {};
+  const recMode = () => { try { return localStorage.getItem("ssi-records") === "app"; } catch (e) { return false; } };
+  const enRun = (sql, p) => { db.run(sql, p || []); };
+  const enOne = (sql, p) => (rows(sql, p)[0] || null);
+  const enLot = (k) => { const l = enOne("SELECT * FROM lots WHERE UPPER(lot_no)=UPPER(?)", [k]); if (!l) throw new Error("lot " + k + " is not in the records"); return l; };
+  const enNow = () => new Date().toISOString().slice(0, 19).replace("T", " ");
+  const enState = (st) => /^dispatched$/i.test(st) ? "DISPATCHED" : /^dumped$/i.test(st) ? "DUMPED" : "OPEN";
+  const ENGINE = {
+    // DtMoveStage: the tracker's stage and stage date, and a line in lot_stage_log
+    stage(e) {
+      const l = enLot(e.lot_no), dt = String(e.entry_date || "").slice(0, 10), was = l.stage_since ? String(l.stage_since).slice(0, 10) : "";
+      const dd = was && dt ? Math.round((Date.parse(dt) - Date.parse(was)) / DAY) : null;
+      enRun("UPDATE lots SET stage=?, stage_since=?, state=? WHERE lot_no=?", [e.to_stage, dt, enState(e.to_stage), l.lot_no]);
+      enRun("INSERT INTO lot_stage_log(lot_no, from_stage, to_stage, moved_on, days_in_prev, note, entered_by, created_at) VALUES(?,?,?,?,?,?,?,?)", [l.lot_no, l.stage || "", e.to_stage, dt, dd, e.note || "", e.entered_by || "", e.created_at || enNow()]);
+    },
+    // DtSaveDelivery: a lot_deliveries row; the tracker's DELIVERED QUANTITY follows the deliveries
+    delivery(e) {
+      const l = enLot(e.lot_no), had = enOne("SELECT COUNT(*) n FROM lot_deliveries WHERE lot_no=? AND status='OK'", [l.lot_no]).n;
+      // first delivery: a number typed earlier in DELIVERED QUANTITY (not the 90% formula) counts as already delivered
+      if (!had && Number(l.delivered_est) > 0 && Math.abs(Number(l.delivered_est) - (Number(l.lot_sqft) || 0) * 0.9) > 0.01) enRun("INSERT INTO lot_deliveries(lot_no, del_date, pcs, sqft, doc_no, note, entry_type, status, entered_by, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", [l.lot_no, String(e.created_at || "").slice(0, 10), 0, Number(l.delivered_est) || 0, "", "already on the tracker before deliveries were recorded", "OPENING", "OK", e.entered_by || "", enNow()]);
+      enRun("INSERT INTO lot_deliveries(lot_no, del_date, pcs, sqft, doc_no, note, entry_type, status, entered_by, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", [l.lot_no, String(e.entry_date || "").slice(0, 10), Number(e.pcs) || 0, Number(e.sqft) || 0, e.doc_no || "", e.note || "", "DELIVERY", "OK", e.entered_by || "", e.created_at || enNow()]);
+      ENGINE._delSync(l.lot_no);
+    },
+    // DtVoidDelivery
+    delivery_void(e) {
+      const d = e.data || {}, r = enOne("SELECT * FROM lot_deliveries WHERE id=?", [Number(d.id)]);
+      if (!r) throw new Error("delivery " + d.id + " is not in the records");
+      enRun("UPDATE lot_deliveries SET status='VOID', voided_at=?, voided_by=? WHERE id=? AND status='OK'", [e.created_at || enNow(), e.entered_by || "", r.id]);
+      ENGINE._delSync(r.lot_no);
+    },
+    _delSync(lot) {
+      const l = enLot(lot), s = enOne("SELECT COUNT(*) n, IFNULL(SUM(sqft),0) s FROM lot_deliveries WHERE lot_no=? AND status='OK'", [l.lot_no]);
+      enRun("UPDATE lots SET delivered_est=? WHERE lot_no=?", [s.n ? +Number(s.s).toFixed(2) : +((Number(l.lot_sqft) || 0) * 0.9).toFixed(3), l.lot_no]);
+    },
+    // Save Process (piRecipe): a new version of the lot's process on that page, kept in lot_recipes and lot_recipe_versions.
+    // Like Excel it stops when the process was saved again since this phone loaded it.
+    recipe(e) {
+      const lot = e.lot_no, pr = e.process, cur = enOne("SELECT * FROM lot_recipes WHERE lot_no=? AND process=?", [lot, pr]), curV = cur ? Number(cur.version) || 0 : 0;
+      if (e.load_cur !== undefined && Number(e.load_cur) !== curV) throw new Error("the process was saved again (v" + curV + ") after it was loaded");
+      if (e.load_cur === undefined && !e.base_lot && cur && e.base_version !== undefined && Number(e.base_version) !== curV) throw new Error("the process was saved again (v" + curV + ") after this edit started");
+      const parse = (r) => r ? Object.assign({}, r, { crust: JSON.parse(r.crust || "[]"), machinery: JSON.parse(r.machinery || "[]"), finishing: JSON.parse(r.finishing || "[]") }) : null;
+      const src = cur ? parse(cur) : e.base_lot ? parse(enOne("SELECT * FROM lot_recipe_versions WHERE lot_no=? AND process=? AND version=?", [e.base_lot, e.base_process || pr, Number(e.base_version) || 0]) || enOne("SELECT * FROM lot_recipes WHERE lot_no=? AND process=?", [e.base_lot, e.base_process || pr])) : null;
+      const a = Object.assign({}, src || {}, e.after || {}), v = curV + 1, nOr = (x) => x === "" || x === undefined || x === null || !isFinite(Number(x)) ? null : Number(x);
+      const vals = [lot, pr, v, v, String(e.created_at || enNow()).replace("T", " ").slice(0, 19), e.entered_by || "", a.details ?? null, a.substance ?? null, nOr(a.shaved_wt), nOr(a.pcs), nOr(a.wb_sqft), nOr(a.finish_sqft), a.process_note ?? null, a.remarks ?? null, JSON.stringify(a.crust || []), JSON.stringify(a.machinery || []), JSON.stringify(a.finishing || []), a.animal ?? null];
+      const q = "(lot_no, process, version, versions, saved_at, saved_by, details, substance, shaved_wt, pcs, wb_sqft, finish_sqft, process_note, remarks, crust, machinery, finishing, animal) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      enRun("INSERT OR REPLACE INTO lot_recipes" + q, vals); enRun("INSERT OR REPLACE INTO lot_recipe_versions" + q, vals);
+      enRun("UPDATE lot_recipe_versions SET versions=? WHERE lot_no=? AND process=?", [v, lot, pr]);
+    },
+    // Edit lot: the tracker cells; a lot size change moves DELIVERED QUANTITY when it was still the 90% formula
+    lot_edit(e) {
+      const l = enLot(e.lot_no), ch = e.changes || {}, cols = new Set(rows("PRAGMA table_info(lots)").map((c) => c.name)), set = [], vals = [];
+      Object.keys(ch).forEach((k) => { if (cols.has(k) && k !== "lot_no") { set.push(k + "=?"); vals.push(ch[k]); } });
+      if ("lot_sqft" in ch && !("delivered_est" in ch) && l.lot_sqft && Math.abs((Number(l.delivered_est) || 0) - l.lot_sqft * 0.9) < 0.01) { set.push("delivered_est=?"); vals.push(+((Number(ch.lot_sqft) || 0) * 0.9).toFixed(3)); }
+      if (set.length) enRun("UPDATE lots SET " + set.join(", ") + " WHERE lot_no=?", vals.concat([l.lot_no]));
+    },
+  };
+  const enSig = (e) => { const s = JSON.stringify([e.type, e.lot_no, e.data, e.changes, e.to_stage, e.entry_date, e.pcs, e.sqft, e.doc_no, e.note, e.status, e.process, e.after, e.base_version, e.load_cur, e.base_lot]); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); };
+  // write the entries the app can apply; returns the ids now in the database
+  function engineSync() {
+    if (!recMode() || !baseBytes || !window.__SQL) return new Set();
+    const ev = entries.filter((e) => ENGINE[e.type] && (e.status === "pending" || e.status === "applied")).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)));
+    const ensure = () => db.run("CREATE TABLE IF NOT EXISTS app_applied(id TEXT PRIMARY KEY, sig TEXT, made TEXT, ok INTEGER, err TEXT)");
+    ensure();
+    const want = new Map(ev.map((e) => [e.id, enSig(e)])), have = rows("SELECT id, sig, made FROM app_applied");
+    const lastMade = have.reduce((m, h) => h.made > m ? h.made : m, "");
+    if (have.some((h) => want.get(h.id) !== h.sig) || ev.some((e) => !have.some((h) => h.id === e.id) && String(e.created_at) < lastMade)) { db = new window.__SQL.Database(baseBytes); ensure(); engineErr = {}; }
+    const done = new Set(rows("SELECT id FROM app_applied").map((r) => r.id));
+    ev.filter((e) => !done.has(e.id)).forEach((e) => {
+      db.run("SAVEPOINT en");
+      try { ENGINE[e.type](e); db.run("INSERT INTO app_applied VALUES(?,?,?,1,NULL)", [e.id, want.get(e.id), String(e.created_at)]); db.run("RELEASE en"); delete engineErr[e.id]; }
+      catch (err) { db.run("ROLLBACK TO en"); db.run("RELEASE en"); engineErr[e.id] = String(err && err.message || err); db.run("INSERT INTO app_applied VALUES(?,?,?,0,?)", [e.id, want.get(e.id), String(e.created_at), engineErr[e.id]]); }
+    });
+    return new Set(rows("SELECT id FROM app_applied WHERE ok=1").map((r) => r.id));
+  }
   function load() {
+    const enDone = engineSync();
     const stages = {}; rows("SELECT * FROM stages").forEach((s) => stages[s.name.toUpperCase()] = s);
     const del = {}; rows("SELECT lot_no, SUM(pcs) p, SUM(sqft) s FROM lot_deliveries WHERE status='OK' GROUP BY lot_no").forEach((d) => del[d.lot_no.toUpperCase()] = d);
     const po = {}; rows("SELECT lo.lot_no, o.po_no, l.id line_id FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id JOIN orders o ON o.id=l.order_id").forEach((r) => po[r.lot_no] = r);
 
     const builtAt = String(one("SELECT value FROM meta WHERE key='built_at'") || "");
-    const live0 = entries.filter((e) => e.status === "pending" || (e.status === "imported" && String(e.created_at).slice(0, 19) > builtAt))
+    const live0 = entries.filter((e) => !enDone.has(e.id)).filter((e) => e.status === "pending" || (e.status === "imported" && String(e.created_at).slice(0, 19) > builtAt))
       .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     // new lots made on the phone keep the number given when they were saved (data.lot_no); Excel uses it too, unless it was taken
     // in the meantime: then the lot gets the next free number and every entry on it follows (nl_map names the lot's own entry)
@@ -1133,7 +1213,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 126, at: "2026-11-15T09:06:28+05:30", notes: "Health check: App vs Excel, which checks after each Excel update that Excel made the same of the imported entries as the app did" };
+  const APP_BUILD = { v: 127, at: "2026-11-15T09:17:38+05:30", notes: "Groundwork for the app keeping the records itself (not switched on yet)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
