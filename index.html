@@ -583,6 +583,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     db = new SQL.Database(bytes); baseBytes = bytes;
     const asof = one("SELECT value FROM meta WHERE key='data_as_of'") || one("SELECT value FROM meta WHERE key='built_at'");
     data.asOf = asof ? fmtD(asof) : label;
+    data.empty = !one("SELECT COUNT(*) FROM lots") && !one("SELECT COUNT(*) FROM chemicals");
     srcLine();
     load();
     route();
@@ -590,7 +591,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (prevBytes) setTimeout(() => { const r = enCheck(prevBytes); if (r && tab === "health") render(); }, 50);
     tourAuto();
   }
-  function srcLine() { $("#src").textContent = "Data of " + data.asOf + (store && canWrite ? "" : " · view only"); }
+  function srcLine() { $("#src").textContent = data.empty ? "No data yet" + (store && canWrite ? "" : " · view only") : "Data of " + data.asOf + (store && canWrite ? "" : " · view only"); }
   async function connectEntries() {
     if (!window.claude || !window.claude.use) return;
     const [s, u] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
@@ -757,7 +758,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (d.name && d.name !== c.name) { set.push("name=?"); v.push(d.name); enRun("UPDATE chem_moves SET chemical=? WHERE chemical=?", [d.name, c.name]); }
       if (set.length) enRun("UPDATE chemicals SET " + set.join(", ") + " WHERE name=?", v.concat([c.name])); },
     // its history moves to the other chemical
-    chem_rename(e) { const d = e.data || {}, a = ENGINE._chem(d.from || e.lot_no), b = ENGINE._chem(d.to), q = rows("SELECT IFNULL(SUM(qty),0) q FROM chem_moves WHERE chemical=? AND status='OK'", [a.name])[0].q;
+    // piChemRename: all of the old name's ledger (opening rows too, so its whole column E) goes to the other chemical; the old one is left at 0
+    chem_rename(e) { const d = e.data || {}, a = ENGINE._chem(d.from || e.lot_no), b = ENGINE._chem(d.to), q = Number(a.ledger_qty) || 0;
       enRun("UPDATE chem_moves SET chemical=? WHERE chemical=?", [b.name, a.name]);
       enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE name=?", [q, q, a.name]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)+?, available=IFNULL(available,0)+? WHERE name=?", [q, q, b.name]); ENGINE.chem_alias({ lot_no: a.name, data: { name: a.name, to: b.name } }); },
     chem_delete(e) { const c = ENGINE._chem((e.data || {}).name || e.lot_no); enRun("DELETE FROM chemicals WHERE name=?", [c.name]); },
@@ -1481,7 +1483,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 132, at: "2026-11-15T11:38:23+05:30", notes: "The app's records are tidied once a day: entries older than 3 days are closed into the records file on OneDrive so phones load quickly" };
+  const APP_BUILD = { v: 133, at: "2026-11-15T14:29:37+05:30", notes: "Fixes from a full test of every form: safer delete-lot and merge-rework checks, rename moves a chemical's whole stock as Excel does, rework stock needs its process first, and a clear first screen on a phone with no data yet" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1516,6 +1518,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const cs = Object.values(custs).sort((a, b) => b.n - a.n);
     const maxS = Math.max(1, ...stages.map((s) => s.n)), maxC = Math.max(1, ...cs.map((c) => c.n));
     const bar = (field, x, max) => `<button class="bar" data-pick="${field}" data-v="${esc(x.name)}"><span class="lb">${esc(x.name)}</span><span class="tr"><i class="${x.late ? "bad" : ""}" style="width:${Math.round(x.n / max * 100)}%"></i></span><span class="ct">${x.n}</span></button>`;
+    // a new phone with nothing loaded yet: say how to get the data instead of showing empty boards
+    if (data.empty) return `<div class="alert" style="display:block"><b>No data yet.</b> ${window.__ssiOD ? "Sign in to OneDrive (the bar at the top) and the app reads the Excel files by itself, or load" : "Load"} the two Excel files (the .xlsm and the .db) from this phone.
+      <div class="acts">${canAdmin ? `<button class="btn" data-new="update">Load the Excel files</button>` : `<span class="note">Ask the owner to share the data with you.</span>`}</div></div>`;
     return `<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
       <div class="group">Lots by status</div><div class="bars">${statusRows().map((s) => bar("status", s, Math.max(1, ...statusRows().map((x) => x.n)))).join("")}</div>
       ${top.length ? `<div class="group">Check first</div><div data-sec="lots">${top.map(lotCard).join("")}</div>` : ""}
@@ -2681,7 +2686,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <tbody>${body}${pend}</tbody><tfoot><tr><td colspan="4"><b>Total in the lot</b></td><td class="r num"><b>${fmtN(tp, 0)}</b></td><td class="r num"><b>${fmtN(ts, 2)}</b></td></tr></tfoot></table></div>`;
   }
   const returnable = (l) => { const p = deliveredPcs(l.lot_no); return { p: p > 0 ? p : l.state !== "OPEN" ? l.lot_pcs || 0 : 0, s: l.delivered || (l.state === "ARCHIVED" ? l.delivered_est || 0 : 0) }; };
-  const lotInUse = (k) => one("SELECT COUNT(*) FROM purchase_ledger WHERE status<>'VOID' AND (to_key=? OR from_key=?)", [k, k]) || one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=?", [k]) || one("SELECT COUNT(*) FROM lot_deliveries WHERE status='OK' AND lot_no=?", [k]) || entries.some((e) => e.status === "pending" && (e.lot_no === k || (e.data && (e.data.to === k || e.data.from === k))));
+  const lotInUse = (k) => one("SELECT COUNT(*) FROM purchase_ledger WHERE status<>'VOID' AND (UPPER(to_key)=UPPER(?1) OR UPPER(from_key)=UPPER(?1))", [k]) || one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=UPPER(?)", [k]) || one("SELECT COUNT(*) FROM lot_deliveries WHERE status='OK' AND UPPER(lot_no)=UPPER(?)", [k]) || entries.some((e) => e.status === "pending" && (e.lot_no === k || (e.data && (e.data.to === k || e.data.from === k))));
   // pieces not delivered that are already accounted for: Excel's lot_balance (LOT moves already lowered the lot) + phone entries waiting
   const balRows = (k) => { try { return rows("SELECT * FROM lot_balance WHERE status='OK' AND lot_no=? ORDER BY id", [k]); } catch (e) { return []; } };
   const balPend = (k) => entries.filter((e) => e.type === "lot_balance" && isWait(e) && e.lot_no === k);
@@ -3533,7 +3538,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0;display:grid;gap:4px"><legend style="font-size:13px;font-weight:600">Start from</legend><label class="chk"><input type="radio" name="rwp-src" value="blank" checked> Empty: only the lot's details, you write the lines</label><label class="chk"><input type="radio" name="rwp-src" value="${esc(pk)}"> A copy of ${esc(r.parent)}'s process, to change</label>${prev.map((x) => `<label class="chk"><input type="radio" name="rwp-src" value="${esc(rwRecKey(x))}"> A copy of ${esc(rwName(x))}</label>`).join("")}</fieldset>
         <div class="two"><label>Pcs<input id="rwp-pcs"${n} value="${esc(r.pcs || "")}"></label><label>Weight (kg)<input id="rwp-wt"${n} value="${esc(wt || "")}"></label><label>Sqft<input id="rwp-sqft"${n} value="${esc(r.sqft || "")}"></label></div>
         <p class="note" style="margin:0">Chemical kg are worked out from the weight, as on a lot's process.</p>${formEnd}</form>`; } },
-    rwadj: { title: "Rework stock", html: (a) => { const r = rwBy(a), p = rwProc(r), now = new Date(), hm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), old = p.done.reduce((t, x) => t + x.amt, 0);
+    rwadj: { title: "Rework stock", html: (a) => { const r = rwBy(a); if (!r) return `<p class="empty">This rework is no longer there.</p>`; if (!rwProc(r).k) return `<p class="empty">Save the rework's process first (Rework process), then adjust its stock.</p>`; const p = rwProc(r), now = new Date(), hm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), old = p.done.reduce((t, x) => t + x.amt, 0);
       const row = (x) => { const c = x.kind === "CHEM" ? data.chemBy[x.item.toUpperCase()] : null, back = x.kind === "CHEM" ? p.done.filter((y) => y.kind === "CHEM" && y.item.toUpperCase() === x.item.toUpperCase()).reduce((t, y) => t + y.qty, 0) : 0, short = c && x.qty > (c.available || 0) + back + 0.0005;
         return `<tr><td>${esc(x.item)}${short ? `<br><span class="soon">${fmtN((c.available || 0) + back, 3)} kg in stock</span>` : ""}</td><td class="r num">${x.kind === "CHEM" ? fmtN(x.qty, 3) + " kg" : fmtN(x.qty, 0) + " rnd"}</td><td class="r num">${fmtN(x.kind === "CHEM" ? x.qty * ((c || {}).rate || 0) : x.amt, 0)}</td></tr>`; };
       return `<form class="fm" id="fm-rwadj" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}</h3><p class="note" style="margin:0">From the rework process v${esc(String(p.rc.version || 1))}. ${p.uses.length ? `What was taken before (₹${fmtN(old, 0)}) is put back, and this is taken instead.` : "These come off stock and the cost is added to the rework."}</p>
@@ -4598,12 +4603,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (sqft > (data.lotBy[from].lot_sqft || 0) + 1 && warnOnce(f, "That is more sqft than the lot has.")) return;
       return saveNew({ type: "lot_move", lot_no: from, data: { from, to, is_new: sel0 ? "0" : "1", pcs, sqft, date, note: need("#fv-note") } }, sel0 ? "Move saved. It is waiting for Excel." : "Split saved. It is waiting for Excel.", msg, btn);
     }
+    if (f.id === "fm-lot_delete" && lotInUse(f.dataset.lot)) return bad(f.dataset.lot + " has skins, chemicals or deliveries recorded now, so it can't be deleted. Mark it DUMPED instead.");
     if (f.id === "fm-lot_delete") return saveNew({ type: "lot_delete", lot_no: f.dataset.lot, data: { lot: f.dataset.lot } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-recipe_delete") return saveNew({ type: "recipe_delete", lot_no: f.dataset.lot, process: f.dataset.proc, data: { lot: f.dataset.lot, proc: f.dataset.proc } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-po_delete") { const o = data.orders.find((x) => String(x.id) === f.dataset.id); return saveNew({ type: "po_delete", lot_no: "PO " + o.po_no, data: { order_id: o.order_id } }, "Delete saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_add") { const name = need("#fa-name"); if (!name) return bad("Enter the name."); if (data.chemNames.has(name.toUpperCase())) return bad("That chemical already exists."); return saveNew({ type: "chem_add", lot_no: name, data: { name, rate: numOf("#fa-rate"), pack: numOf("#fa-pack"), qty: numOf("#fa-qty"), date: iso(today) } }, "Chemical saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_edit") { const n0 = f.dataset.name, c = data.chemicals.find((x) => x.name === n0), pack = need("#fe-pack"), min = need("#fe-min"), d = {}; if (pack !== String(c.pack_size ?? "")) d.pack = pack; if (min !== String(c.min || "")) d.min = min === "" ? "0" : min; if (!Object.keys(d).length) return bad("Nothing has changed."); d.name = n0; return saveNew({ type: "chem_edit", lot_no: n0, data: d }, "Saved. It is waiting for Excel.", msg, btn); }
-    if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); if (!data.chemicals.some((x) => x.name === n0)) return bad(n0 + " is no longer on the chemical list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_delete") return saveNew({ type: "chem_delete", lot_no: f.dataset.name, data: { name: f.dataset.name } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-chem_void") { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(f.dataset.id)])[0]; return saveNew({ type: "chem_void", lot_no: m.chemical, data: { id: m.id, qty: m.qty, type: String(m.entry_type).toLowerCase() } }, "Void saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_alias") { const c = data.chemBy[need("#fi-to").toUpperCase()]; if (!c) return bad("Pick a chemical from the list."); return saveNew({ type: "chem_alias", lot_no: f.dataset.name, data: { name: f.dataset.name, to: c.name } }, "Saved. It is waiting for Excel.", msg, btn); }
@@ -4774,6 +4780,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }
     if (f.id === "fm-rework_merge") {
       const r = rwBy(f.dataset.rw), l = data.lotBy[r.lot], date = need("#rw-date");
+      if (!r || r.whole) return bad("A whole-lot rework has nothing to merge back.");
+      if (r.status !== "DONE") return bad("Mark the rework done first, then merge it back.");
       if (checkDate(date)) return bad(checkDate(date)); if (!data.lotBy[r.parent] || data.lotBy[r.parent].state === "ARCHIVED") return bad(r.parent + " is no longer on the tracker, so " + r.lot + " can't go back into it.");
       if (deliveredPcs(r.lot) > 0 || (data.phoneDel[r.lot] || []).length) return bad(r.lot + " has deliveries recorded, so it can't be merged back.");
       if (!(l.lot_pcs > 0)) return bad(r.lot + " has no pieces left to merge.");
