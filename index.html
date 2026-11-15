@@ -417,6 +417,12 @@ main.solo .detail.open { display: block; }
 .dhead { position: sticky; top: 0; z-index: 6; background: var(--surface); margin: 0 -16px 12px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; border-bottom: 1px solid var(--line); min-height: 56px; }
 .dhead h2 { font-size: 21px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .back { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); flex: none; }
+.dmenu { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); flex: none; }
+.dmenu svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@media (min-width: 880px) { main:not(.solo) .dmenu { display: none; } }
+@media (min-width: 1100px) { .dmenu { display: none; } }
+.pagehits { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
+.pagehits button { border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
 .back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .hero { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 14px; background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .04); display: grid; gap: 10px; }
 .hero-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -767,6 +773,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       enRun("UPDATE chem_moves SET chemical=? WHERE chemical=?", [b.name, a.name]);
       enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE name=?", [q, q, a.name]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)+?, available=IFNULL(available,0)+? WHERE name=?", [q, q, b.name]); ENGINE.chem_alias({ lot_no: a.name, data: { name: a.name, to: b.name } }); },
     chem_delete(e) { const c = ENGINE._chem((e.data || {}).name || e.lot_no); enRun("DELETE FROM chemicals WHERE name=?", [c.name]); },
+    // F. MACHINERY: add, edit (rates and name), delete a machine (piMach)
+    _machRates(d) { return ["cow", "calf", "buff", "goat"].map((k) => d[k] === undefined || d[k] === "" ? null : Number(d[k])); },
+    mach_add(e) { const d = e.data || {}, n = UP(String(d.name || e.lot_no).trim()); if (!n) throw new Error("no machine name");
+      if (enOne("SELECT 1 x FROM machinery WHERE UPPER(name)=?", [n])) throw new Error(n + " is already on F. MACHINERY");
+      enRun("INSERT INTO machinery(name, cow, calf, buff, goat) VALUES(?,?,?,?,?)", [n].concat(ENGINE._machRates(d))); },
+    mach_edit(e) { const d = e.data || {}, n = UP(String(d.name || e.lot_no).trim()), m = enOne("SELECT * FROM machinery WHERE UPPER(name)=?", [n]); if (!m) throw new Error(n + " is not on F. MACHINERY");
+      const to = UP(String(d.to || "").trim()); if (to && to !== n && enOne("SELECT 1 x FROM machinery WHERE UPPER(name)=?", [to])) throw new Error(to + " is already on F. MACHINERY");
+      const set = [], v = []; ["cow", "calf", "buff", "goat"].forEach((k) => { if (d[k] !== undefined) { set.push(k + "=?"); v.push(d[k] === "" ? null : Number(d[k])); } });
+      if (to && to !== n) { set.push("name=?"); v.push(to); }
+      if (set.length) enRun("UPDATE machinery SET " + set.join(", ") + " WHERE name=?", v.concat([m.name])); },
+    mach_delete(e) { const n = UP(String((e.data || {}).name || e.lot_no).trim()), m = enOne("SELECT * FROM machinery WHERE UPPER(name)=?", [n]); if (!m) throw new Error(n + " is not on F. MACHINERY"); enRun("DELETE FROM machinery WHERE name=?", [m.name]); },
     chem_void(e) { const d = e.data || {}, m = enOne("SELECT * FROM chem_moves WHERE id=? AND status='OK'", [Number(d.id)]); if (!m) throw new Error("ledger entry " + d.id + " is not in the records");
       enRun("UPDATE chem_moves SET status='VOID' WHERE id=?", [m.id]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE UPPER(name)=UPPER(?)", [m.qty, m.qty, m.chemical]); },
     // CHEM ALIASES: a recipe name that means this chemical
@@ -1157,6 +1174,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     data.rate = {}; data.chemicals.forEach((c) => { const k = c.name.toUpperCase(); if (!(k in data.rate)) data.rate[k] = c.rate || 0; });
     data.finAnchor = {}; rows("SELECT * FROM process_fin").forEach((p) => { data.finAnchor[p.process.toUpperCase()] = JSON.parse(p.anchors); });
     data.mach = {}; rows("SELECT * FROM machinery").forEach((m) => { data.mach[m.name.toUpperCase()] = m; });
+    // machines added, changed or deleted on the phone, in the order they were made
+    live.filter((e) => /^mach_(add|edit|delete)$/.test(e.type)).forEach((e) => { const d = e.data || {}, k = UP(String(d.name || e.lot_no).trim()), wait = isWait(e), num = (x) => x === "" ? null : Number(x);
+      if (e.type === "mach_add") { if (!data.mach[k]) data.mach[k] = { name: k, cow: num(d.cow ?? ""), calf: num(d.calf ?? ""), buff: num(d.buff ?? ""), goat: num(d.goat ?? ""), wait }; return; }
+      const m = data.mach[k]; if (!m) return;
+      if (e.type === "mach_delete") { delete data.mach[k]; return; }
+      const m2 = Object.assign({}, m, { wait: m.wait || wait }); ["cow", "calf", "buff", "goat"].forEach((f) => { if (d[f] !== undefined) m2[f] = num(d[f]); });
+      const to = UP(String(d.to || "").trim()); if (to && to !== k) { delete data.mach[k]; m2.name = to; data.mach[to] = m2; } else data.mach[k] = m2; });
     const mv = (k) => one("SELECT value FROM meta WHERE key=?", [k]);
     data.auditSet = { pct: Number(mv("audit_pct")) || 2, rs: Number(mv("audit_rs")) || 2000, qty: Number(mv("audit_qty")) || 0.5, cycle: Number(mv("audit_cycle")) || 40 };
     data.pendingOrder = newPO;
@@ -1278,7 +1302,29 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "purchases") return f === "open" ? it.grp === 1 : f === "over" ? it.over : it.grp === 2;
     return f === "stock" ? it.grp === 1 : f === "reorder" ? it.short > 0 : f === "neg" ? (it.available || 0) < 0 : it.grp === 2;
   }
-  function render() {
+  // pages of the app found by name in the search box ("machinery", "settings", "audit chemicals")
+  const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
+    "chemicals|bills": "purchase bills tally", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
+    "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "lots|guide": "stages stage",
+    "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts" };
+  let PAGES = null;
+  function pageList() {
+    if (PAGES) return PAGES; const seen = new Set(); PAGES = [];
+    const add = (k, label, grp) => { if (seen.has(k)) return; seen.add(k); const words0 = (grp + " " + label + " " + (PAGE_WORDS[k] || "")).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); PAGES.push({ k, label: grp && grp !== label ? grp + " · " + label : label, words: words0 }); };
+    MENU.forEach((g) => { if (g.tab) add(g.tab + "|", g.label, ""); (g.items || []).forEach(([k, l]) => add(k, l, g.label)); });
+    Object.entries(SIDE_T).forEach(([t, l]) => add(t + "|", l, ""));
+    Object.entries(CHIPS).forEach(([t, cs]) => cs.forEach(([c, l]) => add(t + "|" + c, l, SIDE_T[t] || "")));
+    return PAGES;
+  }
+  function pageHits() {
+    const ws = words($("#q").value).map((w) => String(w).toLowerCase()).filter((w) => w.length >= 3 || /^[a-z]+$/.test(w) && w.length >= 2); if (!ws.length) return;
+    const here = tab + "|" + (CHIPS[tab] && CHIPS[tab].length ? filter[tab] || CHIPS[tab][0][0] : "");
+    const hit = pageList().filter((p) => p.k !== here && ws.every((w) => p.words.some((x) => x.startsWith(w)))).slice(0, 6); if (!hit.length) return;
+    const div = document.createElement("div"); div.className = "pagehits"; div.innerHTML = `<span>Open page:</span>` + hit.map((p) => p.k.charAt(0) === "@" ? `<button type="button" data-menuact="${esc(p.k.slice(1))}">${esc(p.label)}</button>` : `<button type="button" data-jump="${esc(p.k.split("|")[0])}" data-f="${esc(p.k.split("|")[1])}">${esc(p.label)}</button>`).join("");
+    $("#list").prepend(div);
+  }
+  function render() { render0(); try { pageHits(); } catch (e) { /* never stops the page */ } }
+  function render0() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
     $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
@@ -1360,8 +1406,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function machView(ws) {
     const L = Object.values(data.mach || {}).filter((m) => match(String(m.name).toLowerCase(), ws)).sort((a, b) => String(a.name).localeCompare(String(b.name))), r = (v) => Number(v) ? fmtN(v, 2) : "-";
     return `<div class="count"><span>${L.length} machine${L.length === 1 ? "" : "s"} on F. MACHINERY</span></div>
-      <p class="note" style="margin:0 0 6px">₹ per piece per round. ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))} are ₹ per run for the whole lot. Rates are changed in Excel (F. MACHINERY) and come to the app with the next update.</p>
-      ${L.length ? `<div class="tbl"><table><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr><td>${esc(m.name)}${NOT_ROUND.includes(String(m.name).toUpperCase()) ? ` <span class="note">per run</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
+      <p class="note" style="margin:0 0 6px">₹ per piece per round. ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))} are ₹ per run for the whole lot.${store && canWrite ? " Tap a machine to change its rates or name, or to delete it. Excel updates F. MACHINERY." : " Rates are changed in Excel (F. MACHINERY)."}</p>
+      ${store && canWrite ? `<div class="acts" style="margin:0 0 8px"><button class="btn alt" data-form="mach_add:">Add machine</button></div>` : ""}
+      ${L.length ? `<div class="tbl"><table class="tview"><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr${store && canWrite ? ` data-form="mach_edit:${esc(m.name)}"` : ""}><td>${esc(m.name)}${NOT_ROUND.includes(String(m.name).toUpperCase()) ? ` <span class="note">per run</span>` : ""}${m.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
   }
   // ---------------------------------------------------------------- Excel sheets as views: STAGE GUIDE, chemical usage by lot,
   // CHEM CLEANUP, PURCHASE LEDGER, TALLY MASTERS (read from the data the app already holds)
@@ -1644,7 +1691,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 136, at: "2026-11-15T20:52:01+05:30", notes: "Phone entries folder (OneDrive settings): checked when changed; warns if the folder is missing or Excel does not look there." };
+  const APP_BUILD = { v: 137, at: "2026-11-16T00:20:32+05:30", notes: "Menu button on every page. Search finds app pages (machinery, settings, stock audit…). Machinery: add, change rates or name, delete (Excel updates F. MACHINERY)." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3559,6 +3606,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const purchInfo = (key) => { const p = data.purchases.find((x) => x.key === key) || openPurch()[0]; return p ? `Animal: ${p.animal || "-"} · Grade: ${p.grade || "-"} · Supplier: ${p.supplier || "-"} · Left: ${fmtN(p.leftP, 0)} pcs, ${fmtN(p.leftS, 2)} sqft` : ""; };
   const lineOpts = (cur0) => data.orders.filter((o) => !o.isNew && o.grp === 1).map((o) => opt(o.id, `PO ${o.po_no} · ${o.customer} · ${o.item} · ${fmtN(o.qty_sqft, 0)} sqft`, String(o.id) === String(cur0))).join("");
   const rwCauseOpts = (g) => opt("", "Pick a cause") + rwCauses(g).map((c) => opt(c, c)).join("");
+  const machRateInputs = (m) => { const n = ' type="number" step="any" min="0" inputmode="decimal"'; return `<div class="two">${[["cow", "Cow"], ["calf", "Calf"], ["buff", "Buff"], ["goat", "Goat"]].map(([k, l]) => `<label>${l} ₹<input id="mc-${k}" value="${m[k] === null || m[k] === undefined ? "" : esc(String(m[k]))}"${n}></label>`).join("")}</div>`; };
+  // saved processes (current versions) that list this machine
+  const machUse = (name) => { const u = UP(name); let n = 0; try { rows("SELECT machinery FROM lot_recipes").forEach((r) => { try { if (JSON.parse(r.machinery || "[]").some((x) => UP(String(x.d || "").trim()) === u)) n++; } catch (e) {} }); } catch (e) {} return n; };
   const formEnd = `<p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div>`;
   const dateF = (id, lb, val) => `<label>${lb}<input id="${id}" type="date" value="${val || ""}"></label>`;
   const numF = (id, lb, ph) => `<label>${lb}<input id="${id}" type="number" step="any" min="0" inputmode="decimal"${ph ? ` value="${esc(ph)}"` : ""}></label>`;
@@ -3601,6 +3651,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     lot_delete: { title: "Delete lot", html: (a) => `<form class="fm" id="fm-lot_delete" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">It has no skins, chemicals or deliveries. Excel removes its tracker row.</p>${formEnd}</form>` },
     recipe_delete: { title: "Delete saved process", html: (a) => { const [lot, ...pr] = a.split("|"), proc = pr.join("|"), r = dbRecipe(lot, proc); return `<form class="fm" id="fm-recipe_delete" data-lot="${esc(lot)}" data-proc="${esc(proc)}"><h3>${esc(lot)} · ${esc(proc)}</h3><p style="margin:0">${(r && r.versions) > 1 ? `All ${r.versions} saved versions of this process are` : "The saved process is"} removed from the database. This can't be undone. Any chemicals already deducted stay deducted.</p>${formEnd}</form>`; } },
     po_delete: { title: "Delete PO", html: (a) => { const o = data.orders.find((x) => String(x.id) === a), n = data.orders.filter((x) => x.order_id === o.order_id).length; return `<form class="fm" id="fm-po_delete" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">Deletes this PO and all ${n} ${n === 1 ? "item" : "items"}. This can't be undone.</p>${formEnd}</form>`; } },
+    mach_add: { title: "Add machine", html: (a) => `<form class="fm" id="fm-mach_add"><label>Name<input id="mc-name" value="${v(a)}" autocomplete="off" style="text-transform:uppercase"></label>${machRateInputs({})}<p class="note" style="margin:0">₹ per piece per round for each animal (per run for the whole lot for ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))}). Leave an animal empty if the machine isn't used for it. Excel adds a row to F. MACHINERY, and process pages can pick it.</p>${formEnd}</form>` },
+    mach_edit: { title: "Machine", html: (a) => { const m = data.mach[UP(a)]; if (!m) return `<p class="empty">${esc(a)} is not on F. MACHINERY any more.</p>`; const u = machUse(m.name);
+      return `<form class="fm" id="fm-mach_edit" data-name="${esc(m.name)}"><label>Name<input id="mc-name" value="${v(m.name)}" autocomplete="off" style="text-transform:uppercase"></label>${machRateInputs(m)}<p class="note" style="margin:0">${u ? `Used in ${u} saved process${u === 1 ? "" : "es"}. New rates apply to costing from now on.` : "Not used in any saved process."}${m.wait ? " Waiting for Excel." : ""}</p>${formEnd}<div class="acts" style="margin-top:6px"><button class="btn alt" type="button" data-form="mach_delete:${esc(m.name)}">Delete this machine</button></div></form>`; } },
+    mach_delete: { title: "Delete machine", html: (a) => { const m = data.mach[UP(a)]; if (!m) return `<p class="empty">${esc(a)} is not on F. MACHINERY any more.</p>`; const u = machUse(m.name);
+      return `<form class="fm" id="fm-mach_delete" data-name="${esc(m.name)}"><h3>${esc(m.name)}</h3><p style="margin:0">Excel removes its row from F. MACHINERY.${u ? ` <b>${u} saved process${u === 1 ? " uses" : "es use"} it</b>: their machinery cost for it becomes 0, in the app and on the process pages in Excel.` : " No saved process uses it."}</p>${formEnd}</form>`; } },
     chem_add: { title: "Add chemical", html: (a) => { const n = ' type="number" step="any" min="0" inputmode="decimal"'; return `<form class="fm" id="fm-chem_add"><label>Name<input id="fa-name" value="${v(a)}" autocomplete="off"></label><div class="two"><label>Rate<input id="fa-rate"${n}></label><label>Pack size<input id="fa-pack"${n}></label><label>Opening stock<input id="fa-qty"${n}></label></div><p class="note" style="margin:0">Excel adds it to A. CHEMICALS. Use the exact Tally name. If Tally doesn't have it, Refresh Chemicals asks whether to keep it, unless the name starts with URP.</p>${formEnd}</form>`; } },
     chem_edit: { title: "Edit chemical", html: (a) => { const c = data.chemicals.find((x) => x.name === a), n = ' type="number" step="any" min="0" inputmode="decimal"'; return `<form class="fm" id="fm-chem_edit" data-name="${esc(a)}"><h3>${esc(a)}</h3><div class="two"><label>Pack size<input id="fe-pack" value="${v(c.pack_size)}"${n}></label><label>Min stock<input id="fe-min" value="${v(c.min || "")}"${n}></label></div><p class="note" style="margin:0">Rate and purchased stock come from Tally, so they aren't edited here.</p>${formEnd}</form>`; } },
     chem_rename: { title: "Rename chemical", html: (a) => `<form class="fm" id="fm-chem_rename" data-name="${esc(a)}"><h3>${esc(a)}</h3><label>Move its history to<input id="fr-to" list="fr-chems" autocomplete="off" placeholder="Start typing a chemical"></label>${dl("fr-chems", data.chemicals.filter((c) => c.name !== a).map((c) => c.name))}<p class="note" style="margin:0">Same as Rename chemical in Excel. Pick the name Tally now uses. Ledger and audit entries move to it, and recipes with the old name are pointed to it.</p>${formEnd}</form>` },
@@ -4784,6 +4839,20 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-lot_delete") return saveNew({ type: "lot_delete", lot_no: f.dataset.lot, data: { lot: f.dataset.lot } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-recipe_delete") return saveNew({ type: "recipe_delete", lot_no: f.dataset.lot, process: f.dataset.proc, data: { lot: f.dataset.lot, proc: f.dataset.proc } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-po_delete") { const o = data.orders.find((x) => String(x.id) === f.dataset.id); return saveNew({ type: "po_delete", lot_no: "PO " + o.po_no, data: { order_id: o.order_id } }, "Delete saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-mach_add" || f.id === "fm-mach_edit") {
+      const name = UP(need("#mc-name")).replace(/\s+/g, " "); if (!name) return bad("Enter the machine's name.");
+      if (/[|~^=]/.test(name)) return bad("The name can't have | ~ ^ or =.");
+      const r = {}; for (const k of ["cow", "calf", "buff", "goat"]) { const x = need("#mc-" + k); if (x !== "" && !(Number(x) >= 0)) return bad("Rates must be numbers, 0 or more."); r[k] = x; }
+      if (f.id === "fm-mach_add") { if (data.mach[name]) return bad(name + " is already on the list."); if (!["cow", "calf", "buff", "goat"].some((k) => r[k] !== "")) return bad("Enter at least one rate.");
+        return saveNew({ type: "mach_add", lot_no: name, data: Object.assign({ name }, r) }, "Machine saved. It is waiting for Excel.", msg, btn); }
+      const n0 = f.dataset.name, m = data.mach[UP(n0)], d = { name: n0 }, same = (a, b) => (a === null || a === undefined || a === "" ? "" : String(Number(a))) === (b === "" ? "" : String(Number(b)));
+      if (!m) return bad(n0 + " is not on the list any more.");
+      ["cow", "calf", "buff", "goat"].forEach((k) => { if (!same(m[k], r[k])) d[k] = r[k]; });
+      if (name !== UP(n0)) { if (data.mach[name]) return bad(name + " is already on the list."); const u = machUse(n0); if (u && warnOnce(f, `${u} saved process${u === 1 ? " lists" : "es list"} ${n0}. They keep the old name, so their cost for it becomes 0 until the process is saved again with ${name}.`)) return; d.to = name; }
+      if (Object.keys(d).length === 1) return bad("Nothing has changed.");
+      return saveNew({ type: "mach_edit", lot_no: n0, data: d }, "Saved. It is waiting for Excel.", msg, btn);
+    }
+    if (f.id === "fm-mach_delete") return saveNew({ type: "mach_delete", lot_no: f.dataset.name, data: { name: f.dataset.name } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-chem_add") { const name = need("#fa-name"); if (!name) return bad("Enter the name."); if (data.chemNames.has(name.toUpperCase())) return bad("That chemical already exists."); return saveNew({ type: "chem_add", lot_no: name, data: { name, rate: numOf("#fa-rate"), pack: numOf("#fa-pack"), qty: numOf("#fa-qty"), date: iso(today) } }, "Chemical saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_edit") { const n0 = f.dataset.name, c = data.chemicals.find((x) => x.name === n0), pack = need("#fe-pack"), min = need("#fe-min"), d = {}; if (pack !== String(c.pack_size ?? "")) d.pack = pack; if (min !== String(c.min || "")) d.min = min === "" ? "0" : min; if (!Object.keys(d).length) return bad("Nothing has changed."); d.name = n0; return saveNew({ type: "chem_edit", lot_no: n0, data: d }, "Saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); if (!data.chemicals.some((x) => x.name === n0)) return bad(n0 + " is no longer on the chemical list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
@@ -5187,6 +5256,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "purchase_delete") return "Delete purchase";
     if (e.type === "purchase_split") return `Split: ${d.pcs} pcs, ${d.sqft} sqft to a new purchase`;
     if (e.type === "purchase_merge") return `Merge into ${d.to}: ${d.pcs} pcs, ${d.sqft} sqft`;
+    if (e.type === "mach_add" || e.type === "mach_edit") { const r = ["cow", "calf", "buff", "goat"].filter((k) => d[k] !== undefined && !(e.type === "mach_add" && d[k] === "")).map((k) => k + " " + (d[k] === "" ? "none" : "₹" + d[k])); return (e.type === "mach_add" ? "Add machine" : "Machine") + (d.to ? " renamed to " + d.to : "") + (r.length ? ": " + r.join(", ") : ""); }
+    if (e.type === "mach_delete") return "Delete machine";
     if (e.type === "chem_add") return "Add chemical";
     if (e.type === "chem_edit") return "Edit: " + [d.pack !== undefined ? "pack size " + d.pack : "", d.min !== undefined ? "min stock " + d.min : ""].filter(Boolean).join(", ");
     if (e.type === "chem_rename") return "Move history to " + d.to;
@@ -5354,6 +5425,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const d = $("#detail");
     const tm = d.querySelector(".okmsg.toast"); if (tm) { showToast(tm.textContent); tm.remove(); }
     d.querySelectorAll(".dhead .back").forEach((b) => { b.innerHTML = ICON_BACK; b.setAttribute("aria-label", "Back"); });
+    // the menu button stays reachable on every page (the page covers the top bar on phones)
+    d.querySelectorAll(".dhead").forEach((h) => { if (h.querySelector("[data-dmenu]")) return; const b = document.createElement("button"); b.type = "button"; b.className = "dmenu"; b.dataset.dmenu = "1"; b.setAttribute("aria-label", "Menu"); b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+      const bk = h.querySelector(".back"); if (bk) bk.after(b); else h.prepend(b); });
     // lot page: each section folds, and remembers whether it was open
     const pg = tab === "lots" && sel.lots && !formOpen ? (data.lotBy[sel.lots] ? "lot" : /^rec:/.test(sel.lots) ? "rec" : /^proc:/.test(sel.lots) ? "proc" : "") : "";
     if (pg) {
@@ -5481,6 +5555,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (a === "invnew") { inv = invNew(); invShowAll = false; openForm("invoice:new"); } else openForm("invset:");
   }
   $("#menubtn").addEventListener("click", () => (sideOpen ? closeSide() : openSide()));
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-dmenu]")) { e.preventDefault(); openSide(); } });
   $("#scrim").addEventListener("click", closeSide);
   $("#side").addEventListener("click", (e) => {
     const mg = e.target.closest("[data-mgrp]");
@@ -5557,6 +5632,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { const b = e.target.closest("[data-ledt]"); if (b) { filter.ledT = b.dataset.ledt; render(); return; } }
     { const b = e.target.closest("[data-tallyt]"); if (b) { filter.tallyT = b.dataset.tallyt; render(); return; } }
     if (e.target.closest("[data-tour-replay]")) { tourStart(); return; }
+    { const b = e.target.closest("[data-form]"); if (b) { stack = []; sel[tab] = null; openForm(b.dataset.form); return; } }
     if (e.target.closest("[data-pbadd]")) { const box = $("#pb-lines"); box.insertAdjacentHTML("beforeend", pbLineHtml(box.querySelectorAll(".pbl").length)); return; }
     { const b = e.target.closest("[data-recmode]"); if (b) { const to = b.dataset.recmode, m = $("#recmsg");
       if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = to === "app" ? "Tap again: the app keeps the records from now" : "Tap again: Excel imports the entries again"; return; }
