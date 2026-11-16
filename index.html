@@ -575,6 +575,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 
   let db, tab = "today", filter = {}, sel = {}, data = {}, pick = null, stack = [];
   // phone entries live in the shared store; Excel stays the master until they are imported
+  let myName = "";   // the person using this phone, written into Tally narrations
   let store = null, people = null, uid = null, canWrite = false, entries = [], entriesSeen = false, formOpen = null, flash = "", ed = null, connected = false, canAdmin = false, submitter = null, audits = [], showRates = false, costIn = {}, presetStage = "";
 
   // ---------------------------------------------------------------- load
@@ -609,6 +610,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const [s, u] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
     people = u; if (!s) return;
     uid = u ? await u.id() : null;
+    try { if (u && u.me) u.me().then((m) => { myName = (m && m.name) || ""; }).catch(() => {}); } catch (e) { /* no name */ }
     const can = u ? await u.can("data.write") : null;
     store = s; canWrite = can !== false; canAdmin = u ? await u.canEdit() : false; srcLine();
     loadSharedSnapshot().catch(() => {});
@@ -995,7 +997,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const po = {}; rows("SELECT lo.lot_no, o.po_no, l.id line_id FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id JOIN orders o ON o.id=l.order_id").forEach((r) => po[r.lot_no] = r);
 
     const builtAt = String(one("SELECT value FROM meta WHERE key='built_at'") || "");
-    const live0 = entries.filter((e) => !enDone.has(e.id)).filter((e) => e.status === "pending" || (e.status === "imported" && String(e.created_at).slice(0, 19) > builtAt))
+    // entries Excel imported but the workbook doesn't have yet (not saved after the import) are still shown as waiting
+    const unsavedIds = (() => { try { return new Set((JSON.parse(one("SELECT value FROM meta WHERE key='unsaved_imports'") || "{}").ids) || []); } catch (e) { return new Set(); } })();
+    const live0 = entries.filter((e) => !enDone.has(e.id)).filter((e) => e.status === "pending" || unsavedIds.has(e.id) || (e.status === "imported" && String(e.created_at).slice(0, 19) > builtAt))
       .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     // new lots made on the phone keep the number given when they were saved (data.lot_no); Excel uses it too, unless it was taken
     // in the meantime: then the lot gets the next free number and every entry on it follows (nl_map names the lot's own entry)
@@ -1468,7 +1472,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<ALLINVENTORYENTRIES.LIST>${T("STOCKITEMNAME", x.n)}<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><RATE>${xe(r2(x.r).toFixed(2) + "/" + u)}</RATE>${x.d ? T("DISCOUNT", x.d) : ""}<AMOUNT>${am(-x.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY>`
         + `<BATCHALLOCATIONS.LIST>${T("GODOWNNAME", PB.godown)}<BATCHNAME>Primary Batch</BATCHNAME>${x.d ? T("BATCHDISCOUNT", x.d) : ""}<AMOUNT>${am(-x.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY></BATCHALLOCATIONS.LIST>`
         + `<ACCOUNTINGALLOCATIONS.LIST>${T("LEDGERNAME", PB.purchase)}<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>${am(-x.amt)}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>`; }).join("");
-    const narr = [b.note, "From the phone [APP " + id + "]"].filter(Boolean).join(". ");
+    // narration: the comment typed on the bill, then what the voucher is and who entered it; [APP id] stays last (Excel finds the voucher by it)
+    const dm = (x) => String(x || "").replace(/^(\d{4})-(\d\d)-(\d\d).*$/, "$3-$2-$1");
+    const narr = [b.note, `Purchase bill ${b.ref} of ${dm(b.date)} from ${b.party}, entered in the SSI app${myName ? " by " + myName : ""} on ${dm(iso(today))}`, "[APP " + id + "]"].filter(Boolean).join(". ");
     return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(PB.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
       + `<DATE>${td(b.date)}</DATE><EFFECTIVEDATE>${td(b.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", PB.vtype)}<VOUCHERNUMBER>{VNO}</VOUCHERNUMBER>${T("REFERENCE", b.ref)}${T("REFERENCEDATE", td(b.date))}`
       + `${T("PARTYLEDGERNAME", b.party)}${T("PARTYNAME", b.party)}${T("BASICBASEPARTYNAME", b.party)}${T("PARTYMAILINGNAME", b.party)}${t.gstin ? T("PARTYGSTIN", t.gstin) + "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" : ""}${T("STATENAME", t.state)}${T("PLACEOFSUPPLY", PB.home)}`
@@ -1693,7 +1699,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 139, at: "2026-11-16T07:04:43+05:30", notes: "PDFs are saved straight to the OneDrive PDF folder (OneDrive settings); Share stays available. Waiting entries are sent as soon as the app is left." };
+  const APP_BUILD = { v: 140, at: "2026-11-16T22:05:44+05:30", notes: "Tally narration: your comment, then what the bill or invoice is and who entered it. Entries Excel imported but its workbook never got (Excel closed without saving) stay visible and Today warns." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1712,6 +1718,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const arch = archiveReady();
     { const una = data.lots.filter((l) => l.state === "DISPATCHED" && trackedLot(l.lot_no) && notDelivered(l).dp > 0 && notDelivered(l).sh > 0);
       if (una.length) checks.push([`data-go="lots" data-k="${esc(una[0].lot_no)}"`, una.length + (una.length === 1 ? " dispatched lot has" : " dispatched lots have") + " pieces not delivered and not accounted for (" + una.slice(0, 6).map((l) => l.lot_no).join(", ") + (una.length > 6 ? "…" : "") + "). They can't be archived until you say where they went."]); }
+    { let u = null; try { u = JSON.parse(one("SELECT value FROM meta WHERE key='unsaved_imports'") || "null"); } catch (e) { u = null; }
+      if (u && u.n) checks.push(["data-jump=\"entries\" data-f=\"pending\"", `Excel imported ${u.n} phone entr${u.n === 1 ? "y" : "ies"}${u.lots && u.lots.length ? " (" + u.lots.join(", ") + ")" : ""} but Excel's workbook doesn't have ${u.n === 1 ? "it" : "them"} (Excel was probably closed without saving). ${u.n === 1 ? "It stays" : "They stay"} waiting here. Save the workbook in Excel if it is still open; otherwise ask Claude to re-import.`]); }
     { const nb = pbBills().filter((b) => b.dup || b.bad).length; if (nb) checks.push(["data-jump=\"chemicals\" data-f=\"bills\"", nb + (nb === 1 ? " purchase bill needs" : " purchase bills need") + " you (Tally)"]); }
     { const nE = recMode() ? Object.keys(engineErr).length : 0; if (nE) checks.push(["data-jump=\"entries\" data-f=\"pending\"", nE + (nE === 1 ? " entry" : " entries") + " could not be recorded"]); }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
@@ -2566,7 +2574,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     setM("built_at", stamp); setM("data_as_of", mod && !isNaN(mod) ? iso(mod) : stamp.slice(0, 10)); const au = xl(wb, "CHEM AUDIT"); setM("audit_pct", String(xfl(cv(au, "N5")) ?? 2)); setM("audit_rs", String(xfl(cv(au, "N6")) ?? 2000)); setM("audit_qty", String(xfl(cv(au, "N7")) ?? 0.5)); setM("audit_cycle", String(xfl(cv(au, "N8")) ?? 40));
     setM("archive_days", String(xfl(cv(xl(wb, "DASHBOARD"), "D36")) || xfl(cv(xl(wb, "DASHBOARD"), "E36")) || 30));
     a.run("COMMIT");
-    const done = q(src, "SELECT 1 FROM sqlite_master WHERE name='phone_import_log'").length ? q(src, "SELECT entry_id FROM phone_import_log").map((r) => r.entry_id) : [];
+    // an entry counts as done only when the workbook was saved after Excel imported it: the database is written at once, the
+    // workbook only when Excel saves. If Excel closed without saving (16 Nov: L549), the entry stays waiting on the phone and
+    // Today warns, instead of the lot vanishing.
+    const loc = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+    // Excel writes the time of each phone import into the workbook (hidden name PhoneImportedAt, 16-Nov-2026); a stale copy
+    // saved later still carries its old time. Older workbooks: the save time.
+    const mark = (() => { try { const n = ((wb.Workbook && wb.Workbook.Names) || []).find((x) => String(x.Name).toUpperCase() === "PHONEIMPORTEDAT"); const m = n && /(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)/.exec(String(n.Ref || "")); return m ? m[1] : ""; } catch (e) { return ""; } })();
+    const plus2 = (t) => { const d = new Date(t.replace(" ", "T")); return isNaN(d) ? t : loc(new Date(d.getTime() + 120000)); };
+    const wbSaved = mark ? plus2(mark) : mod && !isNaN(mod) ? loc(new Date(mod.getTime() + 120000)) : "";
+    const logAll = q(src, "SELECT 1 FROM sqlite_master WHERE name='phone_import_log'").length ? q(src, "SELECT entry_id, entry_type, lot_no, imported_at FROM phone_import_log") : [];
+    const notSaved = wbSaved ? logAll.filter((r) => String(r.imported_at || "") > wbSaved) : [];
+    const ns = new Set(notSaved.map((r) => r.entry_id)), done = logAll.filter((r) => !ns.has(r.entry_id)).map((r) => r.entry_id);
+    a.run("INSERT OR REPLACE INTO meta(key,value) VALUES('unsaved_imports',?)", [JSON.stringify({ wb: wbSaved, n: notSaved.length, last: notSaved.reduce((m, r) => (String(r.imported_at) > m ? String(r.imported_at) : m), ""), lots: [...new Set(notSaved.map((r) => r.lot_no).filter((x) => x && x !== "NEW"))].slice(0, 12), ids: notSaved.slice(-300).map((r) => r.entry_id) })]);
     a.run("CREATE TABLE IF NOT EXISTS phone_log(entry_id TEXT, result TEXT)"); a.run("DELETE FROM phone_log");
     a.run("CREATE TABLE IF NOT EXISTS phone_done(entry_id TEXT PRIMARY KEY)"); a.run("DELETE FROM phone_done"); done.forEach((id) => a.run("INSERT OR IGNORE INTO phone_done VALUES(?)", [String(id)]));
     if (done.length) q(src, "SELECT entry_id, result FROM phone_import_log WHERE entry_type='new_lot'").forEach((r) => a.run("INSERT INTO phone_log VALUES(?,?)", [r.entry_id, r.result])); a.run("VACUUM");
@@ -3670,7 +3690,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="group" style="margin-top:8px">Chemicals</div><div id="pb-lines">${[0, 1, 2].map((i) => pbLineHtml(i)).join("")}</div>${dl("pb-chems", data.chemicals.map((c) => c.name).concat(trows("SELECT name FROM tally_items WHERE unit LIKE 'kg%'").map((r) => r.name)))}
       <button type="button" class="btn alt" data-pbadd>Add a line</button>
       <label>Bill total on the paper (to check)<input id="pb-paper" inputmode="decimal" placeholder="optional"></label><div id="pb-tot" class="note"></div>
-      <label>Note<input id="pb-note" autocomplete="off" placeholder="optional"></label>
+      <label>Comments for Tally (narration)<input id="pb-note" autocomplete="off" placeholder="optional, e.g. rate agreed on phone"></label>
       <p class="note" style="margin:0">The chemicals count in stock at once. Excel makes the Purchase voucher in Tally; if the same bill is already there, you are asked which to keep.</p>${formEnd}</form>` },
     pb_compare: { title: "Compare with Tally", html: (a) => pbCompareHtml(a) },
     pb_drop: { title: "Drop this bill", html: (a) => { const b = pbBills().find((x) => x.id === a); return b ? `<form class="fm" id="fm-pb_drop" data-a="${esc(a)}"><p>${esc(b.party)} · bill ${esc(b.ref)} · ₹${fmtN(b.calc.total, 0)}</p><p class="note">Excel has it but it is not in Tally yet. Dropping it stops it going to Tally and takes its chemicals out of stock again.</p>${formEnd}</form>` : `<p class="empty">This bill is no longer there.</p>`; } },
@@ -4099,7 +4119,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-sampling", "Sampling ₹", v.sampling, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
       <h3 style="margin:10px 0 0">Transport and e-way bill</h3>
       <div class="two">${ivF("iv-transporter", "Transporter", v.transporter)}${ivF("iv-vehicle", "Vehicle no", v.vehicle)}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
-      ${ivF("iv-narration", "Narration (optional)", v.narration)}
+      ${ivF("iv-narration", "Comments for Tally (narration, optional)", v.narration)}
       <div id="iv-tot">${invTotHtml(v)}</div>
       <datalist id="iv-items">${(tItems().length ? tItems().map((x) => x.name) : items).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
       <datalist id="iv-parties">${tParties().map((x) => `<option value="${esc(x.name)}">${esc([x.gstin, x.state].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>` : ""}
@@ -4249,7 +4269,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const S = iset(), t = invCalc(v), u = S.unit, T = (tag, val) => val === "" || val == null ? "" : `<${tag}>${xe(val)}</${tag}>`;
     const led = (name, amt, party) => `<LEDGERENTRIES.LIST>${T("LEDGERNAME", name)}<ISDEEMEDPOSITIVE>${amt < 0 ? "Yes" : "No"}</ISDEEMEDPOSITIVE>${party ? "<ISPARTYLEDGER>Yes</ISPARTYLEDGER>" : ""}<AMOUNT>${am(amt)}</AMOUNT></LEDGERENTRIES.LIST>`;
     const lots = [...new Set(t.lines.map((x) => x.lot))];
-    const narr = v.narration || ["Lots " + lots.join(", "), v.eway ? "E-way bill " + v.eway : "", "App " + v.temp].filter(Boolean).join(". ");
+    // narration: the comment typed on the invoice first, then the lots, e-way bill and who made it in the app
+    const narr = [v.narration, "Lots " + lots.join(", "), v.eway ? "E-way bill " + v.eway : "", "Invoice " + v.temp + " made in the SSI app" + (myName ? " by " + myName : "")].filter(Boolean).join(". ");
     const inv0 = t.lines.map((ln) => { const q = r2(ln.sqft).toFixed(2) + " " + u;
       return `<ALLINVENTORYENTRIES.LIST>${T("STOCKITEMNAME", ln.item.trim())}<BASICUSERDESCRIPTION.LIST TYPE="String">${T("BASICUSERDESCRIPTION", ln.desc)}</BASICUSERDESCRIPTION.LIST><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>${T("GSTHSNNAME", ln.hsn)}<RATE>${xe(r2(ln.rate).toFixed(2) + "/" + u)}</RATE>${Number(ln.disc) ? `<DISCOUNT>${xe(ln.disc)}</DISCOUNT>` : ""}<AMOUNT>${am(ln.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY>`
         + (S.godown ? `<BATCHALLOCATIONS.LIST>${T("GODOWNNAME", S.godown)}<BATCHNAME>Primary Batch</BATCHNAME><AMOUNT>${am(ln.amt)}</AMOUNT><ACTUALQTY>${xe(q)}</ACTUALQTY><BILLEDQTY>${xe(q)}</BILLEDQTY></BATCHALLOCATIONS.LIST>` : "")
