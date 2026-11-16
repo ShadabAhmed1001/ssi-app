@@ -76,7 +76,32 @@
       else { box.remove(); res(a.a); } });
   });
   const dlFile = (file) => { const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); };
+  // a PDF goes straight into the PDF folder in OneDrive (settings); then the phone can still share it (WhatsApp, mail)
+  const pdfBox = (file, said, ok) => new Promise((res) => {
+    const box = document.createElement("div"), e = (t) => String(t).replace(/[<>&]/g, "");
+    box.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px");
+    box.innerHTML = '<div class="pdfbox" style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:420px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:6px">' + (ok ? "Saved to OneDrive" : "Not saved to OneDrive") + '</b><span style="display:block;word-break:break-all;margin-bottom:12px;' + (ok ? "" : "color:#b45309") + '">' + e(said) + '</span><button data-a="share" style="width:100%;padding:12px;border:0;border-radius:10px;background:' + (ok ? "transparent;border:1px solid var(--line,#ccc);color:inherit" : "var(--accent,#1b6ef3);color:var(--accent-ink,#fff)") + ';font-weight:600;font-size:16px">Share…</button>' + (ok ? "" : '<button data-a="dl" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--line,#ccc);border-radius:10px;background:transparent;color:inherit">Download</button>') + '<button data-a="x" style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:10px;' + (ok ? "background:var(--accent,#1b6ef3);color:var(--accent-ink,#fff);font-weight:600" : "background:transparent;color:inherit") + '">Done</button></div>';
+    document.body.appendChild(box);
+    box.addEventListener("click", async (ev) => { const a = (ev.target.closest("button") || {}).dataset; if (!a || !a.a) return;
+      if (a.a === "share") { const r = await tryShare(file); if (r === "abort") return; if (r !== "ok") dlFile(file); }
+      else if (a.a === "dl") dlFile(file);
+      box.remove(); res(a.a); });
+  });
+  const pdfFolder = () => String(cfg().pdfFolder || cfg().dataFolder || "").replace(/^\/+|\/+$/g, "");
+  async function pdfToOneDrive(file) {
+    const folder = pdfFolder(); if (!folder) return { ok: false, said: "No PDF folder is set (OneDrive settings)." };
+    if (!account) return { ok: false, said: "Not signed in to OneDrive." };
+    if (!navigator.onLine) return { ok: false, said: "No internet just now." };
+    try { const tok = await token(); if (!tok) return { ok: false, said: "Sign in to OneDrive again." };
+      await upload(folder + "/" + file.name.replace(/[\\/:*?"<>|#%]+/g, "-"), await file.arrayBuffer(), tok, "application/pdf");
+      return { ok: true, said: folder.replace(/\//g, " › ") + " › " + file.name };
+    } catch (e) { return { ok: false, said: "Could not upload: " + (e.message || e) }; }
+  }
   const downloadsApi = { save: async ({ filename, data }) => {
+    if (/\.pdf$/i.test(filename) && cfg().pdfAuto !== "off") {
+      const file = new File([data], filename, { type: "application/pdf" }), r = await pdfToOneDrive(file);
+      await pdfBox(file, r.said, r.ok); return { status: "saved", onedrive: r.ok };
+    }
     const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : /\.json$/i.test(filename) ? "application/json" : "application/octet-stream";
     let file = new File([data], filename, { type });
     let r = await tryShare(file);
@@ -363,6 +388,8 @@
       ${f("dataFolder", "Folder with the Excel workbook and database", "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
       ${f("xlsm", "Workbook file name")}${f("db", "Database file name")}
       ${f("entriesFolder", "Phone entries folder (the app puts entries here; Excel imports them on its own)", "SSI/PRODUCTION/Phone entries")}
+      ${f("pdfFolder", "PDF folder (every PDF made in the app is saved here)", c.dataFolder || "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
+      <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> Save PDFs to OneDrive by themselves</label>
       ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
       ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
         const e = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -373,23 +400,28 @@
     w.onclick = (e) => { const x = e.target.dataset && e.target.dataset.x; if (e.target === w || x === "cancel") w.remove(); if (x === "out") signOut(); if (x === "upd" && window.__ssiCheckUpdate) { e.target.disabled = true; e.target.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { e.target.textContent = r; }); } };
     w.querySelector("form").onsubmit = (e) => {
       e.preventDefault(); const o = {};
-      new FormData(e.target).forEach((v, k) => { v = String(v).trim(); if (v !== String(CFG0[k] || "")) o[k] = v; });
+      new FormData(e.target).forEach((v, k) => { if (k === "pdfAutoOn") return; v = String(v).trim(); if (v !== String(CFG0[k] || "")) o[k] = v; });
+      if (!e.target.pdfAutoOn.checked) o.pdfAuto = "off";
       const save = () => { lsSet(LSK, o); w.remove(); setMeta("dataTag", undefined).then(() => location.reload()); };
-      // a new phone entries folder: check it is there and that Excel looks in it, or entries would wait unseen
-      const nf = String((o.entriesFolder ?? CFG0.entriesFolder) || "").replace(/^\/+|\/+$/g, "");
+      const trim = (x) => String(x || "").replace(/^\/+|\/+$/g, "");
+      // a new phone entries folder: check it is there and that Excel looks in it, or entries would wait unseen; a new PDF folder: check it is there
+      const nf = trim(o.entriesFolder ?? CFG0.entriesFolder), pf = trim(o.pdfFolder ?? CFG0.pdfFolder ?? "");
       if (o.entriesFolder !== undefined) o.entriesFolder = nf;
-      if (!account || nf === String(cfg().entriesFolder || "")) return save();
+      if (o.pdfFolder !== undefined) o.pdfFolder = pf;
+      const chkE = nf !== trim(cfg().entriesFolder), chkP = !!pf && pf !== trim(cfg().pdfFolder);
+      if (!account || (!chkE && !chkP)) return save();
       const say = w.querySelector(".odfolder") || w.querySelector("form").appendChild(Object.assign(document.createElement("span"), { className: "odfolder" }));
       say.style.cssText = "font-size:13px;color:#b45309"; say.textContent = "Checking the folder in OneDrive…";
       (async () => {
         let msg = "";
         try { const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive first.");
-          if (!nf || !(await g("GET", itemUrl(nf), null, "", tok))) msg = "There is no folder '" + nf + "' in your OneDrive.";
-          else if (!(await g("GET", itemUrl(nf + "/excel-status.json"), null, "", tok))) msg = "Excel has not looked in '" + nf + "' yet. In Excel run SetPhoneEntriesFolder and pick the same folder, or entries will wait there unseen.";
+          if (chkE) { if (!nf || !(await g("GET", itemUrl(nf), null, "", tok))) msg = "There is no folder '" + nf + "' in your OneDrive.";
+            else if (!(await g("GET", itemUrl(nf + "/excel-status.json"), null, "", tok))) msg = "Excel has not looked in '" + nf + "' yet. In Excel run SetPhoneEntriesFolder and pick the same folder, or entries will wait there unseen."; }
+          if (!msg && chkP && !(await g("GET", itemUrl(pf), null, "", tok))) msg = "There is no folder '" + pf + "' in your OneDrive for the PDFs (it will be made when the first PDF is saved).";
         } catch (x) { msg = "Could not check the folder: " + (x.message || x); }
         if (!msg) return save();
-        if (say.dataset.sure === nf) return save();
-        say.dataset.sure = nf; say.textContent = msg + " Tap Save again to use it anyway.";
+        const key = nf + "|" + pf; if (say.dataset.sure === key) return save();
+        say.dataset.sure = key; say.textContent = msg + " Tap Save again to use it anyway.";
       })();
     };
   }
@@ -437,7 +469,8 @@
     sync("start");
     window.addEventListener("online", () => kick(300));
     window.addEventListener("offline", () => sync("offline"));
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kick(300); });
+    // leaving the app (home button, screen off): send what is waiting at once, before the phone pauses the app
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kick(300); else if (Object.keys(dirty()).length) { clearTimeout(kickT); sync("leave"); } });
     const every = Math.min(60, Math.max(1, Number(cfg().syncMinutes) || 2));
     setInterval(() => { if (document.visibilityState === "visible") sync("timer"); }, every * 60 * 1000);
   });

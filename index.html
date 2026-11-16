@@ -1693,7 +1693,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 138, at: "2026-11-16T00:49:31+05:30", notes: "Chemical movements: Tally purchases, the ledger's opening line and waiting entries in one list with the balance after each line. Water and hot water are no longer counted as stock." };
+  const APP_BUILD = { v: 139, at: "2026-11-16T07:04:43+05:30", notes: "PDFs are saved straight to the OneDrive PDF folder (OneDrive settings); Share stays available. Waiting entries are sent as soon as the app is left." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
