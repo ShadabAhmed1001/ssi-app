@@ -1699,7 +1699,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 140, at: "2026-11-16T22:05:44+05:30", notes: "Tally narration: your comment, then what the bill or invoice is and who entered it. Entries Excel imported but its workbook never got (Excel closed without saving) stay visible and Today warns." };
+  const APP_BUILD = { v: 141, at: "2026-11-17T10:24:06+05:30", notes: "Rework weight: set on the Rework form (whole lot too), shown on the rework card with Change weight; the rework process works its chemical kg from it." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2175,6 +2175,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // rework forms: causes follow the group; the whole-lot choice changes the hint; the cost total follows the lines
   document.addEventListener("change", (e) => { const t = e.target; if (!t || !t.id) return;
     if (t.id === "rw-grp" && $("#rw-cause")) $("#rw-cause").innerHTML = rwCauseOpts(t.value);
+    if ((t.id === "rw-whole" || t.id === "rw-pcs") && $("#rw-wt")) { const f = $("#fm-rework"), wh = $("#rw-whole").value === "1", g = rwWtGuess(f.dataset.lot, parseFloat($("#rw-pcs").value) || 0, wh); $("#rw-wt").placeholder = g ? g + " kg" + (wh || !(parseFloat($("#rw-pcs").value) > 0) ? " (the lot's weight)" : " (lot weight × pcs)") : ""; }
     if (t.id === "rw-whole" && $("#rw-hint")) { const f = $("#fm-rework"); $("#rw-hint").textContent = t.value === "1" ? f.dataset.lot + " goes back to the stage chosen. It can't move past the stage where the fault was found until the rework is marked done." : f.dataset.new + " gets its own row on the tracker, copied from " + f.dataset.lot + ". When the rework is done you can merge it back, or dispatch it on its own."; } });
   document.addEventListener("input", (e) => { const f = e.target && e.target.closest && e.target.closest("#fm-rework_use"); if (!f) return; const r = rwBy(f.dataset.rw), an = ($("#rw-animal") || {}).value || ""; let t = 0, n = 0;
     f.querySelectorAll(".rwl").forEach((row) => { const k = row.dataset.kind, it = (row.querySelector(".rw-i").value || "").trim(), q = parseFloat((row.querySelector(".rw-q") || {}).value) || 0, p = parseFloat((row.querySelector(".rw-p") || {}).value) || 0, am = parseFloat((row.querySelector(".rw-a") || {}).value) || 0;
@@ -2968,7 +2969,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     T("SELECT * FROM lot_rework ORDER BY id").forEach((r) => { R[r.rw_key] = { key: r.rw_key, lot: U(r.lot_no), parent: U(r.parent_lot), date: r.found_on, at: r.found_stage, back: r.back_stage, grp: r.cause_group, cause: r.cause, whole: Number(r.whole) === 1, pcs: Number(r.pcs) || 0, sqft: Number(r.sqft) || 0, status: r.status || "OPEN", done_on: r.done_on, no_chem: Number(r.no_chem) === 1, merged_on: r.merged_on, note: r.note || "", made: r.created_at || r.found_on, lines: [], steps: [], phone: false }; });
     T("SELECT * FROM lot_rework_step WHERE status='OK' ORDER BY id").forEach((x) => { const r = R[x.rw_key]; if (r) r.steps.push({ use: x.use_key, date: x.step_date, time: x.step_time || "", step: x.step || "", how: x.how || "", by: x.done_by || "" }); });
     T("SELECT * FROM lot_rework_cost WHERE status='OK' ORDER BY id").forEach((c) => { const r = R[c.rw_key]; if (r) r.lines.push({ use: c.use_key, date: c.entry_date, kind: c.kind, item: c.item, qty: Number(c.qty) || 0, unit: c.unit || "", rate: Number(c.rate) || 0, amt: Number(c.amount) || 0, note: c.note || "" }); });
-    of("rework").forEach((e) => { if (R[e.id]) return; const d = e.data; R[e.id] = { key: e.id, lot: d.whole === "1" ? e.lot_no : d.new_lot, parent: d.parent, date: d.date, at: d.at, back: d.back, grp: d.grp, cause: d.cause, whole: d.whole === "1", pcs: Number(d.pcs) || 0, sqft: Number(d.sqft) || 0, status: "OPEN", note: d.note || "", made: e.created_at, lines: [], steps: [], phone: true, wait: e.status === "pending" }; });
+    entries.filter((e) => e.type === "rework" && R[e.id] && Number(e.data.wt) > 0).forEach((e) => { R[e.id].wt = Number(e.data.wt); });
+    of("rework").forEach((e) => { if (R[e.id]) return; const d = e.data; R[e.id] = { key: e.id, lot: d.whole === "1" ? e.lot_no : d.new_lot, parent: d.parent, date: d.date, at: d.at, back: d.back, grp: d.grp, cause: d.cause, whole: d.whole === "1", pcs: Number(d.pcs) || 0, sqft: Number(d.sqft) || 0, wt: Number(d.wt) || 0, status: "OPEN", note: d.note || "", made: e.created_at, lines: [], steps: [], phone: true, wait: e.status === "pending" }; });
     of("rework_use").forEach((e) => { const r = R[e.data.rw], d = e.data; if (!r || r.steps.some((x) => x.use === e.id) || r.lines.some((x) => x.use === e.id)) return; r.steps.push({ use: e.id, date: d.date, time: d.time || "", step: d.step || "", how: d.how || d.note || "", by: d.by || "", wait: true }); rwLines(e).forEach((x) => r.lines.push(Object.assign(x, { use: e.id, date: d.date, wait: true }))); r.phone = true; });
     of("rework_void").forEach((e) => { const r = R[e.data.rw]; if (r) { r.lines = r.lines.filter((x) => x.use !== e.data.use); r.steps = r.steps.filter((x) => x.use !== e.data.use); r.phone = true; } });
     Object.values(R).forEach((r) => { [...new Set(r.lines.map((x) => x.use))].filter((u) => !r.steps.some((x) => x.use === u)).forEach((u) => { const x = r.lines.find((y) => y.use === u); r.steps.push({ use: u, date: x.date, time: "", step: "", how: "", by: "", wait: x.wait }); }); r.steps.sort((a, b) => (String(a.date) + " " + a.time).localeCompare(String(b.date) + " " + b.time)); });
@@ -2999,6 +3001,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const RW_PROC = "Rework process";
   const rwPLot = (r) => r.parent + "RW" + r.no;
   const rwOfPLot = (k) => (data.reworks || []).find((r) => rwPLot(r) === String(k || "").toUpperCase());
+  // the weight going into the drum for a rework: its process sheet's shaved wt, else what was typed on the Rework form
+  const rwWt = (r) => { const k = rwRecKey(r), rc = k ? getRecipe(k) : null; return Number(rc && rc.shaved_wt) || Number(r.wt) || 0; };
+  const rwWtGuess = (lot, pcs, whole) => { const l = data.lotBy[lot] || {}, w = Number(l.weight) || Number(((l.recKey && getRecipe(l.recKey)) || {}).shaved_wt) || 0; return !w ? "" : whole || !l.lot_pcs || !pcs ? w : +(w * pcs / l.lot_pcs).toFixed(2); };
   const rwRecKey = (r) => { const pre = "rec:" + rwPLot(r) + "|"; return Object.keys(data.recipes || {}).find((k) => k.startsWith(pre)) || ""; };
   const rwParentRec = (r) => { const p = data.lotBy[r.parent] || data.lotBy[r.lot]; return p && p.recKey && data.recipes[p.recKey] ? p.recKey : ""; };
   function rwNeed(rc) {
@@ -3035,7 +3040,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const acts = !can ? (pk ? procB : "") : r.status === "OPEN" ? `${procB}<button class="btn alt" data-form="rework_use:${esc(r.key)}">Add a step by hand</button><button class="btn alt" data-form="rework_done:${esc(r.key)}">Rework done</button>`
       : r.status === "DONE" && !r.whole && data.lotBy[r.lot] && data.lotBy[r.lot].state === "OPEN" ? `${procB}<button class="btn" data-form="rework_merge:${esc(r.key)}">Merge back into ${esc(r.parent)}</button>` : procB;
     return `<div class="rwc"><p style="margin:0"><b>${esc(rwName(r))}</b> ${rwStatus(r)}</p>
-      <p class="note" style="margin:2px 0 0">${r.whole ? "Whole lot" : (here === r.lot ? "Split off " + lotLink(r.parent) : lotLink(r.lot) + " split off")}: ${fmtN(r.pcs, 0) || 0} pcs, ${fmtN(r.sqft, 2) || 0} sqft. Found at ${esc(r.at)} on ${fmtS(r.date)}, sent back to ${esc(r.back)}.</p>
+      <p class="note" style="margin:2px 0 0">${r.whole ? "Whole lot" : (here === r.lot ? "Split off " + lotLink(r.parent) : lotLink(r.lot) + " split off")}: ${fmtN(r.pcs, 0) || 0} pcs, ${fmtN(r.sqft, 2) || 0} sqft, <b>${rwWt(r) ? fmtN(rwWt(r), 2) + " kg" : "weight not set"}</b>${can && r.status === "OPEN" ? ` <button class="mini" data-form="rwwt:${esc(r.key)}">Change weight</button>` : ""}. Found at ${esc(r.at)} on ${fmtS(r.date)}, sent back to ${esc(r.back)}.</p>
       <p style="margin:2px 0 0">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}${r.note ? ` <span class="note">· ${esc(r.note)}</span>` : ""}</p>
       ${r.steps.length ? `<div class="rwsteps">${stepsH}</div><p style="margin:6px 0 0"><b>Rework cost ₹${fmtN(r.cost, 0)}</b>${r.cost ? ` <span class="note">(chemicals ₹${fmtN(r.chem, 0)}, machines ₹${fmtN(r.mach, 0)}, other ₹${fmtN(r.other, 0)})</span>` : ""}</p>` : `<p class="note" style="margin:4px 0 0">${r.status === "OPEN" ? "No rework steps recorded yet. Add each step as it is done: what was done, when, how, and the chemicals used." : r.no_chem ? "No chemicals were used." : ""}</p>`}
       ${pk ? rwProcNote(r, can) : ""}${acts ? `<div class="acts" style="margin-top:6px">${acts}</div>` : ""}</div>`;
@@ -3764,11 +3769,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <p class="note" style="margin:0">For leather spoiled here that has to be processed again. Afterwards record the chemicals, machine passes and other costs of the rework on it; they are added to ${esc(src.lot_no)}'s costing.</p>
       <label>How much<select id="rw-whole"><option value="0">Part of the lot: it becomes ${esc(nl)}, the rest carries on</option><option value="1">The whole lot goes back</option></select></label>
       <div class="two"><label>Pcs spoiled<input id="rw-pcs"${n}></label><label>Sqft spoiled<input id="rw-sqft"${n} placeholder="worked out from pcs"></label>
+      <label>Weight going back (kg)<input id="rw-wt"${n} placeholder="${esc(String(rwWtGuess(a, 0, true) || ""))} if the whole lot"></label>
       <label>Found at<select id="rw-at">${stg.map((s) => opt(s.name, s.name, s.name.toUpperCase() === cur)).join("")}</select></label>
       <label>Goes back to<select id="rw-back">${stg.map((s) => opt(s.name, s.name, s.name.toUpperCase() === cur)).join("")}</select></label>
       <label>Where it went wrong<select id="rw-grp">${RW_GROUPS.map((g) => opt(g, rwGrpName(g))).join("")}</select></label>
       <label>Cause<select id="rw-cause">${rwCauseOpts(RW_GROUPS[0])}</select></label></div>
       ${txtF("rw-own", "Or type the cause")}<div class="two">${dateF("rw-date", "Date", today0())}</div>${txtF("rw-note", "Note")}
+      <p class="note" style="margin:0">Weight: what goes into the drum for the rework (FAT, re-dyeing…). Chemical kg on the rework process are worked out from it. Left empty, it is the lot's weight for the pieces spoiled.</p>
       <p class="note" style="margin:0" id="rw-hint">${esc(nl)} gets its own row on the tracker, copied from ${esc(a)}. When the rework is done you can merge it back into ${esc(rwRoot(a))}, or dispatch it on its own.</p>${formEnd}</form>`; } },
     rework_use: { title: "Rework step", html: (a) => { const r = rwBy(a), an = rwAnimal(r), machs = Object.values(data.mach).map((m) => m.name).sort(), now = new Date(), hm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), last = r.steps.length ? r.steps[r.steps.length - 1] : null;
       const chemRow = () => `<div class="rwl rwc3" data-kind="CHEM"><input class="rw-i" list="rw-chems" placeholder="Chemical" aria-label="Chemical" autocomplete="off"><input class="rw-q" placeholder="Kg" aria-label="Kg" inputmode="decimal" data-numonly="1"><input class="rw-n" placeholder="% / how added (optional)" aria-label="Note for this chemical" autocomplete="off"></div>`;
@@ -3785,9 +3792,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <h3>Other costs</h3><div id="rw-OTHER">${othRow()}</div><button type="button" class="btn alt" data-rwadd="OTHER">Add a cost</button>
       <p class="note" id="rw-tot" style="margin:0"></p>
       <template id="rw-t-CHEM">${chemRow()}</template><template id="rw-t-MACHINE">${machRow()}</template><template id="rw-t-OTHER">${othRow()}</template>${formEnd}</form>`; } },
+    rwwt: { title: "Rework weight", html: (a) => { const r = rwBy(a); if (!r) return `<p class="empty">This rework is no longer there.</p>`; const k = rwRecKey(r), n = ' type="number" step="any" min="0" inputmode="decimal"';
+      return `<form class="fm" id="fm-rwwt" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}</h3><label>Weight going into the drum (kg)<input id="rww-wt"${n} value="${esc(String(rwWt(r) || rwWtGuess(r.parent, r.pcs, r.whole) || ""))}"></label>
+        <p class="note" style="margin:0">${k ? "The rework process opens with this weight and its chemical kg worked out again from the %. Check it and tap Save: it becomes a new version, then use Check stock and adjust." : "No rework process yet: the next step starts it with this weight."}</p>${formEnd}</form>`; } },
     rwproc: { title: "Rework process", html: (a) => { const r = rwBy(a), pk = rwParentRec(r), pl = data.lotBy[r.parent] || {}, prev = (data.reworks || []).filter((x) => x.parent === r.parent && x.key !== r.key && rwRecKey(x));
       if (!pk) return `<div class="fm"><p class="missing" style="margin:0">${esc(r.parent)} has no process yet. Give it its process first (Process on the lot), then start the rework process.</p><div class="acts" style="margin:0"><button class="btn alt" type="button" data-back>Back</button></div></div>`;
-      const wt0 = Number(pl.weight) || Number((getRecipe(pk) || {}).shaved_wt) || 0, wt = r.whole || !pl.lot_pcs ? wt0 : +(wt0 * r.pcs / pl.lot_pcs).toFixed(2), n = ' type="number" step="any" min="0" inputmode="decimal"';
+      const wt0 = Number(pl.weight) || Number((getRecipe(pk) || {}).shaved_wt) || 0, wt = r.wt || (r.whole || !pl.lot_pcs ? wt0 : +(wt0 * r.pcs / pl.lot_pcs).toFixed(2)), n = ' type="number" step="any" min="0" inputmode="decimal"';
       return `<form class="fm" id="fm-rwproc" data-rw="${esc(a)}"><h3>${esc(rwName(r))} of ${esc(r.parent)}</h3><p class="note" style="margin:0">${esc(rwGrpName(r.grp))}: ${esc(r.cause)}. The rework gets a process sheet of its own on ${esc(getRecipe(pk).process)}, edited like a lot's.</p>
         <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:0;display:grid;gap:4px"><legend style="font-size:13px;font-weight:600">Start from</legend><label class="chk"><input type="radio" name="rwp-src" value="blank" checked> Empty: only the lot's details, you write the lines</label><label class="chk"><input type="radio" name="rwp-src" value="${esc(pk)}"> A copy of ${esc(r.parent)}'s process, to change</label>${prev.map((x) => `<label class="chk"><input type="radio" name="rwp-src" value="${esc(rwRecKey(x))}"> A copy of ${esc(rwName(x))}</label>`).join("")}</fieldset>
         <div class="two"><label>Pcs<input id="rwp-pcs"${n} value="${esc(r.pcs || "")}"></label><label>Weight (kg)<input id="rwp-wt"${n} value="${esc(wt || "")}"></label><label>Sqft<input id="rwp-sqft"${n} value="${esc(r.sqft || "")}"></label></div>
@@ -5002,8 +5012,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (whole && rwOpen(lot)) return bad(lot + " already has a rework open. Mark it done first.");
       const sa = stageNo(at) || 0, sb = stageNo(back) || 0;
       if (sa && sb && sb > sa && warnOnce(f, back + " comes after " + at + ", where the fault was found.")) return;
-      const nl = whole ? "" : f.dataset.new;
-      return saveNew({ type: "rework", lot_no: lot, data: { lot, parent: rwRoot(lot), whole: whole ? "1" : "0", new_lot: nl, pcs, sqft: sqft || (l.lot_pcs ? +(l.lot_sqft * pcs / l.lot_pcs).toFixed(2) : 0), at, back, from_stage: l.stage || "", grp, cause, date, note: need("#rw-note") } }, whole ? "Rework saved. " + lot + " goes back to " + back + "." : "Rework saved. " + pcs + " pcs become " + nl + " at " + back + ".", msg, btn);
+      const nl = whole ? "" : f.dataset.new, wt = numOf("#rw-wt") || rwWtGuess(lot, pcs, whole) || "";
+      if (wt && Number(l.weight) > 0 && wt > Number(l.weight) * 1.5 && warnOnce(f, wt + " kg is much more than the lot's " + fmtN(l.weight, 2) + " kg. Tap Save again if it is right.")) return;
+      return saveNew({ type: "rework", lot_no: lot, data: { lot, parent: rwRoot(lot), whole: whole ? "1" : "0", new_lot: nl, pcs, wt: wt === "" ? "" : String(wt), sqft: sqft || (l.lot_pcs ? +(l.lot_sqft * pcs / l.lot_pcs).toFixed(2) : 0), at, back, from_stage: l.stage || "", grp, cause, date, note: need("#rw-note") } }, whole ? "Rework saved. " + lot + " goes back to " + back + "." : "Rework saved. " + pcs + " pcs become " + nl + " at " + back + ".", msg, btn);
     }
     if (f.id === "fm-rework_use") {
       const r = rwBy(f.dataset.rw), date = need("#rw-date"), time = need("#rw-time"), step = need("#rw-step"), how = $("#rw-how").value.trim(), by = need("#rw-by"), animal = need("#rw-animal"), ls = [];
@@ -5021,6 +5032,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (short.length && warnOnce(f, "Not enough in stock: " + short.map((x) => x.item + " (" + fmtN(x.avail, 3) + " kg)").join(", ") + ".")) return;
       const d = { rw: r.key, lot: r.lot, parent: r.parent, date, time, step, how, by }; ls.forEach((x, i) => { d["l" + (i + 1)] = [x.kind, x.item, x.qty, x.unit, x.rate, x.amt, x.note || ""].map((y) => String(y ?? "").replace(/~\^~/g, " ")).join("~^~"); });
       return saveNew({ type: "rework_use", lot_no: r.lot, data: d }, "Step saved" + (ls.length ? ": ₹" + fmtN(ls.reduce((t, x) => t + x.amt, 0), 0) + " added to the rework" : "") + ". It is waiting for Excel.", msg, btn);
+    }
+    if (f.id === "fm-rwwt") {
+      const r = rwBy(f.dataset.rw), wt = numOf("#rww-wt"); if (!(wt > 0)) return bad("Type the weight in kg.");
+      const k = rwRecKey(r); if (!k) { r.wt = wt; stack = []; openForm("rwproc:" + r.key); return; }
+      const m = k.slice(4).split("|"), lotS = m[0], process = m.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process], src = recAt(lotS, process, live0 ? nextVer(live0) : 0); if (!src) return bad("The rework process could not be found.");
+      const seed = Object.assign({}, src, { shaved_wt: wt }); seed.crust = (src.crust || []).map((c) => c.p !== null && c.p !== undefined && !c.nq ? Object.assign({}, c, { q: +(c.p * wt).toFixed(4) }) : c);
+      flash = "Weight " + fmtN(wt, 2) + " kg: chemical kg worked out again from the %. Check and tap Save."; sel.lots = k; openEditor(k, seed); showDetail(); $("#detail").scrollTop = 0; return;
     }
     if (f.id === "fm-rwproc") {
       const r = rwBy(f.dataset.rw), how = (f.querySelector("[name=rwp-src]:checked") || {}).value || "blank", pcs = numOf("#rwp-pcs"), wt = numOf("#rwp-wt"), sqft = numOf("#rwp-sqft");
