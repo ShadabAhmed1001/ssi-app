@@ -1020,6 +1020,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       else if (e.type === "lot_return") { const d = e.data; (phoneDel[e.lot_no] = phoneDel[e.lot_no] || []).push({ isReturn: true, entry_date: d.date, pcs: -(Number(d.pcs) || 0), sqft: -(Number(d.sqft) || 0), doc_no: d.doc, note: d.outcome + ": " + d.why }); if (d.outcome === "REWORK") phoneMove[e.lot_no] = { to_stage: d.stage, entry_date: d.date }; }
       else if (e.type === "rework") { const d = e.data, k = d.whole === "1" ? e.lot_no : d.new_lot; if (d.whole !== "1" || String(d.back).toUpperCase() !== String(d.from_stage || "").toUpperCase()) phoneMove[k] = { to_stage: d.back, entry_date: d.date }; } });
     data.phoneDel = phoneDel; data.voidLive = live.filter((e) => e.type === "delivery_void"); data.adjLive = live.filter((e) => e.type === "chem_adjust" || e.type === "chem_readjust"); data.undoLive = live.filter((e) => e.type === "chem_undo");
+    { let m = {}; try { m = JSON.parse(one("SELECT value FROM meta WHERE key='no_finish'") || "{}") || {}; } catch (e) { m = {}; }
+      live.filter((e) => e.type === "no_finish").sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).forEach((e) => { m[UP(e.lot_no)] = { on: e.data.on !== "0", reason: e.data.reason || "", wait: isWait(e) }; });
+      data.noFin = m; }
     const of = (t) => live.filter((e) => e.type === t), tmp = (e) => "NEW-" + String(e.id).slice(0, 4).toUpperCase();
     const moveE = of("lot_move").concat(rwMoves(live)), lotDelE = of("lot_delete"), recDelE = of("recipe_delete"), poDelE = of("po_delete"), purchCl = of("purchase_close"), purchDel = of("purchase_delete"), splitE = of("purchase_split"), mergeE = of("purchase_merge"), chemAddE = of("chem_add"), chemEdE = of("chem_edit"), chemDelE = of("chem_delete"), chemVoidE = of("chem_void"), aliasE = of("chem_alias"), renameE = of("chem_rename"), adjE = of("chem_adjust"), reE = of("chem_readjust"), voidE = of("delivery_void"), undoE = of("chem_undo"), purchEd = of("purchase_edit"), orderEd = of("order_edit"), orderCl = of("order_close"), orderSh = of("order_short"), unlinkE = of("po_unlink"), backE = of("skins_back"), auditE = of("audit"), skinsE = of("skins"), newLots = of("new_lot"), newPurch = of("purchase").concat(of("lot_return").filter((e) => e.data.outcome === "REJECT").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}; return Object.assign({}, e, { data: { supplier: "RETURNED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.pcs, sqft: d.sqft, rate: 0, per: "SQFT", date: d.date, note: "Returned from " + e.lot_no + ": " + d.why } }); })).concat([].concat(...of("lot_balance").map((e) => { const d = e.data, L = rows("SELECT customer FROM lots WHERE lot_no=?", [e.lot_no])[0] || {}, out = [];
       if (Number(d.reject_pcs) > 0) out.push(Object.assign({}, e, { id: e.id + ":r", created_at: String(e.created_at || "") + "0", data: { supplier: "REJECTED " + (L.customer || ""), animal: "", grade: "REJECT " + e.lot_no, pcs: d.reject_pcs, sqft: d.reject_sqft, rate: 0, per: "SQFT", date: d.date, note: "Not delivered from " + e.lot_no + ": " + (d.note || "") } }));
@@ -1716,7 +1719,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 142, at: "2026-11-18T21:01:36+05:30", notes: "Wet blue purchase bills to Tally (Purchases > Tally bills, Make Tally bill on a skins purchase); rework sections in the recipe PDF" };
+  const APP_BUILD = { v: 143, at: "2026-11-18T22:30:00+05:30", notes: "Stage gate uses STAGE GUIDE numbers like Excel (DUMPED blocked until finishing); 'No finishing' mark for lots without finishing" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2542,7 +2545,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     });
     // stage guide
     const sg = xl(wb, "STAGE GUIDE"); let seq = 0;
-    for (let r = 5; r <= 22; r++) { const n = xtxt(cv(sg, "B" + r)); if (n) a.run("INSERT OR REPLACE INTO stages VALUES(?,?,?,?,?)", [++seq, n, xfl(cv(sg, "C" + r)), xfl(cv(sg, "D" + r)), xtxt(cv(sg, "E" + r))]); }
+    const sgNo = {}; for (let r = 5; r <= 22; r++) { const n = xtxt(cv(sg, "B" + r)); if (n) { a.run("INSERT OR REPLACE INTO stages VALUES(?,?,?,?,?)", [++seq, n, xfl(cv(sg, "C" + r)), xfl(cv(sg, "D" + r)), xtxt(cv(sg, "E" + r))]); if (!(n.toUpperCase() in sgNo)) sgNo[n.toUpperCase()] = xnum(cv(sg, "A" + r)) || 0; } }
+    a.run("INSERT OR REPLACE INTO meta VALUES('stage_no',?)", [JSON.stringify(sgNo)]);
     // tracker lots
     const tk = xl(wb, "ORDER & PRODUCTION TRACKER"); let nLots = 0;
     const insLot = a.prepare("INSERT OR REPLACE INTO lots(lot_no,customer,product,order_qty,lot_pcs,shaving,lot_sqft,order_date,due_date,stage,stage_since,weight,remarks,process_page,delivered_est,profit,state,chem_crust,chem_finish,chem_check) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -2630,6 +2634,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     a.run("INSERT OR REPLACE INTO meta(key,value) VALUES('unsaved_imports',?)", [JSON.stringify({ wb: wbSaved, n: notSaved.length, last: notSaved.reduce((m, r) => (String(r.imported_at) > m ? String(r.imported_at) : m), ""), lots: [...new Set(notSaved.map((r) => r.lot_no).filter((x) => x && x !== "NEW"))].slice(0, 12), ids: notSaved.slice(-300).map((r) => r.entry_id) })]);
     a.run("CREATE TABLE IF NOT EXISTS phone_log(entry_id TEXT, result TEXT)"); a.run("DELETE FROM phone_log");
     a.run("CREATE TABLE IF NOT EXISTS phone_done(entry_id TEXT PRIMARY KEY)"); a.run("DELETE FROM phone_done"); done.forEach((id) => a.run("INSERT OR IGNORE INTO phone_done VALUES(?)", [String(id)]));
+    { const nf = {}; if (logAll.length) q(src, "SELECT lot_no, result FROM phone_import_log WHERE entry_type='no_finish' ORDER BY imported_at").forEach((r) => { const t = String(r.result || ""); if (/^no finishing/i.test(t)) nf[UP(r.lot_no)] = { on: true, reason: t.replace(/^no finishing(: already marked)?:?\s*/i, "") }; else if (/^finishing needed again/i.test(t)) delete nf[UP(r.lot_no)]; });
+      a.run("INSERT OR REPLACE INTO meta(key,value) VALUES('no_finish',?)", [JSON.stringify(nf)]); }
     if (done.length) q(src, "SELECT entry_id, result FROM phone_import_log WHERE entry_type='new_lot'").forEach((r) => a.run("INSERT INTO phone_log VALUES(?,?)", [r.entry_id, r.result])); a.run("VACUUM");
     const bytes = a.export(); a.close(); src.close();
     return { bytes, summary: `${nLots} tracker lots, ${nRec} recipes, ${nChem} chemicals`, done };
@@ -2730,7 +2736,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         out.push({ go: "chemicals", lot: r.chemical, area: "Chemicals", text: `${r.n} ledger entr${r.n === 1 ? "y" : "ies"} (${fmtN(r.q, 3)} kg) under '${r.chemical}', which is not on A. CHEMICALS`, todo: "Point it at the right chemical (Rename or Same as on the chemical), or add it" })); } catch (e) { /* older data */ }
     // a tick says the chemicals were taken, but no stock was taken for that section (lots after the ledger started, L533 on)
     data.lots.filter((l) => l.state !== "ARCHIVED" && !l.isNew && (parseFloat(String(l.lot_no).slice(1)) || 0) > 532).forEach((l) => [["CRUSTING", l.chem_crust], ["FINISHING", l.chem_finish]].forEach(([sec, t]) => {
-      if (t === "✔" && !one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=UPPER(?) AND section=?", [rwRoot(l.lot_no), sec]) && !(data.chemWait[l.lot_no] || {})[sec]) out.push({ lot: l.lot_no, area: "Chemicals", text: `${sec.toLowerCase()} is ticked but nothing was taken from stock for it`, todo: "Use Adjust under Chemical entries, or untick it if it was run with another lot" }); }));
+      if (t === "✔" && !(sec === "FINISHING" && noFinOf(rwRoot(l.lot_no))) && !one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND UPPER(ref)=UPPER(?) AND section=?", [rwRoot(l.lot_no), sec]) && !(data.chemWait[l.lot_no] || {})[sec]) out.push({ lot: l.lot_no, area: "Chemicals", text: `${sec.toLowerCase()} is ticked but nothing was taken from stock for it`, todo: "Use Adjust under Chemical entries, or untick it if it was run with another lot" }); }));
     return out;
   }
   // ---------------------------------------------------------------- App vs Excel check (the road to the app keeping the records)
@@ -3125,11 +3131,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const m = {}; rows("SELECT chemical c, -SUM(qty) q FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND IFNULL(section,'')<>'REWORK' AND UPPER(ref)=? GROUP BY UPPER(chemical)", [k]).forEach((x) => { const c = data.chemBy[chemName(x.c).toUpperCase()]; if (c) m[c.name] = (m[c.name] || 0) + x.q; });
     return m;
   }
+  // a lot marked "no finishing" (18-Nov-2026): Excel sets B. LOT_LIST G = Yes with "NO FINISHING" in M
+  const noFinOf = (lot) => { const x = (data.noFin || {})[UP(lot)]; return x && x.on ? x : null; };
   function chemState(l) {
     const r = l.recKey ? getRecipe(l.recKey) : null, wait = data.chemWait[l.lot_no] || {}, undo = data.undoLive.filter((e) => e.lot_no === l.lot_no).map((e) => e.data.what);
     const moved = (s) => one("SELECT COUNT(*) FROM chem_moves WHERE status='OK' AND entry_type='LOT USE' AND UPPER(ref)=? AND section=?", [l.lot_no, s]) > 0;
     const st = (s, flag) => wait[s] ? "wait" : undo.includes(s) || undo.includes("ALL") ? "todo" : flag === "n/a" ? "na" : flag === "✔" || moved(s) ? "done" : "todo";
-    return { r, CRUSTING: st("CRUSTING", l.chem_crust), FINISHING: st("FINISHING", l.chem_finish) };
+    const nf = noFinOf(rwSrc(l).lot_no);
+    return { r, CRUSTING: st("CRUSTING", l.chem_crust), FINISHING: nf && !wait.FINISHING && !undo.includes("FINISHING") && !undo.includes("ALL") ? "nofin" : st("FINISHING", l.chem_finish), nofin: nf };
   }
   function chemChanges(l, st) {
     if (!st.r) return []; const had = chemDeducted(l.lot_no), need = {};
@@ -3168,13 +3177,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const r = rows("SELECT IFNULL(section,'') s, COUNT(*) n, -SUM(qty) q, MAX(entry_date) d, SUM(reason LIKE 'Old system%') old FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND IFNULL(section,'')<>'REWORK' AND UPPER(ref)=? GROUP BY IFNULL(section,'')", [l.lot_no]);
     const st = chemState(l), wait = entries.filter((e) => e.type === "chem_undo" && isWait(e) && e.lot_no === l.lot_no), re = r.some((x) => !["CRUSTING", "FINISHING"].includes(x.s));
     const sec = ["CRUSTING", "FINISHING"], todo = sec.filter((s) => st[s] === "todo" && st.r && chemNeed(st.r, s).lines.length), rw = entries.filter((e) => e.type === "chem_readjust" && isWait(e) && e.lot_no === l.lot_no), ch = !rw.length ? chemChanges(l, st) : [], adjW = sec.filter((s) => st[s] === "wait");
-    if (!r.length && !(canAct && l.state === "OPEN" && todo.length) && !adjW.length) return "";
+    if (!r.length && !(canAct && l.state === "OPEN" && (todo.length || st.FINISHING === "todo")) && !adjW.length && !st.nofin) return "";
     return `<h3>Chemical entries</h3>${r.length ? `<div class="tbl"><table><thead><tr><th>Section</th><th class="r">Lines</th><th class="r">Qty</th><th>Last</th><th></th></tr></thead><tbody>${r.map((x) => `<tr><td>${esc(x.s.toLowerCase() || "-")}</td><td class="r num">${x.n}</td><td class="r num">${fmtN(x.q, 2)}</td><td class="nw">${fmtS(x.d)}</td><td>${x.old ? `<span class="wait">old system</span>` : canAct && !wait.length && !re && x.s ? `<button class="mini" data-chemundo="${esc(x.s)}">Undo</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${adjW.length ? `<p class="note"><span class="wait">Stock adjustment waiting for Excel:</span> ${esc(adjW.map((x) => x.toLowerCase()).join(", "))}.</p>` : ""}
       ${rw.length ? `<p class="note"><span class="wait">Re-adjust waiting for Excel.</span></p>` : ""}
       ${wait.length ? `<p class="note"><span class="wait">Undo waiting for Excel:</span> ${esc(wait.map((e) => e.data.what.toLowerCase()).join(", "))}.</p>` : ""}
+      ${st.nofin ? `<p class="note">No finishing for this lot${st.nofin.reason ? ": " + esc(st.nofin.reason) : ""}.${st.nofin.wait ? ` <span class="wait">Waiting for Excel.</span>` : ""}${canAct && l.state === "OPEN" ? ` <button class="mini" data-form="no_finish_off:${esc(rwSrc(l).lot_no)}">Finishing needed after all</button>` : ""}</p>` : ""}
       ${canAct && ch.length ? chemDiffBox(l, st, ch) : ""}
-      ${canAct ? `<div class="acts" style="margin-top:8px">${l.state === "OPEN" ? todo.map((s) => `<button class="btn" data-form="chem_adjust:${esc(l.lot_no)}|${s}">Adjust ${s.toLowerCase()}</button>`).join("") : ""}${l.state === "OPEN" && todo.length === 2 ? `<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>` : ""}${r.length && !wait.length ? `<button class="btn alt" data-chemundo="ALL">Undo all chemical entries</button>` : ""}</div>` : ""}`;
+      ${canAct ? `<div class="acts" style="margin-top:8px">${l.state === "OPEN" ? todo.map((s) => `<button class="btn" data-form="chem_adjust:${esc(l.lot_no)}|${s}">Adjust ${s.toLowerCase()}</button>`).join("") : ""}${l.state === "OPEN" && todo.length === 2 ? `<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>` : ""}${l.state === "OPEN" && st.FINISHING === "todo" && rwSrc(l) === l ? `<button class="btn alt" data-form="no_finish:${esc(l.lot_no)}">No finishing</button>` : ""}${r.length && !wait.length ? `<button class="btn alt" data-chemundo="ALL">Undo all chemical entries</button>` : ""}</div>` : ""}`;
   }
   // Excel copies the tracker weight onto the sheet when it opens a lot, so a blank weight makes every crusting quantity 0
   const noWeight = (lot) => `<p class="missing">${esc(lot)} has no weight on the tracker, so Excel would work out every crusting quantity as 0. Enter the weight first.</p><div class="acts"><button class="btn" data-go="lots" data-k="${esc(lot)}">Open the lot</button></div>`;
@@ -3768,6 +3778,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<form class="fm" id="fm-compare"><label>First<select id="cmp-a">${list.map((x) => recOpt(x, ka)).join("")}</select></label>
       <label>Second from page<select id="cmp-page">${pages.map((p) => `<option${normPage(p) === normPage(pageB) ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
       <label>Second<select id="cmp-b">${pageRecipes(pageB).map((x) => recOpt(x, kb)).join("")}</select></label></form><div id="cmp-out" style="margin-top:10px">${cmpHtml(ka, kb)}</div>`; } },
+    no_finish: { title: "No finishing", html: (a) => { const l = data.lotBy[a]; if (!l) return `<p class="empty">${esc(a)} is not on the tracker.</p>`; const st = chemState(l), n = st.r ? chemNeed(st.r, "FINISHING").lines.length : 0;
+      return `<form class="fm" id="fm-no_finish" data-lot="${esc(a)}"><h3>${esc(a)} has no finishing</h3><p style="margin:0">Use this for a process without finishing, in place of a dummy line like water 1 kg. Excel marks finishing as settled (B. LOT_LIST), so the lot can move on; no chemicals are taken from stock.</p>
+        ${n ? `<p class="late">${esc(a)}'s recipe has ${n} finishing line${n === 1 ? "" : "s"}. They will not be taken from stock. If they were used, adjust finishing instead.</p>` : ""}
+        <label>Why (for the tracker remarks)<input id="nf-why" autocomplete="off" placeholder="e.g. sold as crust"></label>${formEnd}</form>`; } },
+    no_finish_off: { title: "Finishing needed", html: (a) => `<form class="fm" id="fm-no_finish_off" data-lot="${esc(a)}"><h3>${esc(a)} needs finishing after all</h3><p style="margin:0">The "no finishing" mark comes off; adjust finishing as usual once the recipe has it.</p><label>Why (optional)<input id="nf-why" autocomplete="off"></label>${formEnd}</form>` },
     chem_adjust: { title: "Adjust stock", html: (a) => { const [lot, what] = a.split("|"), l = data.lotBy[lot], p = chemPlan(l, what), n2 = (x) => fmtN(x, 3);
       if (p.secs.includes("CRUSTING") && !(parseFloat(l.weight) > 0)) return noWeight(lot);
       const tb = (head, body) => `<div class="tbl"><table><thead><tr>${head.map((h, i) => `<th${i ? ' class="r"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="r num"' : ""}>${i ? c : esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
@@ -4933,6 +4948,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); if (!data.chemicals.some((x) => x.name === n0)) return bad(n0 + " is no longer on the chemical list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_delete") return saveNew({ type: "chem_delete", lot_no: f.dataset.name, data: { name: f.dataset.name } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-chem_void") { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(f.dataset.id)])[0]; return saveNew({ type: "chem_void", lot_no: m.chemical, data: { id: m.id, qty: m.qty, type: String(m.entry_type).toLowerCase() } }, "Void saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-no_finish" || f.id === "fm-no_finish_off") { const lot = f.dataset.lot, on = f.id === "fm-no_finish", why = need("#nf-why");
+      if (on && !why) return bad("Say why there is no finishing.");
+      if (on && entries.some((e) => e.type === "chem_adjust" && isWait(e) && e.lot_no === lot && e.data.fin === "1")) return bad("A finishing adjustment for " + lot + " is already waiting for Excel. Cancel it in Entries first.");
+      return saveNew({ type: "no_finish", lot_no: lot, data: { lot, on: on ? "1" : "0", reason: why } }, on ? lot + " marked: no finishing. It is waiting for Excel." : "Saved. " + lot + " needs finishing again.", msg, btn); }
     if (f.id === "fm-chem_purchase") {
       const b = pbRead(f), err = pbValidate(b); if (err) return bad(err);
       if (b.paper && Math.abs((parseFloat(b.paper) || 0) - pbCalc(b).total) > 1 && warnOnce(f, "The total does not match the paper bill. Save again to keep it anyway.")) return;
@@ -5179,16 +5198,24 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const n = data.stages.slice(i + 1).find((s) => !["ON HOLD", "DUMPED", "PURCHASE"].includes(s.name.toUpperCase()));
     return n ? n.name : "";
   }
+  // the number a stage has in column A of STAGE GUIDE, as Excel's gate uses it (DUMPED = 11 like QC, ON HOLD none); 18-Nov-2026
+  function gateNo(n) {
+    let m = null; try { m = JSON.parse(one("SELECT value FROM meta WHERE key='stage_no'") || "null"); } catch (e) { m = null; }
+    const k = UP(n); if (m && k in m) return Number(m[k]) || 0;
+    if (k === "DUMPED") return stageNo("QC / Ready for Dispatch") || 0;
+    if (k.startsWith("ON HOLD")) return 0;
+    return stageNo(n) || 0;
+  }
   // a lot can't go past FAT until crusting is adjusted, or past FINISHING until finishing is; a part sent early is recorded instead
   function stageGate(l0, to) {
-    const seq = (n) => stageNo(n) || 0, t = seq(to), up = String(to).toUpperCase(), fat = seq("FAT"), fin = seq("FINISHING"), qc = seq("QC / Ready for Dispatch");
+    const seq = (n) => gateNo(n), t = seq(to), up = String(to).toUpperCase(), fat = seq("FAT"), fin = seq("FINISHING"), qc = seq("QC / Ready for Dispatch");
     const past = (g) => up === "DISPATCHED" || (t > g && t <= qc);
     // a lot being reworked stays at or before the stage where the fault was found until the rework is done
     const ro = rwOpen(l0.lot_no);
     if (ro && !["ON HOLD", "DUMPED"].includes(up) && (up === "DISPATCHED" || (seq(ro.at) && t > seq(ro.at)))) return { sec: [], rw: ro, text: l0.lot_no + " is being reworked (found at " + ro.at + "). Record the rework's chemicals and machines, then mark it done before the lot moves past " + ro.at + "." };
     const l = rwSrc(l0);
     if (!fat || !l.recKey && l.chem_crust === "n/a") return null;
-    const st = chemState(l), ok = (x) => ["done", "wait", "na"].includes(st[x]), sec = [];
+    const st = chemState(l), ok = (x) => ["done", "wait", "na", "nofin"].includes(st[x]), sec = [];
     if (past(fat) && !ok("CRUSTING")) sec.push("CRUSTING");
     if (past(fin) && !ok("FINISHING")) sec.push("FINISHING");
     if (!sec.length) return null;
@@ -5253,7 +5280,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (a && b && b < a && !["ON HOLD", "DUMPED"].includes(up) && cu !== "ON HOLD" && warnOnce(f, to + " comes before " + l.stage + ".")) return;
       { const why = stageGate(l, to);
         if (why && why.rw) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="rework_done:${esc(why.rw.key)}">Rework done</button></span>`; return; }
-        if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
+        if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.includes("FINISHING") ? `<button class="btn alt" type="button" data-form="no_finish:${esc(rwSrc(l).lot_no)}">No finishing</button>` : ""}${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
       if (NEED_PROC.includes(up) && trackedLot(l.lot_no) && !String(l.process_page || "").trim()) { msg.innerHTML = esc(l.lot_no + " has no process page yet. Link a process before it moves to " + to + ".") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Process</button></span>`; return; }
       if (up === "DISPATCHED") {
         const { dp, sh } = notDelivered(l);
@@ -5350,6 +5377,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "chem_adjust") return "Adjust stock: " + [d.crust === "1" ? "crusting" : "", d.fin === "1" ? "finishing" : ""].filter(Boolean).join(" and ") + `, ${(e.lines || []).length} chemicals`;
     if (e.type === "chem_readjust") return `Re-adjust stock: ${d.n} chemicals`;
     if (e.type === "chem_undo") return "Undo chemical entry: " + d.what.toLowerCase();
+    if (e.type === "no_finish") return d.on === "0" ? "Finishing needed after all" + (d.reason ? ": " + d.reason : "") : "No finishing" + (d.reason ? ": " + d.reason : "");
     if (e.type === "purchase_edit") return `Edit purchase: ${d.supplier}, ${d.pcs} pcs, ${d.sqft} sqft`;
     if (e.type === "order_edit") return `Edit item: ${d.item}, ${fmtN(d.qty, 0)} sqft`;
     if (e.type === "order_close") return d.close === "1" ? "Archive order item" : "Reopen order item";
