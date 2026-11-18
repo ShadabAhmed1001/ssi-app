@@ -1230,7 +1230,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stage guide"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
     orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
-    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["ledger", "Ledger"], ["all", "All"]],
+    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["bills", "Tally bills"], ["ledger", "Ledger"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
     settings: [],
@@ -1310,7 +1310,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   // pages of the app found by name in the search box ("machinery", "settings", "audit chemicals")
   const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
-    "chemicals|bills": "purchase bills tally", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
+    "chemicals|bills": "purchase bills tally", "purchases|bills": "wet blue bill bills tally purchase leather", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
     "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "lots|guide": "stages stage",
     "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts" };
   let PAGES = null;
@@ -1363,6 +1363,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "bills") { $("#list").innerHTML = billsView(ws); return; }
     if (tab === "purchases" && filter.purchases === "ledger") { $("#list").innerHTML = ledgerView(ws); return; }
+    if (tab === "purchases" && filter.purchases === "bills") { $("#list").innerHTML = billsView(ws, "wb"); return; }
     if (tab === "orders" && filter.orders === "invpend") { $("#list").innerHTML = invPendView(ws); return; }
     if (tab === "orders" && filter.orders === "drep") { $("#list").innerHTML = drView(); return; }
     if (tab === "chemicals" && filter.chemicals === "count") { $("#list").innerHTML = countView(ws); return; }
@@ -1453,6 +1454,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const pbTally = () => trows("SELECT * FROM tally_purchases ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC");
   const pbRow = (id) => trows("SELECT * FROM app_tally WHERE entry_id=?", [id])[0];
   const pbStockAt = () => (trows("SELECT MAX(v) v FROM tally_meta WHERE k='stock_at'")[0] || {}).v || "";
+  // items a bill can carry: chemicals (kg) and leather bought in (wet blue, crust, raw hides) (18-Nov-2026)
+  const pbIsLeather = (n) => /^(SQF|PCS)/.test(UP(pbUnit(n)));
+  const pbLeatherItems = () => trows("SELECT name FROM tally_items WHERE (unit LIKE 'SQF%' OR unit LIKE 'pcs%') AND (UPPER(name) LIKE '%WET BLUE%' OR UPPER(name) LIKE '%CRUST%' OR UPPER(name) LIKE '%RAW HIDE%' OR grp IN ('4104','4106','Crust/ Tanned Leather','Primary')) ORDER BY CASE WHEN UPPER(name)='WET BLUE LEATHER' THEN 0 ELSE 1 END, name").map((r) => r.name);
+  const pbWbOf = (k) => entries.filter((e) => e.type === "chem_purchase" && e.status !== "cancelled" && e.data.pkey && String(e.data.pkey).split(",").includes(k));
+  // a wet blue bill seeded from a skins purchase: Tally party used last time for this supplier, sqft received, rate per sqft, GST 5%
+  function pbFromSkins(P) {
+    const last = entries.filter((e) => e.type === "chem_purchase" && e.status !== "cancelled" && e.data.pkey).map((e) => ({ e, p: data.purchases.find((x) => String(e.data.pkey).split(",").includes(x.key)) })).filter((x) => x.p && UP(x.p.supplier) === UP(P.supplier)).sort((a, b) => String(b.e.created_at).localeCompare(String(a.e.created_at)))[0];
+    const item = pbLeatherItems().find((n) => /SPLIT/i.test(P.grade || "") ? /SPLIT/i.test(n) : UP(n) === "WET BLUE LEATHER") || "WET BLUE LEATHER";
+    const perPc = String(P.rate_basis || "").toUpperCase() === "PC", sq = r2(P.inS || 0);
+    return { party: last ? last.e.data.party : (pbCredOf(P.supplier) || {}).name || "", date: String(P.received_date || iso(today)).slice(0, 10),
+      line: { n: item, q: sq || "", r: P.rate ? (perPc ? (sq ? r2(P.rate * (P.inP || 0) / sq) : "") : P.rate) : "", g: 5 } };
+  }
   const pbUnit = (n) => ((trows("SELECT unit FROM tally_items WHERE UPPER(name)=UPPER(?)", [n])[0] || {}).unit || "kgs.").trim();
   const pbLines = (e) => Object.keys(e.data || {}).filter((k) => /^l\d+$/.test(k)).sort((a, b) => a.slice(1) - b.slice(1)).map((k) => { const p = String(e.data[k]).split("~^~"); return { n: p[0], q: Number(p[1]) || 0, r: Number(p[2]) || 0, d: Number(p[3]) || 0, g: Number(p[4]) || 0 }; });
   const pbTLines = (t) => String(t.lines || "").split("~^~").filter(Boolean).map((x) => { const p = x.split("|"); return { n: p[0], q: Number(p[1]) || 0, r: Number(p[2]) || 0, d: Number(p[3]) || 0, a: Number(p[4]) || 0 }; });
@@ -1474,7 +1487,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         + `<ACCOUNTINGALLOCATIONS.LIST>${T("LEDGERNAME", PB.purchase)}<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>${am(-x.amt)}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>`; }).join("");
     // narration: the comment typed on the bill, then what the voucher is and who entered it; [APP id] stays last (Excel finds the voucher by it)
     const dm = (x) => String(x || "").replace(/^(\d{4})-(\d\d)-(\d\d).*$/, "$3-$2-$1");
-    const narr = [b.note, `Purchase bill ${b.ref} of ${dm(b.date)} from ${b.party}, entered in the SSI app${myName ? " by " + myName : ""} on ${dm(iso(today))}`, "[APP " + id + "]"].filter(Boolean).join(". ");
+    const narr = [b.note, `Purchase bill ${b.ref} of ${dm(b.date)} from ${b.party}, entered in the SSI app${myName ? " by " + myName : ""} on ${dm(iso(today))}`, b.pkey ? "Skins " + b.pkey.replace(/,/g, ", ") : "", "[APP " + id + "]"].filter(Boolean).join(". ");
     return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(PB.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
       + `<DATE>${td(b.date)}</DATE><EFFECTIVEDATE>${td(b.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", PB.vtype)}<VOUCHERNUMBER>{VNO}</VOUCHERNUMBER>${T("REFERENCE", b.ref)}${T("REFERENCEDATE", td(b.date))}`
       + `${T("PARTYLEDGERNAME", b.party)}${T("PARTYNAME", b.party)}${T("BASICBASEPARTYNAME", b.party)}${T("PARTYMAILINGNAME", b.party)}${t.gstin ? T("PARTYGSTIN", t.gstin) + "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" : ""}${T("STATENAME", t.state)}${T("PLACEOFSUPPLY", PB.home)}`
@@ -1507,12 +1520,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const q = {}; pbBills().filter((b) => b.counts).forEach((b) => b.lines.forEach((x) => { const k = UP(x.n); q[k] = (q[k] || []).concat({ qty: x.q, bill: b }); })); return q;
   }
   const pbStateCls = (b) => b.dup || b.bad ? "bad" : b.st === "POSTED" || b.st === "KEPT_TALLY" ? "ok" : b.st === "CANCELLED" ? "idle" : "warn";
-  function billsView(ws) {
-    const bills = pbBills().filter((b) => match([b.party, b.ref, b.label, b.lines.map((x) => x.n).join(" ")].join(" "), ws)), need = bills.filter((b) => b.dup || b.bad), rest = bills.filter((b) => !b.dup && !b.bad);
-    const tl = pbTally().filter((t) => match([t.party, t.ref, t.vno, t.lines].join(" "), ws)).slice(0, 40), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
+  function billsView(ws, mode) {
+    const bills = pbBills().filter((b) => (mode !== "wb" || b.lines.some((x) => pbIsLeather(x.n))) && match([b.party, b.ref, b.label, b.lines.map((x) => x.n).join(" ")].join(" "), ws)), need = bills.filter((b) => b.dup || b.bad), rest = bills.filter((b) => !b.dup && !b.bad);
+    const tl = pbTally().filter((t) => (mode !== "wb" || pbTLines(t).some((x) => pbIsLeather(x.n))) && match([t.party, t.ref, t.vno, t.lines].join(" "), ws)).slice(0, 40), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
     const row = (b) => `<button class="row" data-go="chemicals" data-k="bill:${esc(b.id)}"><span class="k">${esc(fmtD(b.date))}</span><span class="d"><b>${esc(b.party)}</b> · bill ${esc(b.ref)}<br><small><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span></small></span><span class="r num">₹${fmtN(b.calc.total, 0)}</span></button>`;
     return `<div class="acts" style="margin:4px 0 8px">${canWrite ? `<button class="btn" data-new="chem_purchase">New purchase bill</button>` : ""}</div>
-      <p class="note" style="margin:0 2px 8px">A bill typed here counts in stock at once. Excel then makes the Purchase voucher in Tally${meta.purch_at ? " (Excel last read Tally " + esc(fmtST(meta.purch_at)) + ")" : ""}. If the same bill is already in Tally, you are asked which to keep.</p>
+      <p class="note" style="margin:0 2px 8px">${mode === "wb" ? "Wet blue and other leather bought in. Type the bill here, or open a skins purchase and tap <b>Make Tally bill</b>. Receiving the skins is still done with <b>New purchase</b>; the bill only goes to Tally." : "Chemicals and wet blue. A chemical bill counts in stock at once."} Excel then makes the Purchase voucher in Tally${meta.purch_at ? " (Excel last read Tally " + esc(fmtST(meta.purch_at)) + ")" : ""}. If the same bill is already in Tally, you are asked which to keep.</p>
       ${need.length ? `<div class="group">Needs you · ${need.length}</div>${need.map(row).join("")}` : ""}
       <div class="group">Typed on phones · ${rest.length}</div>${rest.length ? rest.map(row).join("") : `<p class="empty">No bills typed on a phone yet.</p>`}
       <div class="group">In Tally this year · latest ${tl.length}</div>${tl.length ? tl.map((t) => `<button class="row" data-go="chemicals" data-k="tbill:${esc(t.guid)}"><span class="k">${esc(fmtD(String(t.vdate).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")))}</span><span class="d"><b>${esc(t.party)}</b> · bill ${esc(t.ref || "-")}<br><small>Purchase ${esc(t.vno)}${t.app_id ? " · from a phone" : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`).join("") : `<p class="empty">Excel has not read Tally's purchases yet.</p>`}`;
@@ -1528,22 +1541,25 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const b = pbBills().find((x) => x.id === k.slice(5)); if (!b) return `<p class="empty">This bill is no longer there.</p>`;
     const dups = b.dup ? String((b.row || {}).dup || "").split(",").map((g) => pbTally().find((t) => t.guid === g)).filter(Boolean) : [];
     return `<h2>${esc(b.party)} · bill ${esc(b.ref)}</h2><p class="sub">${esc(fmtD(b.date))}${b.calc.gstin ? " · GSTIN " + esc(b.calc.gstin) : ""} · typed ${esc(fmtST(b.e.created_at))}</p>
-      <p><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span>${b.counts ? ` <span class="note">Counted in chemical stock until Tally's stock has it.</span>` : ""}</p>
+      <p><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span>${b.counts && b.lines.some((x) => !pbIsLeather(x.n)) ? ` <span class="note">Counted in chemical stock until Tally's stock has it.</span>` : ""}${b.e.data.pkey ? ` <span class="note">For skins ${String(b.e.data.pkey).split(",").map((k) => purLink(k)).join(", ")}</span>` : ""}</p>
       ${pbLinesTable(b.calc.lines, true)}${pbTotals(b.calc)}${b.note ? `<p class="note">${esc(b.note)}</p>` : ""}
       ${canWrite ? `<div class="acts">${b.dup ? `<button class="btn" data-form="pb_compare:${esc(b.id)}">Compare with Tally</button>` : ""}${b.st === "NOT_SENT" && b.e.status === "pending" ? `<button class="btn alt" data-cancel="${esc(b.id)}">Cancel this bill</button>` : ""}${["WAITING", "ERROR"].includes(b.st) ? `<button class="btn alt" data-form="pb_drop:${esc(b.id)}">Drop this bill</button>` : ""}</div>` : ""}
       ${dups.length ? `<p class="note">Tally has ${dups.map((t) => "purchase " + esc(t.vno) + " (bill " + esc(t.ref || "-") + ", ₹" + fmtN(t.amount, 0) + ")").join(", ")}.</p>` : ""}`;
   }
   // the bill form: lines are plain inputs; the totals follow as you type
-  const pbLineHtml = (i, x = {}) => `<div class="er ln pbl" data-i="${i}"><input id="pb-${i}-n" class="pb-n" list="pb-chems" value="${esc(x.n || "")}" placeholder="Chemical (as in Tally)" aria-label="Chemical" autocomplete="off"><div class="nums"><input id="pb-${i}-q" class="pb-q" value="${x.q ?? ""}" placeholder="Qty kg" aria-label="Qty" inputmode="decimal"><input id="pb-${i}-r" class="pb-r" value="${x.r ?? ""}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="pb-${i}-d" class="pb-d" value="${x.d ?? ""}" placeholder="Disc %" aria-label="Discount %" inputmode="decimal"><input id="pb-${i}-g" class="pb-g" value="${x.g ?? 18}" placeholder="GST %" aria-label="GST %" inputmode="decimal"></div></div>`;
+  const pbLineHtml = (i, x = {}) => `<div class="er ln pbl" data-i="${i}"><input id="pb-${i}-n" class="pb-n" list="pb-chems" value="${esc(x.n || "")}" placeholder="Chemical or wet blue (as in Tally)" aria-label="Item" autocomplete="off"><div class="nums"><input id="pb-${i}-q" class="pb-q" value="${x.q ?? ""}" placeholder="${x.n && pbIsLeather(x.n) ? "Qty sqft" : "Qty kg"}" aria-label="Qty" inputmode="decimal"><input id="pb-${i}-r" class="pb-r" value="${x.r ?? ""}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="pb-${i}-d" class="pb-d" value="${x.d ?? ""}" placeholder="Disc %" aria-label="Discount %" inputmode="decimal"><input id="pb-${i}-g" class="pb-g" data-auto="${x.g == null ? 1 : ""}" value="${x.g ?? 18}" placeholder="GST %" aria-label="GST %" inputmode="decimal"></div></div>`;
   function pbRead(f) {
     const lines = [...f.querySelectorAll(".pbl")].map((r) => ({ n: r.querySelector(".pb-n").value.trim(), q: parseFloat(r.querySelector(".pb-q").value) || 0, r: parseFloat(r.querySelector(".pb-r").value) || 0, d: parseFloat(r.querySelector(".pb-d").value) || 0, g: parseFloat(r.querySelector(".pb-g").value) || 0 })).filter((x) => x.n || x.q || x.r);
     const party = $("#pb-party").value.trim(), cr = pbCredOf(party) || {};
-    return { party: cr.name || party, gstin: cr.gstin || "", state: cr.state || "", ref: $("#pb-ref").value.trim(), date: $("#pb-date").value, note: $("#pb-note").value.trim(), paper: $("#pb-paper").value.trim(), lines };
+    return { party: cr.name || party, gstin: cr.gstin || "", state: cr.state || "", ref: $("#pb-ref").value.trim(), date: $("#pb-date").value, note: $("#pb-note").value.trim(), paper: $("#pb-paper").value.trim(), pkey: ($("#pb-pkey") || {}).value ? UP($("#pb-pkey").value).replace(/\s+/g, "") : "", lines };
   }
   function pbLive(f) {
     const b = pbRead(f), t = pbCalc(b), out = $("#pb-tot"), cr = pbCredOf(b.party);
     if (out) out.innerHTML = (b.party && !cr ? `<span class="late">${esc(b.party)} is not a supplier in Tally. Pick one from the list.</span><br>` : cr ? `<small class="note">${esc(cr.state || "")}${cr.gstin ? " · " + esc(cr.gstin) : ""}${t.intra ? " · CGST + SGST" : " · IGST"}</small><br>` : "") + (b.lines.length ? pbTotals(t) : "")
       + (b.paper && Math.abs((parseFloat(b.paper) || 0) - t.total) > 1 ? `<span class="late">The bill says ₹${esc(b.paper)}, these lines make ₹${fmtN(t.total, 2)}. Check the rates, discounts and GST.</span>` : "");
+    f.querySelectorAll(".pbl").forEach((r) => { const n = r.querySelector(".pb-n").value.trim(), lea = n && pbIsLeather(n), q = r.querySelector(".pb-q"), g = r.querySelector(".pb-g");
+      q.placeholder = lea ? "Qty " + (/^PCS/.test(UP(pbUnit(n))) ? "pcs" : "sqft") : "Qty kg";
+      if (g.dataset.auto === "1" && n && document.activeElement !== g) { const want = lea ? "5" : "18"; if (g.value !== want) { g.value = want; } } });
     // last price of a chemical, when the rate is empty
     f.querySelectorAll(".pbl").forEach((r) => { const n = r.querySelector(".pb-n").value.trim(), rate = r.querySelector(".pb-r"); if (n && !rate.value && !rate.dataset.tried) { rate.dataset.tried = "1"; const last = pbTally().flatMap((t) => pbTLines(t).filter((x) => UP(x.n) === UP(n)).map((x) => Object.assign(x, { party: t.party })))[0]; if (last) { rate.placeholder = "Rate (last " + fmtN(last.r, 2) + ")"; const d = r.querySelector(".pb-d"); if (!d.value && last.d) d.placeholder = "Disc % (last " + fmtN(last.d, 0) + ")"; } } });
   }
@@ -1551,14 +1567,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function pbValidate(b) {
     if (!b.party) return "Pick the supplier."; if (!pbCredOf(b.party)) return b.party + " is not a supplier (Sundry Creditor) in Tally. Pick one from the list, or add it in Tally first.";
     if (!b.ref) return "Type the bill number."; if (checkDate(b.date)) return checkDate(b.date);
-    if (!b.lines.length) return "Add at least one chemical.";
+    if (!b.lines.length) return "Add at least one item.";
+    const badP = b.pkey && b.pkey.split(",").find((k) => !data.purchases.some((p) => UP(p.key || p.purchase_no) === k)); if (badP) return badP + " is not a skins purchase. Pick one from the list, or leave it empty.";
     const unknown = b.lines.find((x) => !data.chemBy[UP(x.n)] && !trows("SELECT 1 x FROM tally_items WHERE UPPER(name)=UPPER(?)", [x.n]).length); if (unknown) return unknown.n + " is not a stock item in Tally. Type the name exactly as in Tally.";
     if (b.lines.some((x) => !(x.q > 0) || !(x.r > 0))) return "Each line needs a qty and a rate above 0.";
     if (b.lines.some((x) => x.d < 0 || x.d >= 100 || ![0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 12, 18, 28].includes(x.g))) return "Discount must be under 100%, and GST one of 0, 5, 12, 18 or 28 %.";
     return "";
   }
   function pbBody(b, extra = {}) {
-    const d = Object.assign({ party: b.party, gstin: b.gstin, state: b.state, ref: b.ref, date: b.date, note: b.note, total: pbCalc(b).total }, extra);
+    const d = Object.assign({ party: b.party, gstin: b.gstin, state: b.state, ref: b.ref, date: b.date, note: b.note, total: pbCalc(b).total }, b.pkey ? { pkey: b.pkey } : {}, extra);
     b.lines.forEach((x, i) => { d["l" + (i + 1)] = [x.n, x.q, x.r, x.d, x.g].join("~^~"); });
     return d;
   }
@@ -1699,7 +1716,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 141, at: "2026-11-17T10:24:06+05:30", notes: "Rework weight: set on the Rework form (whole lot too), shown on the rework card with Change weight; the rework process works its chemical kg from it." };
+  const APP_BUILD = { v: 142, at: "2026-11-18T21:01:36+05:30", notes: "Wet blue purchase bills to Tally (Purchases > Tally bills, Make Tally bill on a skins purchase); rework sections in the recipe PDF" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2396,6 +2413,29 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (c0.missing.length) put(["No price for"], [[plain(c0.missing.join(", "))]]);
       }
     }
+    // reworks of this lot: what, why, the weight, its own process sheet, and the steps recorded with their chemicals (18-Nov-2026)
+    const rws = typeof rwOf === "function" && !rwOfPLot(r.lot_no) ? rwOf(String(r.lot_no || "").toUpperCase()) : [];
+    rws.forEach((rw) => {
+      put([`REWORK ${rw.no}${rw.whole ? " (whole lot)" : " · " + rw.lot}   ${rw.status === "OPEN" ? "open" : rw.status === "DONE" ? "done " + fmtS(rw.done_on) : "merged into " + rw.parent}`], [
+        [plain(`${rwGrpName(rw.grp)}: ${rw.cause}${rw.note ? " (" + rw.note + ")" : ""}`)],
+        [plain(`${fmtN(rw.pcs, 0) || 0} pcs, ${fmtN(rw.sqft, 2) || 0} sqft${rwWt(rw) ? ", " + fmtN(rwWt(rw), 2) + " kg" : ""}. Found at ${rw.at || "-"} on ${fmtS(rw.date)}, sent back to ${rw.back || "-"}.`)]]);
+      const pk = rwRecKey(rw), rr = pk ? getRecipe(pk) : null;
+      if (rr) {
+        const c1 = costOf(rr), rt1 = (n) => fmtN(c1.rate(n), 2), am1 = (q, n) => fmtN((Number(q) || 0) * c1.rate(n), 0);
+        if (rr.crust.length) { const cb = rr.crust.map((c) => c.p === null ? [{ content: plain([c.t, c.d].filter(Boolean).join(" ")), colSpan: 3, styles: { fontStyle: "bold", fillColor: [226, 239, 244] } }, plain(c.f)].concat(withCost ? ["", ""] : []) : [pct(c.p), plain(c.d), c.q ? fmtN(c.q, 3) : "", plain(c.f)].concat(withCost ? [rt1(c.d), am1(c.q, c.d)] : []));
+          if (withCost) cb.push([{ content: "Total", colSpan: 5, styles: { fontStyle: "bold" } }, fmtN(c1.crust, 0)]);
+          put([`Rework ${rw.no} process` + (rr.shaved_wt ? ` (${fmtN(rr.shaved_wt, 2)} kg)` : ""), "Particular", "Quantity", "Duration"].concat(withCost ? ["Rate", "Amount"] : []), cb); }
+        const mc1 = c1.machRows.filter((x) => x.n !== "" && x.n !== "0");
+        if (mc1.length) put([`Rework ${rw.no} machinery`, "Round / coat"].concat(withCost ? ["Rate", "Amount"] : []), mc1.map((x) => [plain(x.d), plain(x.n)].concat(withCost ? [fmtN(x.rate, 2), fmtN(x.amt, 0)] : [])));
+        if (rr.finishing.length) put([`Rework ${rw.no} finishing`, "Chemical name", "Weight", "Application notes"].concat(withCost ? ["Rate", "Amount"] : []), finRows(rr).map((f) => [plain(f.r), plain(f.d), plain(f.w), plain(f.n)].concat(withCost ? [rt1(f.d), am1(f.w, f.d)] : [])));
+        if (rr.process_note || rr.remarks) put([`Rework ${rw.no} process notes`], [rr.process_note, rr.remarks].filter(Boolean).map((t) => [plain(t)]));
+      }
+      const hand = rw.steps.filter((st) => String(st.step || "").indexOf(RW_PROC) !== 0 || !rr);
+      if (hand.length) put([`Rework ${rw.no} steps`, "Date", "Chemicals / machines"].concat(withCost ? ["Cost"] : []), hand.map((st, i) => { const ls = rw.lines.filter((x) => x.use === st.use);
+        return [plain(`${i + 1}. ${st.step || "Step"}${st.how ? " - " + st.how : ""}${st.by ? " (" + st.by + ")" : ""}`), fmtS(st.date) + (st.time ? " " + st.time : ""), plain(ls.map((x) => x.kind === "CHEM" ? x.item + " " + fmtN(x.qty, 3) + " kg" : x.kind === "MACHINE" ? x.item + " x" + fmtN(x.qty, 0) : x.item).join(", "))].concat(withCost ? [fmtN(ls.reduce((t, x) => t + x.amt, 0), 0)] : []); }));
+      if (withCost && rw.cost) put([`Rework ${rw.no} cost recorded`, "Rs"], [["Chemicals", fmtN(rw.chem, 0)], ["Machines", fmtN(rw.mach, 0)], ["Other", fmtN(rw.other, 0)], [{ content: "Total", styles: { fontStyle: "bold" } }, fmtN(rw.cost, 0)]]);
+    });
+    { const me = rwOfPLot(r.lot_no); if (me) put([`This is the process for rework ${me.no} of ${me.parent}`], [[plain(`${rwGrpName(me.grp)}: ${me.cause}. ${fmtN(me.pcs, 0)} pcs, ${fmtN(me.sqft, 2)} sqft${rwWt(me) ? ", " + fmtN(rwWt(me), 2) + " kg" : ""}.`)]]); }
     const clean = (t) => String(t || "").replace(/[\/\\:*?"<>|]/g, "_").replace(/\s+/g, " ").trim(), base = [r.lot_no, r.substance, r.details, r.pcs].map(clean).filter(Boolean).join(" ");
     await savePdf(doc, base + ({ plain: " no rates", cost: "", process: "_PROCESS", page2: "_Page2" }[mode]) + ".pdf", where);
   }
@@ -3690,13 +3730,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (mv || used) return `<p class="empty">${esc(a)} can't be deleted: ${used ? `it shows ${fmtN(c.available, 3)} in stock` : `it has ${mv} ledger entries`}. Use Rename to move its history to the right name.</p>`;
       return `<form class="fm" id="fm-chem_delete" data-name="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">Excel removes it from A. CHEMICALS. If Tally still has it, the next Refresh Chemicals adds it back.</p>${formEnd}</form>`; } },
     chem_void: { title: "Void entry", html: (a) => { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(a)])[0]; return `<form class="fm" id="fm-chem_void" data-id="${esc(a)}"><h3>${esc(m.chemical)}</h3><p style="margin:0">${esc(String(m.entry_type).toLowerCase())} ${fmtN(m.qty, 3)} on ${fmtS(m.entry_date)}. ${esc(m.reason)}</p><p class="note" style="margin:0">The entry stays in the ledger marked void, and the stock goes back.</p>${formEnd}</form>`; } },
-    chem_purchase: { title: "Purchase bill", html: () => `<form class="fm" id="fm-chem_purchase"><label>Supplier (as in Tally)<input id="pb-party" list="pb-creds" autocomplete="off" placeholder="Start typing the supplier"></label>${dl("pb-creds", pbCred().map((c) => c.name))}
-      <div class="row2"><label>Bill no<input id="pb-ref" autocomplete="off"></label><label>Bill date<input id="pb-date" type="date" value="${iso(today)}"></label></div>
-      <div class="group" style="margin-top:8px">Chemicals</div><div id="pb-lines">${[0, 1, 2].map((i) => pbLineHtml(i)).join("")}</div>${dl("pb-chems", data.chemicals.map((c) => c.name).concat(trows("SELECT name FROM tally_items WHERE unit LIKE 'kg%'").map((r) => r.name)))}
+    chem_purchase: { title: "Purchase bill", html: (a) => { const P = a ? data.purchases.find((x) => x.key === a) : null, pre = P ? pbFromSkins(P) : null; return `<form class="fm" id="fm-chem_purchase"><label>Supplier (as in Tally)<input id="pb-party" list="pb-creds" autocomplete="off" placeholder="Start typing the supplier" value="${esc(pre ? pre.party : "")}"></label>${dl("pb-creds", pbCred().map((c) => c.name))}
+      ${pre && !pre.party ? `<p class="note" style="margin:0">Skins supplier in the app: ${esc(P.supplier || "-")}. Pick the same party as it is in Tally; the app remembers it for next time.</p>` : ""}
+      <div class="row2"><label>Bill no<input id="pb-ref" autocomplete="off"></label><label>Bill date<input id="pb-date" type="date" value="${esc(pre ? pre.date : iso(today))}"></label></div>
+      <label>For skins purchase (optional)<input id="pb-pkey" list="pb-purch" autocomplete="off" placeholder="e.g. P047, for wet blue" value="${esc(pre ? P.key : "")}"></label>${dl("pb-purch", data.purchases.filter((p) => !p.closed_on || p.key === a).map((p) => p.key))}
+      <div class="group" style="margin-top:8px">Items</div><div id="pb-lines">${(pre ? [pbLineHtml(0, pre.line), pbLineHtml(1)] : [0, 1, 2].map((i) => pbLineHtml(i))).join("")}</div>${dl("pb-chems", data.chemicals.map((c) => c.name).concat(pbLeatherItems(), trows("SELECT name FROM tally_items WHERE unit LIKE 'kg%'").map((r) => r.name)))}
       <button type="button" class="btn alt" data-pbadd>Add a line</button>
       <label>Bill total on the paper (to check)<input id="pb-paper" inputmode="decimal" placeholder="optional"></label><div id="pb-tot" class="note"></div>
       <label>Comments for Tally (narration)<input id="pb-note" autocomplete="off" placeholder="optional, e.g. rate agreed on phone"></label>
-      <p class="note" style="margin:0">The chemicals count in stock at once. Excel makes the Purchase voucher in Tally; if the same bill is already there, you are asked which to keep.</p>${formEnd}</form>` },
+      <p class="note" style="margin:0">Chemicals count in stock at once. Wet blue only goes to Tally: the skins themselves are received with <b>New purchase</b>. Excel makes the Purchase voucher in Tally; if the same bill is already there, you are asked which to keep.</p>${formEnd}</form>`; } },
     pb_compare: { title: "Compare with Tally", html: (a) => pbCompareHtml(a) },
     pb_drop: { title: "Drop this bill", html: (a) => { const b = pbBills().find((x) => x.id === a); return b ? `<form class="fm" id="fm-pb_drop" data-a="${esc(a)}"><p>${esc(b.party)} · bill ${esc(b.ref)} · ₹${fmtN(b.calc.total, 0)}</p><p class="note">Excel has it but it is not in Tally yet. Dropping it stops it going to Tally and takes its chemicals out of stock again.</p>${formEnd}</form>` : `<p class="empty">This bill is no longer there.</p>`; } },
     tally_delete: { title: "Delete in Tally", html: (g) => { const t = pbTally().find((x) => x.guid === g); return t ? `<form class="fm" id="fm-tally_delete" data-g="${esc(g)}"><p>Purchase ${esc(t.vno)} · ${esc(t.party)} · bill ${esc(t.ref || "-")} · ₹${fmtN(t.amount, 0)}</p><label>Why<input id="td-why" autocomplete="off" placeholder="e.g. typed twice"></label><p class="note">Excel deletes this voucher in Tally at its next run. Tally's stock goes down with it.</p>${formEnd}</form>` : `<p class="empty">This voucher is no longer in the data.</p>`; } },
@@ -4896,7 +4938,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (b.paper && Math.abs((parseFloat(b.paper) || 0) - pbCalc(b).total) > 1 && warnOnce(f, "The total does not match the paper bill. Save again to keep it anyway.")) return;
       if (entries.some((e) => e.type === "chem_purchase" && e.status !== "cancelled" && UP(e.data.party) === UP(b.party) && pbNorm(e.data.ref) === pbNorm(b.ref) && pbRow(e.id)?.state !== "CANCELLED") && warnOnce(f, "Bill " + b.ref + " of " + b.party + " was already typed on a phone. Save again only if it is a different bill.")) return;
       if (pbDups(b, "").length) { pbDraft = b; sel[tab] = "form:pb_compare:draft"; formOpen = "form"; showDetail(); $("#detail").scrollTop = 0; return; }
-      return pbSave(b, {}, "Bill saved. Its chemicals count in stock now; Excel makes it in Tally.", msg, btn);
+      return pbSave(b, {}, b.lines.every((x) => pbIsLeather(x.n)) ? "Bill saved. Excel makes it in Tally." : "Bill saved. Its chemicals count in stock now; Excel makes it in Tally.", msg, btn);
     }
     if (f.id === "fm-pb_compare") return pbCompareSave(f, msg, btn);
     if (f.id === "fm-pb_drop") return saveNew({ type: "purchase_decision", lot_no: "", data: { entry: f.dataset.a, choice: "none", drop: "" } }, "Saved. Excel drops the bill.", msg, btn);
@@ -5404,12 +5446,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const can = store && canWrite && !p.isNew, canUse = store && canWrite && p.isNew && p.leftP > 0;
     return `<p class="sub">${esc(p.supplier)} · ${esc([p.animal, p.grade].filter(Boolean).join(" - "))}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
-      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button><button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
+      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button>${pbWbOf(k).length ? "" : `<button class="btn alt" data-form="chem_purchase:${esc(k)}">Make Tally bill</button>`}<button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
       ${canUse ? `<div class="acts"><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button></div>` : ""}
       ${p.isNew ? `<p class="note"><span class="wait">New purchase, waiting for Excel.</span> You can already give its skins to lots. To change the purchase itself, cancel its entry in Entries and make it again. The number was given on the phone. Excel keeps it unless that number was used on the PC in the meantime; then it takes the next free one.</p>` : p.phone ? `<p class="note"><span class="wait">Includes phone entries not in Excel yet.</span></p>` : ""}
       ${kv([["Received", fmtD(p.received_date)], ["Rate", p.rate ? "₹" + fmtN(p.rate, 2) + (String(p.rate_basis).toUpperCase() === "PC" ? " / pc" : " / sqft") : ""],
         ["Pcs in", fmtN(p.inP, 0)], ["Sqft in", fmtN(p.inS, 2)], ["Pcs left", `<span class="${p.over ? "late" : ""}">${fmtN(p.leftP, 0)}</span>`], ["Sqft left", fmtN(p.leftS, 2)],
         ["Closed on", fmtD(p.closed_on)], ["Note", esc(p.note)]])}
+      ${(() => { const bs = pbWbOf(k); if (!bs.length) return ""; const all = pbBills(); return `<p>Tally bill: ${bs.map((e) => { const b = all.find((x) => x.id === e.id); return `<button class="link" data-go="chemicals" data-k="bill:${esc(e.id)}">${esc(e.data.party)} bill ${esc(e.data.ref)}</button> <span class="pill ${b ? pbStateCls(b) : ""}">${esc(b ? b.label : "")}</span>`; }).join("<br>")}</p>`; })()}
       ${p.over ? `<p class="late">More skins were given out than were received. Correct the purchase quantity or one of the lots below.</p>` : ""}
       <h3>Movements</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>To / from</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${r.map((e) => {
         const out = e.from_key === k;
@@ -5876,7 +5919,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const f = e.target.closest("form"); if (!f) return;
     delete f.dataset.warned; $("#fm-msg").textContent = "";
     if (f.id === "fm-invoice") { invInput(e.target); return; }
-    if (f.id === "fm-chem_purchase") { pbLive(f); return; }
+    if (f.id === "fm-chem_purchase") { if (e.target.classList.contains("pb-g")) e.target.dataset.auto = ""; pbLive(f); return; }
     const t = e.target, row = t.closest(".er");
     if (f.id === "fm-recipe" && /^e-c-\d+-c$/.test(t.id)) { const w = $("#ewt-" + t.id.split("-")[2]); if (w) w.textContent = crustWt(t.value); }
     if (f.id === "fm-recipe" && (/^e-[cfm]-\d+-[cde]$/.test(t.id) || /^eh-(animal|pcs)$/.test(t.id))) setTimeout(edRatesRefresh, 0);
