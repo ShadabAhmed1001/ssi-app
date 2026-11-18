@@ -1719,7 +1719,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 144, at: "2026-11-18T23:07:21+05:30", notes: "Tally purchases open from Purchases > Tally bills too" };
+  const APP_BUILD = { v: 145, at: "2026-11-18T23:58:40+05:30", notes: "Load only crusting, machinery or finishing from another lot; OneDrive bar readable in light themes" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3762,14 +3762,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const has = l.recKey && getRecipe(l.recKey);
       return `<form class="fm" id="fm-process" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc([l.customer, l.product].filter(Boolean).join(" · "))}. Now on ${esc(cur || "no process page")}.</p>
       <label>Process page<select id="fo-page">${cur ? "" : opt("", "Pick a page", true)}${pages.map((p) => opt(p, p, normPage(p) === normPage(cur))).join("")}</select></label>
-      <label>Load from<select id="fo-src">${procSrcOpts(cur, a, pick)}</select></label>
+      <label>Load from<select id="fo-src">${procSrcOpts(cur, a, pick)}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Bring</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
       <p class="note" id="fo-hint" style="margin:0">${procHint(l, cur)}</p>
       <p class="note" style="margin:0">The process opens in the editor with this lot's weight and details. Nothing is saved until you press Save recipe${has ? "; saving makes a new version of this lot" : ""}. If you picked another page, the lot moves to it when you save.</p>
       <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Load</button>${has ? `<button class="btn alt" type="button" data-cmpsrc="${esc(l.recKey)}">Compare first</button>` : ""}<button class="btn alt" type="button" data-pageonly>Change page only</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     load: { title: "Load process", html: (a) => { const l = data.lotBy[a], list = pageRecipes(l.process_page);
       if (!list.length) return `<p class="empty">No other saved process on ${esc(l.process_page)}. Use Process to pick another page.</p>`;
       const has = l.recKey && getRecipe(l.recKey);
-      return `<form class="fm" id="fm-load" data-lot="${esc(a)}"><h3>${esc(a)} · ${esc(l.process_page)}</h3><label>Load from<select id="fo-src">${ownFirst(list, a).map((x, i) => recOpt(x, i === 0 ? x.key : "", a)).join("")}</select></label>
+      return `<form class="fm" id="fm-load" data-lot="${esc(a)}"><h3>${esc(a)} · ${esc(l.process_page)}</h3><label>Load from<select id="fo-src">${ownFirst(list, a).map((x, i) => recOpt(x, i === 0 ? x.key : "", a)).join("")}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Bring</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
       <p class="note" style="margin:0">The process opens in the editor with this lot's weight and details, as in Excel. Nothing is saved until you press Save.${has ? " Saving makes a new version of this lot." : ""}</p>
       <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Load</button>${has ? `<button class="btn alt" type="button" data-cmpsrc="${esc(l.recKey)}">Compare first</button>` : ""}<button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     compare: { title: "Compare processes", html: (a) => { const [ka, kb0] = a.split("~"), ra = getRecipe(ka); if (!ra) return `<p class="empty">This process could not be found.</p>`;
@@ -4793,7 +4793,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (kind === "dye") { const orig = dbDyes(arg), cur0 = data.dyes[arg.toUpperCase()] || orig; ed = { dyes: cur0.map((x) => Object.assign({}, x, { r0: x.i })) }; if (!ed.dyes.length) ed.dyes.push({ d: "", c: "", m: "", a: "", b: "", r: "" }); }
     stack.push({ tab, k: sel[tab] }); flash = ""; sel[tab] = "form:" + kind + ":" + arg; formOpen = "form"; showDetail(); $("#detail").scrollTop = 0;
   }
-  function loadProcess(l, key) {
+  // which parts of a process to bring (18-Nov-2026): null = none ticked, undefined = all
+  function lpParts() { const c = $("#lp-c"); if (!c) return undefined; const p = { crust: c.checked, mach: $("#lp-m").checked, fin: $("#lp-f").checked }; return !p.crust && !p.mach && !p.fin ? null : p.crust && p.mach && p.fin ? undefined : p; }
+  const lpName = (p) => [p.crust && "crusting", p.mach && "machinery", p.fin && "finishing"].filter(Boolean).join(" and ");
+  function loadProcess(l, key, parts) {
+    if (parts) return loadParts(l, key, parts);
     const m = key.split("@v"), a = m[0].slice(4).split("|"), lotS = a[0], process = a.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process];
     if (lotS === l.lot_no && !m[1]) { flash = ""; sel.lots = key;
       if (normPage(process) === normPage(l.process_page || "")) { formOpen = null; ed = null; showDetail(); $("#detail").scrollTop = 0; return; }
@@ -4804,6 +4808,26 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     flash = ""; sel.lots = "rec:" + l.lot_no + "|" + process; openEditor(sel.lots, seed);
     if (normPage(process) !== normPage(l.process_page || "")) ed.movePage = process;
     ed.preview = lotS + (src.version ? " v" + src.version : "");
+    showDetail(); $("#detail").scrollTop = 0;
+  }
+  // only some parts of another lot's process: the lot keeps its own recipe and page, and the chosen parts are replaced.
+  // Saved as an ordinary edit of the lot's own recipe, so Excel writes the changed cells on the lot's own sheet.
+  function loadParts(l, key, parts) {
+    const m = key.split("@v"), a = m[0].slice(4).split("|"), lotS = a[0], process = a.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process];
+    const src = recAt(lotS, process, m[1] ? Number(m[1]) : live0 ? nextVer(live0) : 0), page = l.process_page || "";
+    const own = l.recKey && getRecipe(l.recKey);
+    if (!own || !page) {   // nothing of its own yet: load the whole process, then empty the parts not wanted
+      loadProcess(l, key);
+      if (ed) { if (!parts.crust) ed.crust = []; if (!parts.mach) ed.machinery = ed.machinery.map((x) => Object.assign({}, x, { e: "" })); if (!parts.fin) ed.finishing = [];
+        ed.preview = (ed.preview || lotS) + " · " + lpName(parts) + " only"; showDetail(); }
+      return;
+    }
+    const wt = Number(own.shaved_wt) || Number(l.weight) || Number(src.shaved_wt) || 0;
+    const crust = (src.crust || []).map((c) => c.p !== null && c.p !== undefined && !c.nq ? Object.assign({}, c, { q: +(c.p * wt).toFixed(4) }) : Object.assign({}, c));
+    const seed = Object.assign({}, own, { from: "", base_process: "", base_ver: 0, load_cur: undefined,
+      crust: parts.crust ? crust : own.crust, machinery: parts.mach ? (src.machinery || []).map((x) => Object.assign({}, x)) : own.machinery, finishing: parts.fin ? (src.finishing || []).map((x) => Object.assign({}, x)) : own.finishing });
+    flash = ""; sel.lots = l.recKey; openEditor(l.recKey, seed);
+    ed.preview = lpName(parts) + " from " + lotS + (src.version ? " v" + src.version : "") + (normPage(process) !== normPage(page) ? " (" + process + ")" : "");
     showDetail(); $("#detail").scrollTop = 0;
   }
   // (no longer used: loading only opens the editor; nothing is saved until Save)
@@ -4963,8 +4987,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-pb_drop") return saveNew({ type: "purchase_decision", lot_no: "", data: { entry: f.dataset.a, choice: "none", drop: "" } }, "Saved. Excel drops the bill.", msg, btn);
     if (f.id === "fm-tally_delete") { const t = pbTally().find((x) => x.guid === f.dataset.g); if (!t) return bad("This voucher is no longer in the data."); const why = need("#td-why"); if (!why) return bad("Say why."); if (warnOnce(f, "Purchase " + t.vno + " will be deleted in Tally. Save again to confirm.")) return; return saveNew({ type: "tally_delete", lot_no: t.party, doc_no: t.ref, data: { guid: t.guid, vno: t.vno, party: t.party, ref: t.ref, why } }, "Saved. Excel deletes it in Tally at its next run.", msg, btn); }
     if (f.id === "fm-chem_alias") { const c = data.chemBy[need("#fi-to").toUpperCase()]; if (!c) return bad("Pick a chemical from the list."); return saveNew({ type: "chem_alias", lot_no: f.dataset.name, data: { name: f.dataset.name, to: c.name } }, "Saved. It is waiting for Excel.", msg, btn); }
-    if (f.id === "fm-load") return loadProcess(data.lotBy[f.dataset.lot], need("#fo-src"));
-    if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src); }
+    if (f.id === "fm-load" || f.id === "fm-process") { const parts = lpParts(); if (!parts) return bad("Tick at least one part to bring.");
+      if (f.id === "fm-load") return loadProcess(data.lotBy[f.dataset.lot], need("#fo-src"), parts); }
+    if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src, lpParts()); }
     if (f.id === "fm-chem_adjust") {
       const l = data.lotBy[f.dataset.lot], p = chemPlan(l, f.dataset.what);
       if (p.secs.includes("CRUSTING") && !(Number(l.weight) > 0)) return bad(l.lot_no + " has no weight. Enter the shaved weight (Edit lot) before adjusting crusting chemicals.");

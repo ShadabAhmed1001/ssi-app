@@ -365,11 +365,12 @@
   }
   function ui() {
     const css = document.createElement("style");
-    css.textContent = `.odbar{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;line-height:1.3;padding:6px 0 0;margin-top:6px;border-top:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.85)}
-.odbar.ok .odt::before{content:"● ";color:#7ee08a}.odbar.warn .odt::before{content:"● ";color:#b26a00}.odbar.bad .odt::before{content:"● ";color:#c62828}
-.odbar .odb{display:flex;gap:6px;flex:none}.odbar button{font:inherit;font-weight:600;border:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;border-radius:8px;padding:4px 10px}
-.odset{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9999}.odset form{background:var(--bg,#fff);color:var(--text,#123);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px;display:grid;gap:10px;font-size:14px}
-.odset label{display:grid;gap:4px}.odset input{font:inherit;padding:8px;border:1px solid var(--line,#c9d3d9);border-radius:8px}.odset .row2{display:flex;gap:8px;justify-content:flex-end}
+    css.textContent = `.odbar{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;line-height:1.3;padding:6px 0 0;margin-top:6px;border-top:1px solid var(--line,#d5dde2);color:var(--muted,#5b6b74)}
+.odbar.ok .odt::before{content:"● ";color:#2e9d4a}.odbar.warn .odt::before{content:"● ";color:#b26a00}.odbar.bad .odt::before{content:"● ";color:#c62828}
+.odbar .odb{display:flex;gap:6px;flex:none}
+.odbar button{font:inherit;font-weight:600;border:1px solid var(--line,#c9d3d9);background:var(--surface,#fff);color:var(--ink,#15232b);border-radius:8px;padding:4px 10px}
+.odset{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9999}.odset form{background:var(--surface,#fff);color:var(--ink,#15232b);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px;display:grid;gap:10px;font-size:14px}
+.odset label{display:grid;gap:4px}.odset input{font:inherit;padding:8px;background:var(--bg,#fff);color:var(--ink,#15232b);border:1px solid var(--line,#c9d3d9);border-radius:8px}.odset .row2{display:flex;gap:8px;justify-content:flex-end}
 .odup{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:9998;display:flex;gap:10px;align-items:center;justify-content:space-between;background:#0f3b4c;color:#fff;border-radius:12px;padding:10px 14px;font-size:14px}.odup button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:6px 12px}`;
     document.head.appendChild(css);
     bar = document.createElement("div"); bar.className = "odbar"; bar.setAttribute("role", "status");
