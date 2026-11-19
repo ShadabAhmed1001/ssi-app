@@ -206,7 +206,7 @@
     const app = cfg().entriesFolder + "/app", by = me.name || me.id, since = new Date().toISOString();
     if (to === "app") {
       await sync("records"); while (syncing) await new Promise((r) => setTimeout(r, 300));
-      if (H.waitingForExcel() > 0) throw new Error(H.waitingForExcel() + " entries are still waiting for Excel. Let Excel import them first.");
+      // entries still waiting for Excel are simply written by the app from now on (Excel never marks them imported in app mode)
       const bytes = H.baseBytes(); if (!bytes) throw new Error("Excel's data is not loaded yet.");
       const name = "base-" + since.replace(/[-:]/g, "").slice(0, 15) + ".sqlite";
       await upload(app + "/base/" + name, bytes, tok, "application/octet-stream");
