@@ -1155,6 +1155,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }).map((c) => Object.assign(c, { grp: c.nonStock ? 3 : Math.abs(c.available || 0) > 0.0005 ? 1 : 2, hay: c.name }));
 
     data.stages = rows("SELECT * FROM stages ORDER BY seq");
+    { const J = (k, d) => { try { return JSON.parse(one("SELECT value FROM meta WHERE key='" + k + "'") || "null") || d; } catch (e) { return d; } };
+      data.stagePhase = J("stage_phase", {}); data.routes = J("routes", {});
+      const lv = live.filter((e) => e.type === "stage_add" || e.type === "route_set").sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      lv.forEach((e) => { const d = e.data || {};
+        if (e.type === "stage_add") { const nm = UP(d.name); if (!nm || data.stages.some((x) => UP(x.name) === nm)) return; data.stages.push({ seq: data.stages.length + 1, name: nm, max_days: Number(d.max) || null, min_days: Number(d.min) || null, notes: "added on the phone, waiting for Excel", wait: true }); data.stagePhase[nm] = UP(d.phase); }
+        else { const k = normPage(d.page), st = String(d.steps || "").split("~^~").filter(Boolean); if (st.length) data.routes[k] = { page: d.page, steps: st, wait: true }; else delete data.routes[k]; } }); }
     const NONE = "proc:~none", procs = {};
     data.lots.forEach((l) => {
       const name = (l.process_page || "").replace(/\s+/g, " ").trim();
@@ -1426,8 +1432,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const open = data.lots.filter((l) => l.grp === 1), U = (x) => String(x || "").toUpperCase();
     const L = data.stages.filter((s) => match(String(s.name) + " " + String(s.notes || ""), ws));
     return `<p class="note" style="margin:6px 2px">The production stages in order, with the days a lot is expected to stay at each. A lot past its max days shows in Needs attention. Changed in Excel's STAGE GUIDE.</p>
-      <div class="tbl"><table><thead><tr><th>#</th><th>Stage</th><th class="r">Min days</th><th class="r">Max days</th><th class="r">Lots now</th><th class="r">Over max</th><th>Notes</th></tr></thead><tbody>${L.map((s, i) => { const here = open.filter((l) => U(l.stage) === U(s.name)), over = s.max_days ? here.filter((l) => l.inStage !== null && l.inStage > s.max_days) : [];
-        return `<tr><td class="num">${esc(s.seq ?? i + 1)}</td><td><b>${esc(s.name)}</b></td><td class="r num">${s.min_days ? fmtN(s.min_days, 0) : "-"}</td><td class="r num">${s.max_days ? fmtN(s.max_days, 0) : "-"}</td><td class="r num">${here.length || ""}</td><td class="r num ${over.length ? "late" : ""}">${over.length ? over.map((l) => `<button class="link" data-go="lots" data-k="${esc(l.lot_no)}">${esc(l.lot_no)}</button>`).join(" ") : ""}</td><td class="wrap">${esc(s.notes || "")}</td></tr>`; }).join("")}</tbody></table></div>`;
+      <div class="tbl"><table><thead><tr><th>#</th><th>Stage</th><th>Phase</th><th class="r">Min days</th><th class="r">Max days</th><th class="r">Lots now</th><th class="r">Over max</th><th>Notes</th></tr></thead><tbody>${L.map((s, i) => { const here = open.filter((l) => U(l.stage) === U(s.name)), over = s.max_days ? here.filter((l) => l.inStage !== null && l.inStage > s.max_days) : [];
+        return `<tr><td class="num">${esc(s.seq ?? i + 1)}</td><td><b>${esc(s.name)}</b>${s.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td>${esc(phaseOf(s.name).toLowerCase())}</td><td class="r num">${s.min_days ? fmtN(s.min_days, 0) : "-"}</td><td class="r num">${s.max_days ? fmtN(s.max_days, 0) : "-"}</td><td class="r num">${here.length || ""}</td><td class="r num ${over.length ? "late" : ""}">${over.length ? over.map((l) => `<button class="link" data-go="lots" data-k="${esc(l.lot_no)}">${esc(l.lot_no)}</button>`).join(" ") : ""}</td><td class="wrap">${esc(s.notes || "")}</td></tr>`; }).join("")}</tbody></table></div>`;
   }
   // chemicals taken for each lot (stock adjustments, re-adjustments, rework), newest lots first, 10 lots a page
   function usageView(ws) {
@@ -1719,7 +1725,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 145, at: "2026-11-18T23:58:40+05:30", notes: "Load only crusting, machinery or finishing from another lot; OneDrive bar readable in light themes" };
+  const APP_BUILD = { v: 146, at: "2026-11-19T08:26:48+05:30", notes: "Stages per product: each process page can have its own route of stages; new steps with a phase" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2545,8 +2551,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     });
     // stage guide
     const sg = xl(wb, "STAGE GUIDE"); let seq = 0;
-    const sgNo = {}; for (let r = 5; r <= 22; r++) { const n = xtxt(cv(sg, "B" + r)); if (n) { a.run("INSERT OR REPLACE INTO stages VALUES(?,?,?,?,?)", [++seq, n, xfl(cv(sg, "C" + r)), xfl(cv(sg, "D" + r)), xtxt(cv(sg, "E" + r))]); if (!(n.toUpperCase() in sgNo)) sgNo[n.toUpperCase()] = xnum(cv(sg, "A" + r)) || 0; } }
+    const sgNo = {}, sgPh = {}; for (let r = 5; r <= 62; r++) { const n = xtxt(cv(sg, "B" + r)); if (n && /^STATUS LEGEND/i.test(n)) break; if (n && xtxt(cv(sg, "F" + r))) sgPh[n.toUpperCase()] = xtxt(cv(sg, "F" + r)).toUpperCase(); if (n) { a.run("INSERT OR REPLACE INTO stages VALUES(?,?,?,?,?)", [++seq, n, xfl(cv(sg, "C" + r)), xfl(cv(sg, "D" + r)), xtxt(cv(sg, "E" + r))]); if (!(n.toUpperCase() in sgNo)) sgNo[n.toUpperCase()] = xnum(cv(sg, "A" + r)) || 0; } }
     a.run("INSERT OR REPLACE INTO meta VALUES('stage_no',?)", [JSON.stringify(sgNo)]);
+    a.run("INSERT OR REPLACE INTO meta VALUES('stage_phase',?)", [JSON.stringify(sgPh)]);
+    { const rt = xl(wb, "ROUTES"), R = {}; if (rt) for (let r = 2; r <= 2000; r++) { const pg = xtxt(cv(rt, "A" + r)), st = xtxt(cv(rt, "C" + r)); if (!pg && !st) break; if (pg && st) { const k = normPage(pg); (R[k] = R[k] || { page: pg, steps: [] }).steps.push(st); } }
+      a.run("INSERT OR REPLACE INTO meta VALUES('routes',?)", [JSON.stringify(R)]); }
     // tracker lots
     const tk = xl(wb, "ORDER & PRODUCTION TRACKER"); let nLots = 0;
     const insLot = a.prepare("INSERT OR REPLACE INTO lots(lot_no,customer,product,order_qty,lot_pcs,shaving,lot_sqft,order_date,due_date,stage,stage_since,weight,remarks,process_page,delivered_est,profit,state,chem_crust,chem_finish,chem_check) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -2916,7 +2925,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const due = l.dueIn === null ? "" : `<span class="${l.grp === 1 && l.dueIn < 0 ? "late" : l.grp === 1 && l.dueIn <= 3 ? "soon" : ""}">due ${fmtD(l.due_date)}</span>`;
     const sw0 = tab === "lots" && filter.lots === "late" && needsAttn(l), mu = sw0 && isMuted(l.lot_no), sw2 = tab === "lots" && (filter.lots || "open") === "open" && l.grp === 1, sw = sw0 || sw2;
     const pn = sw2 && lordPin(l), dn = sw2 && lordDown(l);
-    const sn = stageNo(l.stage) || 0, pr = /DISPATCHED/i.test(l.stage || "") ? 100 : sn > 0 && sn <= 11 ? Math.round(sn / 11 * 100) : 0;
+    const R0 = lotRoute(l), ri = routeIdx(l, l.stage), sn = ri >= 0 ? ri + 1 : 0, pr = /DISPATCHED/i.test(l.stage || "") ? 100 : sn > 0 ? Math.round(sn / R0.length * 100) : 0;
     return `<button class="row${sw ? " swipe" : ""}${mu ? " muted" : ""}${pn ? " pinned" : ""}${dn ? " down" : ""}"${sw2 ? ' data-sw="2"' : ""} data-flag="${esc(l.flag || "")}" data-k="${esc(l.lot_no)}"${cur(l.lot_no)}${sw0 ? ` aria-description="${mu ? "Muted until " + esc(muteUntilText(l.lot_no)) : "Swipe left to mute for a day"}"` : sw2 ? ` aria-description="${pn ? "Pinned to the top. Swipe left to move it to the end" : dn ? "Moved to the end. Swipe right to put it back" : "Swipe left to move to the end, right to pin to the top"}"` : ""}>
       <span class="k">${pn ? `<span class="pinmark" aria-hidden="true">▲</span>` : dn ? `<span class="pinmark" aria-hidden="true">▼</span>` : ""}${esc(l.lot_no)}</span><span class="pill ${l.flag}">${esc(l.flagText)}</span>
       <span class="t">${esc(l.customer)} · ${esc(l.product)}</span>${pr ? `<span class="prog" aria-hidden="true"><i style="width:${pr}%"></i></span>` : ""}
@@ -3198,7 +3207,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const l = data.lotBy[k]; if (!l) return "";
     const hist = rows("SELECT * FROM lot_stage_log WHERE lot_no=? ORDER BY id DESC", [k]);
     const dels = rows("SELECT * FROM lot_deliveries WHERE lot_no=? ORDER BY del_date", [k]);
-    const flow = data.stages.filter((s) => s.seq <= 11), pos = flow.findIndex((s) => s.name.toUpperCase() === (l.stage || "").toUpperCase());
+    const flow = lotRoute(l).filter((n) => !/^DISPATCHED$/i.test(n)).map((n) => ({ name: n })), pos = flow.findIndex((s) => s.name.toUpperCase() === (l.stage || "").toUpperCase());
     const track = l.grp === 1 && pos >= 0 ? `<div class="track" role="img" aria-label="Stage ${pos + 1} of ${flow.length}">${flow.map((s, i) => `<i class="${i < pos ? "on" : i === pos ? "now" : ""}"></i>`).join("")}</div><p class="note" style="margin:0 0 12px">Stage ${pos + 1} of ${flow.length}</p>` : "";
     const pd = data.phoneDel[k] || [];
     const canAct = store && canWrite && l.state !== "ARCHIVED";
@@ -3231,6 +3240,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${rwBlock(l, store && canWrite && l.state !== "ARCHIVED" && !formOpen)}
       ${chemBlock(l, canAct)}`;
   }
+  function routeCard(page) {
+    const r = pageRoute(page), steps = r ? r.steps : stdRoute();
+    return `<h3>Stages for this product</h3><p class="note" style="margin:0 0 4px">${r ? (r.wait ? "Set on the phone, waiting for Excel." : "Its own stages, in order.") : "Uses the standard order (Stage guide)."}</p>
+      <p style="margin:0;line-height:1.9">${steps.map((n, i) => `<span class="pill">${i + 1}. ${esc(n)} <small>${esc(phaseOf(n).toLowerCase())}</small></span>`).join(" ")}</p>
+      ${canEditRoutes() ? `<div class="acts"><button class="btn alt" data-form="route:${esc(page)}">Set stages</button></div>` : ""}`;
+  }
+  const canEditRoutes = () => typeof isAdmin === "function" ? isAdmin() : true;
   function procDetail(k) {
     const p = data.processes.find((x) => x.key === k); if (!p) return "";
     const ls = p.lots.slice().sort((a, b) => a.grp - b.grp || b.num - a.num);
@@ -3241,6 +3257,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `${p.none ? `<p class="missing">These lots have no process page in the Excel tracker.</p>` : latest ?
         `<div class="acts"><button class="btn" data-go="lots" data-k="${esc(latest.key)}">Open latest recipe: ${esc(latest.lot_no)}</button></div>` : `<p class="missing">No recipe has been saved for this process yet.</p>`}
       ${latest ? `<div class="acts"><button class="btn alt" data-form="compare:${esc(latest.key)}">Compare processes</button></div>` : ""}
+      ${p.none ? "" : routeCard(p.name)}
       ${kv([["Lots", p.lots.length], ["Open now", p.open], ["Saved recipes", saved.length], ["Total sqft", fmtN(p.sqft, 0)], ["Last order", fmtD(p.last)], ["Customers", esc(p.customers.join(", "))]])}
       ${p.products.length ? `<h3>Products made</h3><p style="margin:0">${esc(p.products.join(", "))}</p>` : ""}
       ${ls.length ? `<h3>Lots</h3><p class="note">Tap a lot to open its recipe. Lots with no saved recipe open the lot.</p><div class="tbl"><table><thead><tr><th>Lot</th><th>Product</th><th>Customer</th><th>Stage</th><th class="r">Sqft</th></tr></thead><tbody>${ls.map((l) =>
@@ -3778,6 +3795,20 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<form class="fm" id="fm-compare"><label>First<select id="cmp-a">${list.map((x) => recOpt(x, ka)).join("")}</select></label>
       <label>Second from page<select id="cmp-page">${pages.map((p) => `<option${normPage(p) === normPage(pageB) ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
       <label>Second<select id="cmp-b">${pageRecipes(pageB).map((x) => recOpt(x, kb)).join("")}</select></label></form><div id="cmp-out" style="margin-top:10px">${cmpHtml(ka, kb)}</div>`; } },
+    route: { title: "Stages for a product", html: (page) => { const r = pageRoute(page), st = (r ? r.steps : stdRoute()).map((n) => ({ name: n }));
+      const pages = data.processes.filter((p) => !p.none && normPage(p.name) !== normPage(page) && pageRoute(p.name)).map((p) => p.name);
+      const mach = rows("SELECT DISTINCT name FROM machinery ORDER BY name").map((x) => x.name).filter(Boolean);
+      return `<form class="fm" id="fm-route" data-page="${esc(page)}" data-steps="${esc(JSON.stringify(st))}"><h3>${esc(page)}</h3>
+        <p class="note" style="margin:0">The stages lots of this product go through, in order. Each stage belongs to a phase; crusting chemicals must be adjusted before a lot enters a crusting-phase stage, finishing chemicals before QC.</p>
+        <div id="rt-list">${rtListHtml(st)}</div>
+        <div class="group" style="margin-top:6px">Add a step</div>
+        <div class="two"><label>Existing stage<select id="rt-pick"><option value="">Pick…</option>${stageNames().filter((n) => !OFF_ROUTE.test(n) && !/^DISPATCHED$/i.test(n)).map((n) => `<option value="${esc(n)}">${esc(n)}${phaseOf(n) ? " · " + phaseOf(n).toLowerCase() : ""}</option>`).join("")}</select></label>
+        <div style="display:flex;align-items:flex-end"><button class="btn alt" type="button" data-rt="addpick">Add</button></div></div>
+        <div class="two"><label>Or a new step<input id="rt-new" list="rt-mach" autocomplete="off" placeholder="e.g. MILLING (FINISH)"></label>${dl("rt-mach", mach.concat(mach.map((m) => m + " (CRUST)"), mach.map((m) => m + " (FINISH)")))}
+        <label>Phase<select id="rt-ph">${PHASES.slice(0, 4).map((p) => `<option value="${p}">${p.toLowerCase()}</option>`).join("")}</select></label></div>
+        <div class="two"><label>Max days (optional)<input id="rt-max" type="number" min="0" step="1" inputmode="numeric"></label><div style="display:flex;align-items:flex-end"><button class="btn alt" type="button" data-rt="addnew">Add new step</button></div></div>
+        ${pages.length ? `<label>Copy the stages of another product<select id="rt-copy"><option value="">Pick…</option>${pages.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label>` : ""}
+        <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save stages</button>${r ? `<button class="btn alt" type="button" data-rt="reset">Use the standard order</button>` : ""}<button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     no_finish: { title: "No finishing", html: (a) => { const l = data.lotBy[a]; if (!l) return `<p class="empty">${esc(a)} is not on the tracker.</p>`; const st = chemState(l), n = st.r ? chemNeed(st.r, "FINISHING").lines.length : 0;
       return `<form class="fm" id="fm-no_finish" data-lot="${esc(a)}"><h3>${esc(a)} has no finishing</h3><p style="margin:0">Use this for a process without finishing, in place of a dummy line like water 1 kg. Excel marks finishing as settled (B. LOT_LIST), so the lot can move on; no chemicals are taken from stock.</p>
         ${n ? `<p class="late">${esc(a)}'s recipe has ${n} finishing line${n === 1 ? "" : "s"}. They will not be taken from stock. If they were used, adjust finishing instead.</p>` : ""}
@@ -3880,7 +3911,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<form class="fm" id="fm-part_ahead" data-lot="${esc(lot)}"><h3>${esc(lot)} at ${esc(l.stage || "no stage")}</h3><p class="note" style="margin:0">For part of the lot going ahead early. The lot stays at ${esc(l.stage || "its stage")}; Excel adds a line to its remarks.</p>
       <div class="two"><label>Pcs<input id="fa-pcs"${n}></label><label>Sqft<input id="fa-sqft"${n}></label>
       <label>Purpose<select id="fa-why">${["Approval sample", "Finish setup", "Other"].map((x) => opt(x, x)).join("")}</select></label>
-      <label>Going to<select id="fa-stage">${data.stages.filter((x) => !/^(purchase|dumped|on hold)$/i.test(x.name)).map((x) => `<option${x.name === (to0 || nextStage(l.stage)) ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+      <label>Going to<select id="fa-stage">${data.stages.filter((x) => !/^(purchase|dumped|on hold)$/i.test(x.name)).map((x) => `<option${x.name === (to0 || nextStage(l.stage, l)) ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
       ${dateF("fa-date", "Date", today0())}</div>${txtF("fa-note", "Note")}${formEnd}</form>`; } },
     lot_return: { title: "Customer return", html: (a) => { const l = data.lotBy[a], arch = l.state === "ARCHIVED", b = returnable(l), stg = data.stages.filter((s) => !/^(purchase|dispatched|dumped)$/i.test(s.name)), n = ' type="number" step="any" min="0" inputmode="decimal"';
       return `<form class="fm" id="fm-lot_return" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc([l.customer, l.product].filter(Boolean).join(" · "))}. Delivered ${fmtN(b.p, 0) || 0} pcs, ${fmtN(b.s, 2) || 0} sqft. The return comes off Delivered, so the PO shows that balance again.</p>
@@ -4794,6 +4825,35 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     stack.push({ tab, k: sel[tab] }); flash = ""; sel[tab] = "form:" + kind + ":" + arg; formOpen = "form"; showDetail(); $("#detail").scrollTop = 0;
   }
   // which parts of a process to bring (18-Nov-2026): null = none ticked, undefined = all
+  function rtDraw(f) { const L = $("#rt-list"); if (L) L.innerHTML = rtListHtml(JSON.parse(f.dataset.steps || "[]")); }
+  function rtListHtml(st) {
+    return st.length ? `<div class="tbl"><table><tbody>${st.map((x, i) => `<tr><td class="num">${i + 1}</td><td><b>${esc(x.name)}</b>${x.isNew ? ` <span class="wait">new</span>` : ""}<br><small>${esc((x.phase || phaseOf(x.name)).toLowerCase())}</small></td><td class="r" style="white-space:nowrap"><button class="mini" type="button" data-rt="up" data-i="${i}" ${i ? "" : "disabled"}>↑</button> <button class="mini" type="button" data-rt="down" data-i="${i}" ${i < st.length - 1 ? "" : "disabled"}>↓</button> <button class="mini" type="button" data-rt="del" data-i="${i}">✕</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No steps. Add some below, or use the standard order.</p>`;
+  }
+  function rtAct(b) {
+    const f = $("#fm-route"), st = JSON.parse(f.dataset.steps || "[]"), a = b.dataset.rt, i = Number(b.dataset.i), msg = $("#fm-msg"); msg.textContent = "";
+    const has = (n) => st.some((x) => UP(x.name) === UP(n));
+    if (a === "up" && i > 0) [st[i - 1], st[i]] = [st[i], st[i - 1]];
+    if (a === "down" && i < st.length - 1) [st[i + 1], st[i]] = [st[i], st[i + 1]];
+    if (a === "del") st.splice(i, 1);
+    if (a === "addpick") { const n = $("#rt-pick").value; if (!n) { msg.textContent = "Pick a stage."; return; } if (has(n)) { msg.textContent = n + " is already in the list."; return; } st.push({ name: n }); $("#rt-pick").value = ""; }
+    if (a === "addnew") { const n = UP($("#rt-new").value.trim().replace(/\s+/g, " ")); if (!n) { msg.textContent = "Type the new step's name."; return; }
+      if (stageNames().some((x) => UP(x) === n)) { msg.textContent = n + " is already a stage: pick it from Existing stage."; return; } if (has(n)) { msg.textContent = n + " is already in the list."; return; }
+      if (/[|~^]/.test(n) || n.length > 40) { msg.textContent = "Keep the name short, without | ~ ^."; return; }
+      st.push({ name: n, phase: $("#rt-ph").value, max: $("#rt-max").value, isNew: true }); $("#rt-new").value = ""; $("#rt-max").value = ""; }
+    if (a === "reset") { if (!confirm("Use the standard order (Stage guide) for " + f.dataset.page + "?")) return; return rtSave(f, [], b); }
+    f.dataset.steps = JSON.stringify(st); rtDraw(f);
+  }
+  async function rtSave(f, st, btn) {
+    const msg = $("#fm-msg"), page = f.dataset.page;
+    if (st.length) { const ph = st.map((x) => PHASES.indexOf(x.phase || phaseOf(x.name)));
+      if (ph.some((p, i) => i && p < ph[i - 1]) && !f.dataset.warned) { f.dataset.warned = "1"; msg.textContent = "Some steps come before a step of an earlier phase (for example a crusting step after finishing). Save again if this is right."; return; } }
+    btn.disabled = true;
+    try { let t = Date.now();
+      for (const x of st.filter((x) => x.isNew)) await writeEntry(store.collection("entries").doc(), { type: "stage_add", data: { name: x.name, phase: x.phase, max: String(x.max || ""), machine: "" }, status: "pending", entered_by: uid, created_at: new Date(t++).toISOString() });
+      await writeEntry(store.collection("entries").doc(), { type: "route_set", data: { page, steps: st.map((x) => x.name).join("~^~") }, status: "pending", entered_by: uid, created_at: new Date(t++).toISOString() });
+      closeForm(st.length ? "Stages of " + page + " saved (" + st.length + "). Waiting for Excel." : page + " uses the standard order again. Waiting for Excel.");
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
   function lpParts() { const c = $("#lp-c"); if (!c) return undefined; const p = { crust: c.checked, mach: $("#lp-m").checked, fin: $("#lp-f").checked }; return !p.crust && !p.mach && !p.fin ? null : p.crust && p.mach && p.fin ? undefined : p; }
   const lpName = (p) => [p.crust && "crusting", p.mach && "machinery", p.fin && "finishing"].filter(Boolean).join(" and ");
   function loadProcess(l, key, parts) {
@@ -4972,6 +5032,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-chem_rename") { const n0 = f.dataset.name, c1 = data.chemBy[need("#fr-to").toUpperCase()]; if (!c1 || c1.name === n0) return bad("Pick another chemical from the list."); if (!data.chemicals.some((x) => x.name === n0)) return bad(n0 + " is no longer on the chemical list."); return saveNew({ type: "chem_rename", lot_no: n0, data: { from: n0, to: c1.name, qty: (data.chemicals.find((x) => x.name === n0) || {}).ledger_qty || 0 } }, "Rename saved. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-chem_delete") return saveNew({ type: "chem_delete", lot_no: f.dataset.name, data: { name: f.dataset.name } }, "Delete saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-chem_void") { const m = rows("SELECT * FROM chem_moves WHERE id=?", [Number(f.dataset.id)])[0]; return saveNew({ type: "chem_void", lot_no: m.chemical, data: { id: m.id, qty: m.qty, type: String(m.entry_type).toLowerCase() } }, "Void saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-route") { const st = JSON.parse(f.dataset.steps || "[]"); if (!st.length) return bad("Add at least one step, or use the standard order."); return rtSave(f, st, btn); }
     if (f.id === "fm-no_finish" || f.id === "fm-no_finish_off") { const lot = f.dataset.lot, on = f.id === "fm-no_finish", why = need("#nf-why");
       if (on && !why) return bad("Say why there is no finishing.");
       if (on && entries.some((e) => e.type === "chem_adjust" && isWait(e) && e.lot_no === lot && e.data.fin === "1")) return bad("A finishing adjustment for " + lot + " is already waiting for Excel. Cancel it in Entries first.");
@@ -5217,8 +5278,23 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // ---------------------------------------------------------------- phone entries
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const stageNames = () => data.stages.map((s) => s.name);
+  // routes (19-Nov-2026): each product (process page) can have its own list of stages; every stage has a phase
+  const PHASES = ["WET END", "CRUSTING", "FINISHING", "QC", "DISPATCHED"];
+  const OFF_ROUTE = /^(ON HOLD.*|DUMPED|PURCHASE)$/i;
+  function phaseOf(n) {
+    const k = UP(n); if (k === "DISPATCHED") return "DISPATCHED"; if (OFF_ROUTE.test(k)) return "";
+    if ((data.stagePhase || {})[k]) return data.stagePhase[k];
+    const g = gateNo(k), fat = gateNo("FAT"), fin = gateNo("FINISHING"), qc = gateNo("QC / Ready for Dispatch");
+    if (!g || !fat) return ""; return g <= fat ? "WET END" : g < fin ? "CRUSTING" : g < qc ? "FINISHING" : "QC";
+  }
+  const stdRoute = () => data.stages.filter((s) => !OFF_ROUTE.test(s.name) && !/^DISPATCHED$/i.test(s.name) && !s.wait).map((s) => s.name);
+  const pageRoute = (page) => { const r = (data.routes || {})[normPage(page)]; return r && r.steps.length ? r : null; };
+  const lotRoute = (l) => { const r = l && pageRoute(l.process_page); return r ? r.steps : stdRoute(); };
+  const routeIdx = (l, n) => lotRoute(l).findIndex((x) => UP(x) === UP(n));
   const stageNo = (n) => { const s = data.stages.find((x) => x.name.toUpperCase() === String(n || "").toUpperCase()); return s ? s.seq : null; };
-  function nextStage(cur) {
+  function nextStage(cur, l) {
+    if (l) { const R = lotRoute(l), i = R.findIndex((x) => UP(x) === UP(cur)); if (i >= 0) return R[i + 1] || "Dispatched";
+      const pc = PHASES.indexOf(phaseOf(cur)); const n = R.find((x) => PHASES.indexOf(phaseOf(x)) > pc); if (n) return n; }
     const i = data.stages.findIndex((s) => s.name.toUpperCase() === String(cur || "").toUpperCase());
     const n = data.stages.slice(i + 1).find((s) => !["ON HOLD", "DUMPED", "PURCHASE"].includes(s.name.toUpperCase()));
     return n ? n.name : "";
@@ -5227,6 +5303,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function gateNo(n) {
     let m = null; try { m = JSON.parse(one("SELECT value FROM meta WHERE key='stage_no'") || "null"); } catch (e) { m = null; }
     const k = UP(n); if (m && k in m) return Number(m[k]) || 0;
+    const ph = (data.stagePhase || {})[k];
+    if (ph && k !== "FAT") { const f = gateNo("FAT"); return ph === "WET END" ? f : ph === "CRUSTING" ? f + 1 : ph === "FINISHING" ? gateNo("FINISHING") : ph === "QC" ? gateNo("QC / Ready for Dispatch") : 0; }
     if (k === "DUMPED") return stageNo("QC / Ready for Dispatch") || 0;
     if (k.startsWith("ON HOLD")) return 0;
     return stageNo(n) || 0;
@@ -5247,9 +5325,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return { sec, text: l0.lot_no + " can't move to " + to + " until " + sec.map((x) => x.toLowerCase()).join(" and ") + " chemicals are adjusted. If only part of the lot is going ahead (approval sample, finish setup), record it instead; the lot stays where it is." };
   }
   function stageForm(l) {
-    const nx = nextStage(l.stage);
+    const nx = nextStage(l.stage, l), R = lotRoute(l), own = pageRoute(l.process_page), inR = new Set(R.map(UP)), others = stageNames().filter((n) => !inR.has(UP(n)));
+    const o = (n) => `<option value="${esc(n)}"${n === (presetStage || nx) ? " selected" : ""}>${esc(n)}${phaseOf(n) ? " · " + phaseOf(n).toLowerCase() : ""}</option>`;
     return `<form class="fm" id="fm-stage" data-lot="${esc(l.lot_no)}"><h3>Move ${esc(l.lot_no)} from ${esc(l.stage || "no stage")}</h3>
-      <div class="two"><label>New stage<select id="fs-stage">${stageNames().map((n) => `<option${n === (presetStage || nx) ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
+      <div class="two"><label>New stage<select id="fs-stage"><optgroup label="${own ? "Stages of " + esc(own.page) : "Standard order"}">${R.map(o).join("")}</optgroup><optgroup label="Other stages">${others.map(o).join("")}</optgroup></select></label>
       <label>Date<input id="fs-date" type="date" value="${iso(today)}"></label></div>
       <label>Note<input id="fs-note" autocomplete="off"></label><p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
@@ -5299,7 +5378,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (to.toUpperCase() === String(l.stage || "").toUpperCase()) { msg.textContent = l.lot_no + " is already in " + to + "."; return; }
       const since = toDate(l.stage_since);
       if (since && toDate(date) < since) { msg.textContent = "The date is before the lot entered " + l.stage + " (" + fmtD(l.stage_since) + ")."; return; }
-      const a = stageNo(l.stage), b = stageNo(to), up = to.toUpperCase(), cu = String(l.stage || "").toUpperCase();
+      const ra = routeIdx(l, l.stage), rb = routeIdx(l, to), a = ra >= 0 && rb >= 0 ? ra + 1 : stageNo(l.stage), b = ra >= 0 && rb >= 0 ? rb + 1 : stageNo(to), up = to.toUpperCase(), cu = String(l.stage || "").toUpperCase();
       const sg = data.stages.find((x) => x.name.toUpperCase() === cu), minD = sg ? Number(sg.min_days) || 0 : 0, hereD = since ? Math.floor((toDate(date) - since) / DAY) : null;
       if (since && minD > 0 && hereD < minD && warnOnce(f, l.stage + " normally takes at least " + fmtN(minD, 0) + " day(s); " + l.lot_no + " has been there " + hereD + " day(s).")) return;
       if (a && b && b < a && !["ON HOLD", "DUMPED"].includes(up) && cu !== "ON HOLD" && warnOnce(f, to + " comes before " + l.stage + ".")) return;
@@ -5402,6 +5481,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "chem_adjust") return "Adjust stock: " + [d.crust === "1" ? "crusting" : "", d.fin === "1" ? "finishing" : ""].filter(Boolean).join(" and ") + `, ${(e.lines || []).length} chemicals`;
     if (e.type === "chem_readjust") return `Re-adjust stock: ${d.n} chemicals`;
     if (e.type === "chem_undo") return "Undo chemical entry: " + d.what.toLowerCase();
+    if (e.type === "stage_add") return "New stage " + d.name + " (" + String(d.phase || "").toLowerCase() + ")";
+    if (e.type === "route_set") { const n = String(d.steps || "").split("~^~").filter(Boolean); return n.length ? "Stages of " + d.page + ": " + n.join(" → ") : d.page + ": standard stage order"; }
     if (e.type === "no_finish") return d.on === "0" ? "Finishing needed after all" + (d.reason ? ": " + d.reason : "") : "No finishing" + (d.reason ? ": " + d.reason : "");
     if (e.type === "purchase_edit") return `Edit purchase: ${d.supplier}, ${d.pcs} pcs, ${d.sqft} sqft`;
     if (e.type === "order_edit") return `Edit item: ${d.item}, ${fmtN(d.qty, 0)} sqft`;
@@ -5897,6 +5978,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (lv) { const k0 = lv.dataset.loadver, lot0 = k0.slice(4).split("|")[0]; stack.push({ tab, k: sel[tab] }); loadProcess(data.lotBy[lot0], k0); return; }
     const sg = e.target.closest("[data-skinsgo]");
     if (sg) { formOpen = null; const prev = stack.pop(); if (prev) sel[tab] = prev.k; openForm(sg.dataset.skinsgo); return; }
+    if (e.target.closest("[data-rt]")) { e.preventDefault(); rtAct(e.target.closest("[data-rt]")); return; }
     if (e.target.closest("[data-pageonly]")) { const f = $("#fm-process"), l = data.lotBy[f.dataset.lot], to = $("#fo-page").value, msg = $("#fm-msg");
       if (!to) { msg.textContent = "Pick a page."; return; }
       if (normPage(to) === normPage(l.process_page || "")) { msg.textContent = "That is already the lot's process page."; return; }
@@ -5964,6 +6046,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       else { const i = Number(t.dataset.ql); qEd.lines[i][t.dataset.f] = t.value; if (t.dataset.f === "item") { const h = qHints(t.value), el = $("#q-hint-" + i); if (el) el.innerHTML = `${h.sold ? `Last sold at ₹${fmtN(h.sold.rate, 2)} (PO ${esc(h.sold.po)}, ${esc(h.sold.cust)}, ${fmtS(h.sold.date)}). ` : ""}${h.cp ? `<button type="button" class="lnk" data-qcp="${i}|${h.cp.v}">Use ₹${fmtN(h.cp.v, 2)} cost from ${esc(h.cp.lot)}</button>` : ""}`; } }
       qTotRefresh(); return; } }
     if (e.target.dataset && e.target.dataset.ac) acFill(e.target);
+    if (e.target.id === "rt-copy" && e.target.value) { const f = $("#fm-route"), r = pageRoute(e.target.value); if (r) { f.dataset.steps = JSON.stringify(r.steps.map((n) => ({ name: n }))); rtDraw(f); } return; }
     if (e.target.id === "fo-page") { const f = $("#fm-process"), l = data.lotBy[f.dataset.lot]; $("#fo-src").innerHTML = procSrcOpts(e.target.value, l.lot_no); $("#fo-hint").textContent = procHint(l, e.target.value); return; }
     if (e.target.id === "cmp-page") { const p = e.target.value; $("#cmp-b").innerHTML = pageRecipes(p).map((x) => recOpt(x)).join(""); }
     if (["cmp-a", "cmp-b", "cmp-page"].includes(e.target.id)) { $("#cmp-out").innerHTML = cmpHtml($("#cmp-a").value, $("#cmp-b").value); return; }
