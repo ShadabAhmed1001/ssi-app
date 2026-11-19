@@ -1763,7 +1763,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 151, at: "2026-11-19T14:18:30+05:30", notes: "The app can keep the records now even with entries waiting for Excel; new stages, product stage orders, no-finishing marks and lot-move stages are written by the app itself" };
+  const APP_BUILD = { v: 152, at: "2026-11-19T15:19:32+05:30", notes: "Delivery form shows the skins still pending delivery" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -5415,6 +5415,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const iv = o ? invLive().filter((x) => (x.lines || []).some((ln) => ln.dkey && (ln.dkey === o.k || dkeyAlias(ln.dkey).includes(o.k)))) : [];
     return `<form class="fm" id="fm-delivery" data-lot="${esc(l.lot_no)}"><h3>${o ? "Correct the delivery of " + fmtD(o.date) : "Delivery for " + esc(l.lot_no)}</h3>
       ${o ? `<p class="note" style="margin:0">Was ${hs(o.hides, o.sides)} hides, ${fmtN(o.sqft, 2)} sqft${o.doc ? ", bill " + esc(o.doc) : ""}. ${o.k.startsWith("d:") ? "Excel cancels the old delivery and records this one, so the history keeps both." : "This replaces the entry still waiting for Excel."}${iv.length ? " On " + iv.map((x) => esc(invName(x))).join(", ") + (iv.some((x) => x.tally_no) ? "; an invoice already in Tally must be corrected in Tally too." : "; the invoice is updated.") : ""}</p>` : ""}
+      ${(() => { const dp = deliveredPcs(l.lot_no) - (o ? Number(o.hides || 0) + Number(o.sides || 0) / 2 : 0), ds = deliveredSqft(l.lot_no) - (o ? Number(o.sqft) || 0 : 0), lp = Number(l.lot_pcs) || 0, left = +(lp - dp).toFixed(1);
+        return `<p class="calc" style="margin:0">Pending delivery: <b class="${left < 0 ? "late" : ""}">${fmtN(left, 1)} pcs</b> of ${fmtN(lp, 0)}${dp ? ` · ${fmtN(dp, 1)} pcs, ${fmtN(ds, 2)} sqft delivered${o ? " (not counting this one)" : ""}` : " · nothing delivered yet"}</p>`; })()}
       <div class="two"><label>Hides (whole)<input id="fd-pcs" type="number" min="0" step="any" inputmode="decimal"${v(o && o.hides)}></label><label>Sides<input id="fd-sides" type="number" min="0" step="1" inputmode="numeric"${v(o && o.sides)}></label><label>Sqft<input id="fd-sqft" type="number" min="0" step="any" inputmode="decimal"${v(o && o.sqft)}></label>
       <label>Date<input id="fd-date" type="date" value="${o ? esc(o.date) : iso(today)}"></label><label>Bill / challan no<input id="fd-doc" autocomplete="off"${v(o && o.doc)}></label></div>
       <label>Note<input id="fd-note" autocomplete="off"${v(o && o.note)}></label>${o ? `<label>What was wrong${o.k.startsWith("d:") ? "" : " (optional)"}<input id="fd-why" autocomplete="off" placeholder="for example wrong sqft typed"></label>` : ""}<p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
