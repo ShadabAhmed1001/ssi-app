@@ -1399,7 +1399,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "today") { $("#list").innerHTML = ws.length ? searchAll(ws) : todayView(); return; }
     if (tab === "lots" && filter.lots === "drafts") {
       const ds = allDrafts().filter((d) => match((d.r.lot_no + " " + d.r.process + " " + (d.r.details || "")).toLowerCase(), ws));
-      $("#list").innerHTML = `<div class="count"><span>${ds.length} unsaved process${ds.length === 1 ? "" : "es"} on this phone</span></div>` + (ds.length ? ds.map((d) => recCard(d.r).replace('<span class="m">', `<span class="m"><b style="color:var(--warn)">Unsaved · ${esc(new Date(d.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))}</b>`)).join("") : `<p class="empty">No unsaved process changes. Changes you make in the process editor and leave without saving show up here.</p>`);
+      $("#list").innerHTML = `<div class="count"><span>${ds.length} unsaved process${ds.length === 1 ? "" : "es"} on this phone</span></div>` + (ds.length ? ds.map((d) => (d.isNew ? recCard(d.r).replace('data-k=', 'data-draftopen=') : recCard(d.r)).replace('<span class="m">', `<span class="m"><b style="color:var(--warn)">Unsaved · ${esc(new Date(d.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))}</b>`)).join("") : `<p class="empty">No unsaved process changes. Changes you make in the process editor and leave without saving show up here.</p>`);
       return;
     }
     if (tab === "lots" && filter.lots === "proc") {
@@ -1782,7 +1782,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 156, at: "2026-11-19T20:39:12+05:30", notes: "Picking a PO for extra sqft shows its quantity, used up and pending" };
+  const APP_BUILD = { v: 157, at: "2026-11-19T22:57:30+05:30", notes: "Unsaved changes of a new or loaded process (like a rework process) now show under Unsaved processes and on the rework" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3163,7 +3163,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return `<div class="rws${st.wait ? " pend" : ""}"><p style="margin:0"><b>${i + 1}. ${esc(st.step || "Step")}</b> <span class="note">${fmtS(st.date)}${st.time ? " " + esc(st.time) : ""}${st.by ? " · " + esc(st.by) : ""}</span>${st.wait ? ` <span class="wait">waiting</span>` : can && r.status !== "MERGED" ? ` <button class="mini" data-form="rework_void:${esc(r.key)}|${esc(st.use)}">Remove</button>` : ""}</p>
         ${st.how ? `<p class="rwhow">${esc(st.how)}</p>` : ""}
         ${ls.length ? `<div class="tbl"><table><tbody>${ls.map((x) => `<tr><td>${lineTxt(x)}${x.note ? `<br><span class="note">${esc(x.note)}</span>` : ""}</td><td class="r num">${fmtN(x.amt, 0)}</td></tr>`).join("")}</tbody>${ls.length > 1 ? `<tfoot><tr><td>Step cost</td><td class="r num">${fmtN(sub, 0)}</td></tr></tfoot>` : ""}</table></div>` : ""}</div>`; }).join("");
-    const pk = rwRecKey(r), procB = pk ? `<button class="btn" data-go="lots" data-k="${esc(pk)}">Rework process</button>` : can && r.status === "OPEN" ? `<button class="btn" data-form="rwproc:${esc(r.key)}">Start the rework process</button>` : "";
+    const pk = rwRecKey(r), dk = !pk ? allDrafts().find((d) => d.isNew && d.k.startsWith("rec:" + rwPLot(r) + "|")) : null;
+    const procB = pk ? `<button class="btn" data-go="lots" data-k="${esc(pk)}">Rework process</button>` : dk ? `<button class="btn" data-draftopen="${esc(dk.k)}">Carry on with the unsaved rework process</button>` : can && r.status === "OPEN" ? `<button class="btn" data-form="rwproc:${esc(r.key)}">Start the rework process</button>` : "";
     const acts = !can ? (pk ? procB : "") : r.status === "OPEN" ? `${procB}<button class="btn alt" data-form="rework_use:${esc(r.key)}">Add a step by hand</button><button class="btn alt" data-form="rework_done:${esc(r.key)}">Rework done</button>`
       : r.status === "DONE" && !r.whole && data.lotBy[r.lot] && data.lotBy[r.lot].state === "OPEN" ? `${procB}<button class="btn" data-form="rework_merge:${esc(r.key)}">Merge back into ${esc(r.parent)}</button>` : procB;
     return `<div class="rwc"><p style="margin:0"><b>${esc(rwName(r))}</b> ${rwStatus(r)}</p>
@@ -3471,17 +3472,24 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const note = $("#ed-chg"); if (note) { note.style.display = n || gone ? "" : "none"; note.innerHTML = n || gone ? `<span class="chgkey"></span> ${n ? `${n} changed line${n === 1 ? "" : "s"} not saved yet` : ""}${n && gone ? " · " : ""}${gone ? `${gone} line${gone === 1 ? "" : "s"} removed` : ""}. The marks go once you save.` : ""; }
   }
   function edKeepDraft() {
-    if (!ed || ed.preview) return false;
-    try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, ed })); return true; } catch (e) { return false; }
+    if (!ed || ed.preview === "page") return false;
+    try { if (edData(ed) === edBase) { localStorage.removeItem(DRAFT(ed.key)); return false; } localStorage.setItem(DRAFT(ed.key), JSON.stringify({ at: Date.now(), ver: ed.ver0, cur: curV(ed.key), ed })); return true; } catch (e) { return false; }
   }
   const edDropDraft = (k) => { try { localStorage.removeItem(DRAFT(k)); } catch (e) {} };
   // unsaved changes kept on this phone for a process (only while they still fit the saved version)
+  // the saved version of a process key when the draft was kept (0 = not saved yet: a new process, or one loaded from another lot)
+  const curV = (k) => { const r = getRecipe(k); return r ? r.version || 0 : 0; };
+  // a draft still fits when nothing was saved over it since; older drafts (no cur) also count when they were a new or loaded process
+  const draftOk = (d, k) => { if (!d || !d.ed) return false; const r = getRecipe(k); if (d.cur !== undefined) return d.cur === curV(k); return !r || d.ver === (r.version || 0) || !!d.ed.base_lot; };
+  const draftRec = (k, d) => getRecipe(k) || { key: k, lot_no: d.ed.lot, process: d.ed.process, version: 0, details: d.ed.details || "" };
+  function openDraft(k) { let d = null; try { d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); } catch (e) { d = null; } if (!draftOk(d, k)) return false;
+    sel.lots = k; ed = Object.assign(d.ed, { restored: d.at }); edBase = ""; edRows = edRowMap(ed); formOpen = "recipe"; flash = ""; showDetail(); $("#detail").scrollTop = 0; return true; }
   function allDrafts() {
     const out = [];
-    try { for (let i = 0; i < localStorage.length; i++) { const n = localStorage.key(i); if (!n || n.indexOf("ssi-draft:") !== 0) continue; const k = n.slice(10), d = draftOf(k), r = d && getRecipe(k); if (r) out.push({ k, at: d.at, r: Object.assign({ key: k }, r) }); } } catch (e) {}
+    try { for (let i = 0; i < localStorage.length; i++) { const n = localStorage.key(i); if (!n || n.indexOf("ssi-draft:") !== 0) continue; const k = n.slice(10), d = draftOf(k); if (d) out.push({ k, at: d.at, isNew: !getRecipe(k), r: Object.assign({ key: k }, draftRec(k, d)) }); } } catch (e) {}
     return out.sort((a, b) => b.at - a.at);
   }
-  function draftOf(k) { try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"), r = d && getRecipe(k); return d && d.ed && r && d.ver === (r.version || 0) ? d : null; } catch (e) { return null; } }
+  function draftOf(k) { try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); return draftOk(d, k) ? d : null; } catch (e) { return null; } }
   let draftT = null;
   const draftSoon = () => { clearTimeout(draftT); if (formOpen === "recipe" && ed) edKeepDraft(); };
   // keep the draft before any tap leaves the editor, and again after taps that add, remove or join lines
@@ -3492,7 +3500,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     finNotesNorm(); crustTimeNorm();
     edBase = edData(ed); edRows = edRowMap(ed);
     if (seed || fresh) return;
-    try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); if (d && d.ed && d.ed.key === k && d.ver === ed.ver0) { const keep = { movePage: ed.movePage }; ed = Object.assign(d.ed, keep, { restored: d.at }); } else if (d) edDropDraft(k); } catch (e) {}
+    try { const d = JSON.parse(localStorage.getItem(DRAFT(k)) || "null"); if (d && d.ed && d.ed.key === k && draftOk(d, k)) { const keep = { movePage: ed.movePage }; ed = Object.assign(d.ed, keep, { restored: d.at }); } else if (d) edDropDraft(k); } catch (e) {}
   }
   function openEditor0(k, seed) {
     const r = seed || getRecipe(k);
@@ -5778,7 +5786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th class="r">Qty</th><th class="r">Balance</th><th>Reason</th></tr></thead><tbody>${shown.map((x) => { const m = x.m;
         return `<tr class="${x.void ? "void" : ""}"><td class="nw">${fmtS(x.date)}</td><td class="nw">${esc(x.kind)}${x.wait ? ` <span class="wait">waiting</span>` : ""}</td><td class="nw">${x.ref && data.lotBy[x.ref] ? lotLink(x.ref) : esc(x.ref || "")}${x.sec ? " " + esc(String(x.sec).toLowerCase()) : ""}</td><td class="r num"${x.qty > 0 ? ' style="color:var(--ok,#15803d)"' : ""}>${x.qty > 0 ? "+" : ""}${fmtN(x.qty, 3)}</td><td class="r num"${x.bal < -0.0005 ? ' style="color:var(--bad,#b91c1c)"' : ""}>${x.void ? "" : fmtN(x.bal, 3)}</td><td>${esc(x.why || "")}${m && store && canWrite && m.status === "OK" && ["SAMPLING", "WASTAGE", "ISSUED OTHER", "CORRECTION"].includes(String(m.entry_type).toUpperCase()) && !entries.some((e) => e.type === "chem_void" && e.status === "pending" && Number(e.data.id) === m.id) ? ` <button class="mini" data-form="chem_void:${m.id}">Void</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>${L0.length > SHOW ? `<p class="note">Showing the latest ${SHOW} of ${L0.length} lines.</p>` : ""}` : `<p class="note">No movements yet.</p>`}`;
   }
-  function closeOrStay() { const kept = edKeepDraft(), y = ed; formOpen = null; ed = null; flash = kept ? "Not saved. Your changes are kept: tap Edit recipe to carry on." : ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
+  function closeOrStay() { const kept = edKeepDraft(), y = ed; formOpen = null; ed = null; flash = kept ? (y && (!getRecipe(y.key) || y.base_lot) ? "Not saved. Your changes are kept on this phone: open them from Processes › Unsaved processes." : "Not saved. Your changes are kept: tap Edit recipe to carry on.") : ""; if (y && !getRecipe(y.key)) { const prev = stack.pop(); sel.lots = prev ? prev.k : y.lot; render(); } showDetail(); }
   // ---------------------------------------------------------------- page polish: summary card, folding sections, action menus, sheets
   const SECOPEN = {}; try { Object.assign(SECOPEN, JSON.parse(localStorage.getItem("ssi-secs") || "{}")); } catch (e) {}
   const secIsOpen = (k, def) => (k in SECOPEN ? SECOPEN[k] : def);
@@ -6014,6 +6022,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   });
   $("#list").addEventListener("pointercancel", swipeEnd);
   $("#list").addEventListener("click", async (e) => {
+    { const dr = e.target.closest("[data-draftopen]"); if (dr) { stack = []; if (!openDraft(dr.dataset.draftopen)) showToast("That unsaved process is no longer there."); return; } }
     if (e.target.closest("[data-qnew]")) { sel[tab] = null; stack = []; qEd = qNew(); openForm("quote:new"); return; }
     { const b = e.target.closest("[data-paynew]"); if (b) { sel[tab] = null; stack = []; payEd = { dir: b.dataset.paynew, status: "Planned", date: today0() }; openForm("payment:new"); return; } }
     { const b = e.target.closest("[data-payper]"); if (b) { filter.payPer = b.dataset.payper; render(); return; } }
@@ -6118,7 +6127,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (act) { flash = ""; delEdit = null; formOpen = act.dataset.act; showDetail(); $("#detail").scrollTop = 0; return; }
     const dle = e.target.closest("[data-deledit]"); if (dle) { flash = ""; delEdit = dle.dataset.deledit; formOpen = "delivery"; showDetail(); $("#detail").scrollTop = 0; return; }
     { const dd = e.target.closest("[data-draftdrop]"); if (dd) { if (!dd.dataset.sure) { dd.dataset.sure = "1"; dd.textContent = "Tap again to discard"; return; } edDropDraft(dd.dataset.draftdrop); showToast("Unsaved changes discarded."); showDetailKeep(); return; } }
-    if (e.target.closest("[data-eddiscard]")) { const k = ed.key; edDropDraft(k); openEditor(k, null, true); showDetail(); $("#detail").scrollTop = 0; return; }
+    if (e.target.closest("[data-eddiscard]")) { const k = ed.key; edDropDraft(k); if (!getRecipe(k)) { const l = ed.lot; formOpen = null; ed = null; flash = "Unsaved changes discarded."; sel.lots = l; showDetail(); return; } openEditor(k, null, true); showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-formclose]")) { if (formOpen === "recipe") closeOrStay(); else { formOpen = null; showDetail(); } return; }
     if (e.target.closest("[data-fillall]")) { const f = e.target.closest("form"); $("#fv-pcs").value = f.dataset.pcs; $("#fv-sqft").value = f.dataset.sqft; lmShow(); return; }
     if (e.target.closest("[data-markdisp]")) { presetStage = "Dispatched"; flash = ""; formOpen = "stage"; showDetail(); presetStage = ""; $("#detail").scrollTop = 0; return; }
@@ -6134,6 +6143,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     }
     if (e.target.closest("[data-editlot]")) { const lot = ed.lot; edKeepDraft(); ed = null; stack.push({ tab, k: sel[tab] }); sel.lots = lot; formOpen = "lot"; flash = ""; showDetail(); $("#detail").scrollTop = 0; return; }
     if (e.target.closest("[data-recnextdone]")) { recNext = null; showDetail(); return; }
+    { const dr = e.target.closest("[data-draftopen]"); if (dr) { if (!openDraft(dr.dataset.draftopen)) showToast("That unsaved process is no longer there."); return; } }
     if (e.target.closest("[data-edrec]")) { flash = ""; openEditor(sel[tab]); showDetail(); $("#detail").scrollTop = 0; return; }
     const lv = e.target.closest("[data-loadver]");
     if (lv) { const k0 = lv.dataset.loadver, lot0 = k0.slice(4).split("|")[0]; stack.push({ tab, k: sel[tab] }); loadProcess(data.lotBy[lot0], k0); return; }
