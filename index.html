@@ -157,6 +157,8 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .pill.idle { background: var(--idle-soft); color: var(--idle); }
 .pill.info { background: var(--accent-soft); color: var(--accent); }
 .late { color: var(--bad); font-weight: 600; }
+.warnbox { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.warnbox label { margin-top: 6px; }
 .soon { color: var(--warn); font-weight: 600; }
 
 .detail { display: none; overflow-y: auto; min-height: 0; background: var(--surface); border-left: 1px solid var(--line);
@@ -853,6 +855,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (d.close === "1") enRun("UPDATE order_lines SET short_on=?, short_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET short_on=NULL, short_note=NULL WHERE id=?", [id]); },
     po_link(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
       enRun("INSERT OR REPLACE INTO lot_orders(lot_no, line_id, linked_at, linked_by) VALUES(?,?,?,?)", [l.lot_no, id, e.created_at || enNow(), e.entered_by || ""]); },
+    // a part of a lot's sqft counted on another PO, or the reason a PO took more than 115%
+    po_share(e) { const d = e.data || {}, l = enLot(d.lot || e.lot_no), from = ENGINE._line(d.line_id), to = d.to_line ? ENGINE._line(d.to_line) : null;
+      enRun("CREATE TABLE IF NOT EXISTS lot_po_shares(id INTEGER PRIMARY KEY, lot_no TEXT, line_id INTEGER, from_line INTEGER, sqft REAL, reason TEXT, entry_id TEXT, created_at TEXT, made_by TEXT)");
+      if (to) ENGINE._lineRow(to);
+      enRun("INSERT INTO lot_po_shares(lot_no, line_id, from_line, sqft, reason, entry_id, created_at, made_by) VALUES(?,?,?,?,?,?,?,?)", [l.lot_no, to, from, Number(d.sqft) || 0, d.reason || "", e.id, e.created_at || enNow(), e.entered_by || ""]); },
     po_unlink(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=UPPER(?) AND line_id=?", [d.lot || e.lot_no, id]); },
     po_delete(e) { const oid = Number((e.data || {}).order_id) || 0;
       if (enOne("SELECT COUNT(*) n FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id WHERE l.order_id=?", [oid]).n) throw new Error("lots are linked to this PO. Unlink them first");
@@ -1152,6 +1159,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const links = {}; rows("SELECT * FROM lot_orders").filter((r) => !linksE.some((e) => e.lot_no === r.lot_no) && !unlinkE.some((e) => e.lot_no === r.lot_no && Number(e.line_id) === r.line_id && !linkedLater(e))).forEach((r) => (links[r.line_id] = links[r.line_id] || []).push(r.lot_no));
     linksE.forEach((e) => (links[e.line_id] = links[e.line_id] || []).push(e.lot_no));
     nlPo.forEach((r) => { const a = (links[r.line_id] = links[r.line_id] || []); if (!a.includes(r.lot_no)) a.push(r.lot_no); });
+    { let t = []; try { t = rows("SELECT * FROM lot_po_shares"); } catch (x) { t = []; }
+      data.shares = t.map((r) => ({ lot_no: UP(r.lot_no), line_id: r.line_id == null ? null : Number(r.line_id), from_line: Number(r.from_line), sqft: Number(r.sqft) || 0, reason: r.reason || "", at: r.created_at, by: r.made_by }))
+        .concat(of("po_share").map((e) => { const d = e.data || {}; return { lot_no: UP(d.lot), line_id: d.to_line ? Number(d.to_line) : null, from_line: Number(d.line_id), sqft: Number(d.sqft) || 0, reason: d.reason || "", at: e.created_at, by: e.entered_by, eid: e.id }; }));
+      data.shares.filter((x) => x.line_id != null).forEach((x) => { const a = (links[x.line_id] = links[x.line_id] || []); if (!a.includes(x.lot_no)) a.push(x.lot_no); }); }
     const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
     data.orders = rows("SELECT l.*, o.po_no, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id").map((o) => {
       orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }); });
@@ -1160,7 +1171,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       return o; }).concat(synthLines).map((o) => {
       const lots = (links[o.id] || []).sort();
       let sqf = 0, delv = 0;
-      lots.forEach((k) => { const l = lotBy[k]; if (l) { sqf += l.lot_sqft || 0; delv += l.delivered || 0; } });
+      lots.forEach((k) => { const l = lotBy[k]; if (l) { const sh = shareOn(l, o.id); sqf += sh; delv += (l.delivered || 0) * (l.lot_sqft ? Math.min(1, sh / l.lot_sqft) : 0); } });
       const qty = o.qty_sqft || 0;
       const short = !!o.short_on && sqf > 0, target = short ? sqf : qty; // closed short by hand: what is in the lots becomes the target
       const status = o.closed_on ? "ARCHIVED" : (qty && delv >= target * 0.98) ? "DELIVERED" : (qty && sqf >= target) ? "ALL IN PRODUCTION" : lots.length ? "PART IN PRODUCTION" : "NOT STARTED";
@@ -1259,7 +1270,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
 
     const att = data.lots.filter((l) => l.grp === 1 && (l.flag === "bad" || l.flag === "warn")).length;
     $("#n-today").textContent = att + " to check";
-    data.pending = entries.filter((e) => isWait(e));
+    data.pending = entries.filter((e) => isWait(e) && !APP_ONLY.includes(e.type));
     $("#n-lots").textContent = data.lots.filter((l) => l.grp === 1).length + " open";
     $("#n-orders").textContent = data.orders.filter((o) => o.grp === 1).length + " open";
     $("#n-purchases").textContent = data.purchases.filter((p) => p.grp === 1).length + " with skins";
@@ -1501,6 +1512,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // A chemical purchase bill typed on the phone counts in stock at once. Excel posts it to Tally as a Purchase voucher
   // (module TallyPurchase) unless the same bill is already there; then the phone shows both and the user chooses.
   const TALLY_TYPES = ["chem_purchase", "purchase_decision", "tally_delete"];
+  const APP_ONLY = ["po_share"]; // kept by the app itself in either mode; Excel never sees them
   const PB = { vtype: "Purchase", purchase: "Purchase", cgst: "Input CGST", sgst: "Input SGST", igst: "Input IGST", round: "Rounding Off", godown: "Main Location", home: "West Bengal" };
   const pbNorm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=.)/, "");
   const pbCred = () => trows("SELECT * FROM tally_creditors ORDER BY name");
@@ -1770,7 +1782,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 153, at: "2026-11-19T18:45:56+05:30", notes: "A new lot made for a PO shows under that PO straight away" };
+  const APP_BUILD = { v: 154, at: "2026-11-19T20:19:17+05:30", notes: "A PO takes wet blue up to 115% of its qty; beyond that the app asks for another PO for the extra or a reason. A lot can count on more than one PO" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4024,6 +4036,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     order: { title: "New PO", html: () => { const lines = (x, i) => `<div class="er ln" data-sec="lines" data-i="${i}"><input id="el-${i}-d" data-f="d" value="${v(x.d)}" placeholder="Item" aria-label="Item" autocomplete="off"><button type="button" class="x" data-eddel aria-label="Remove this item">×</button><div class="nums"><input id="el-${i}-q" data-f="q" value="${v(x.q)}" placeholder="Qty sqft" aria-label="Qty sqft" inputmode="decimal"><input id="el-${i}-r" data-f="r" value="${v(x.r)}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="el-${i}-a" data-f="a" value="${v(x.a)}" placeholder="Amount (auto)" aria-label="Amount" inputmode="decimal"><input id="el-${i}-h" data-f="h" value="${v(x.h)}" placeholder="HSN" aria-label="HSN" inputmode="numeric" data-numonly="1"></div></div>`;
       return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number")}${dateF("fo-date", "PO date", today0())}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
       <h3>Items</h3>${ed.lines.map(lines).join("")}<button type="button" class="btn alt" data-edadd="end" data-sec="lines">Add an item</button>${formEnd}</form>`; } },
+    po_share: { title: "Move sqft to another PO", html: (a) => { const [k, id] = String(a).split("|"), l = data.lotBy[k], o = data.orders.find((x) => String(x.id) === String(id)); if (!l || !o) return "";
+        const has = shareOn(l, o.id), over = o.qty_sqft ? Math.max(0, o.sqf - o.qty_sqft * PO_CAP) : 0;
+        const opts = data.orders.filter((x) => !x.isNew && !x.closed_on && x.id !== o.id && x.qty_sqft).map((x) => ({ x, room: x.qty_sqft * PO_CAP - poUse(x.id) })).sort((a, b) => (b.x.customer === o.customer) - (a.x.customer === o.customer) || b.room - a.room)
+          .map((r) => `<option value="${r.x.id}">PO ${esc(r.x.po_no)} · ${esc(r.x.customer)} · ${esc(r.x.item)} · room ${fmtN(Math.max(0, r.room), 0)} sqft</option>`).join("");
+        return `<form class="fm" id="fm-po_share" data-lot="${esc(k)}" data-id="${o.id}"><h3>${esc(k)} · PO ${esc(o.po_no)}</h3><p class="note" style="margin:0">${fmtN(has, 0)} sqft of ${esc(k)} count on this PO. ${over > 0.5 ? `The PO is ${fmtN(over, 0)} sqft over 115%.` : ""} The skins stay in the lot; only the PO they count for changes.</p>
+          <label>Sqft<input id="ps-sqft" inputmode="decimal" value="${over > 0.5 ? +Math.min(over, has).toFixed(2) : ""}"></label>
+          <label>Put them on PO<select id="ps-line"><option value="">- none, keep here and give the reason -</option>${opts}</select></label>
+          <label>Reason<input id="ps-why" placeholder="needed when no PO is picked"></label>${formEnd}</form>`; } },
     po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
     chem: { title: "Record use", html: (a) => `<form class="fm" id="fm-chem" data-chem="${esc(a)}"><h3>${esc(a)}</h3>
       <div class="two"><label>Type<select id="fc-kind"><option value="SAMPLING">Sampling</option><option value="WASTAGE">Wastage</option><option value="ISSUED OTHER">Issued other</option><option value="CORRECTION">Correction</option></select></label>
@@ -5001,11 +5021,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (/^P/.test(from) && (pcs > roomP + 0.0001 || sqft > roomS + 1)) return bad(from + " can give only " + fmtN(roomP, 0) + " pcs and " + fmtN(roomS, 2) + " sqft here.");
     const isLot = /^L/i.test(c.from), dp = +(pcs - c.pcs).toFixed(4), dS = +(sqft - c.sqft).toFixed(2);
     if (isLot && (dp > 0 || dS > 0)) return bad("Skins from another lot can only be lowered here. To add more, move them from " + c.from + " with Move skins.");
+    if (dS > 0 && capCheck(f, lotLine(c.lot), dS, UP(c.lot), msg)) return;
     btn.disabled = true; msg.textContent = "";
     try {
       if (c.pend) {
         await store.doc("entries/" + c.pend.id).update({ data: Object.assign({}, c.pend.data, { from, pcs, sqft, note: note }, fromEntry(from)) });
-        return closeForm("Entry changed. It is waiting for Excel.");
+        await flushShare(); return closeForm("Entry changed. It is waiting for Excel.");
       }
       const rs = $("#fe2-rs") ? $("#fe2-rs").value : "", es = $("#fe2-empty-w") && $("#fe2-empty-w").style.display !== "none" ? $("#fe2-empty").value : "";
       const r = c.r, back = (bp, bs) => ({ type: "skins_back", lot_no: r.to_key, data: Object.assign({ id: r.id, from: r.from_key, to: r.to_key, pcs: bp, sqft: bs, was_pcs: r.pcs, was_sqft: r.sqft, note: "Edit: " + note, edit_of: r.id, date: today0() }, rs ? { recv_stage: rs } : {}, es ? { empty_stage: es } : {}) });
@@ -5018,13 +5039,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const t0 = Date.now();
       if (list.length > 1) list.forEach((x) => { x.data.edit_grp = "G" + t0; });
       for (let i = 0; i < list.length; i++) await writeEntry(store.collection("entries").doc(), Object.assign(list[i], { status: "pending", entered_by: uid, created_at: new Date(t0 + i * 10).toISOString() }));
-      closeForm(list.length > 1 ? "Change saved as " + list.length + " steps. They are waiting for Excel." : "Change saved. It is waiting for Excel.");
+      await flushShare(); closeForm(list.length > 1 ? "Change saved as " + list.length + " steps. They are waiting for Excel." : "Change saved. It is waiting for Excel.");
     } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
   async function saveNew(body, done, msg, btn) {
     btn.disabled = true; msg.textContent = "";
     try {
       await writeEntry(store.collection("entries").doc(), Object.assign(body, { status: "pending", entered_by: uid, created_at: new Date().toISOString() }));
+      if (pendShare && body.type !== "po_share") await flushShare();
       closeForm(done);
     } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
@@ -5039,6 +5061,37 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   const need = (id) => $(id).value.trim();
   const numOf = (id) => parseFloat($(id).value) || 0;
+  // ---- PO quantity: a lot's wet blue sqft counts on its PO; part of it can be put on another PO (a share) ----
+  function shareOn(l, id) { const S = (data.shares || []).filter((x) => x.lot_no === UP(l.lot_no) && x.line_id != null), out = S.reduce((a, x) => a + x.sqft, 0);
+    let v = S.filter((x) => String(x.line_id) === String(id)).reduce((a, x) => a + x.sqft, 0);
+    if (l.po && String(l.po.line_id) === String(id)) v += Math.max(0, (Number(l.lot_sqft) || 0) - out); return v; }
+  const poUse = (id) => data.lots.reduce((a, l) => a + shareOn(l, id), 0);
+  const PO_CAP = 1.15;
+  let pendShare = null;
+  // stops the save (returns true) when the skins would take the PO past 115%, until another PO or a reason is given
+  function capCheck(f, line, add, lot, msg) {
+    pendShare = null; add = Number(add) || 0;
+    const o = line ? data.orders.find((x) => String(x.id) === String(line)) : null; if (!o || !o.qty_sqft || add <= 0) return false;
+    const lim = o.qty_sqft * PO_CAP, now = poUse(o.id), over = +(now + add - lim).toFixed(2); if (over <= 0.5) return false;
+    let box = f.querySelector("#pc-box");
+    if (!box) {
+      const opts = data.orders.filter((x) => !x.isNew && !x.closed_on && x.id !== o.id && x.qty_sqft).map((x) => ({ x, room: x.qty_sqft * PO_CAP - poUse(x.id) })).filter((r) => r.room > 0.5)
+        .sort((a, b) => (b.x.customer === o.customer) - (a.x.customer === o.customer) || b.room - a.room)
+        .map((r) => `<option value="${r.x.id}">PO ${esc(r.x.po_no)} · ${esc(r.x.customer)} · ${esc(r.x.item)} · room ${fmtN(r.room, 0)} sqft</option>`).join("");
+      f.querySelector("#fm-msg").insertAdjacentHTML("beforebegin", `<div id="pc-box" class="warnbox"><p style="margin:0 0 6px"><b>PO ${esc(o.po_no)} · ${esc(o.item)}</b> is for ${fmtN(o.qty_sqft, 0)} sqft, so up to ${fmtN(lim, 0)} sqft (115%) can go into it. It already has ${fmtN(now, 0)} sqft; this would make it ${fmtN(now + add, 0)}. <b>${fmtN(over, 0)} sqft are extra.</b></p>
+        <label>Put the extra ${fmtN(over, 0)} sqft on another PO<select id="pc-line"><option value="">-</option>${opts}</select></label>
+        <label>or type why this PO takes more<input id="pc-why" placeholder="e.g. customer asked for extra"></label></div>`);
+      msg.textContent = "Choose the PO for the extra sqft, or type the reason, then Save again."; return true;
+    }
+    const to = box.querySelector("#pc-line").value, why = box.querySelector("#pc-why").value.trim();
+    if (!to && !why) { msg.textContent = "Choose the PO for the extra sqft, or type the reason."; return true; }
+    if (to) { const t = data.orders.find((x) => String(x.id) === to), room = t.qty_sqft * PO_CAP - poUse(t.id);
+      if (over > room + 0.5 && !why) { msg.textContent = "PO " + t.po_no + " has room for only " + fmtN(room, 0) + " sqft. Pick another PO, or also type a reason."; return true; } }
+    pendShare = { type: "po_share", lot_no: lot, data: Object.assign({ lot, line_id: String(o.id), sqft: over, reason: why }, to ? { to_line: to } : {}) };
+    return false;
+  }
+  async function flushShare() { const b = pendShare; pendShare = null; if (b) await writeEntry(store.collection("entries").doc(), Object.assign(b, { status: "pending", entered_by: uid, created_at: new Date(Date.now() + 5).toISOString() })); }
+  const lotLine = (k) => { const l = data.lotBy[UP(k || "")]; return l && l.po ? l.po.line_id : null; };
   function submitNew(f) {
     const msg = $("#fm-msg"), btn = f.querySelector("[type=submit]"), bad = (t) => { msg.textContent = t; };
     if (f.id === "fm-update") return runUpdate(f);
@@ -5086,6 +5139,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (pcs <= 0 && sqft <= 0) return bad("Enter the pieces or sqft to move."); if (checkDate(date)) return bad(checkDate(date));
       { const av = (Number(data.lotBy[from].lot_pcs) || 0) - deliveredPcs(from); if (pcs > av + 0.0001) return bad(from + " has only " + fmtN(av, 0) + " pcs that are not delivered. A split or merge can't move more."); }
       if (sqft > (data.lotBy[from].lot_sqft || 0) + 1 && warnOnce(f, "That is more sqft than the lot has.")) return;
+      if (sel0 && capCheck(f, lotLine(to), sqft, to, msg)) return;
       const rs = $("#fv-rs").value, es = $("#fv-empty-w").style.display === "none" ? "" : $("#fv-empty").value;
       return saveNew({ type: "lot_move", lot_no: from, data: Object.assign({ from, to, is_new: sel0 ? "0" : "1", pcs, sqft, date, note: need("#fv-note") }, rs ? { recv_stage: rs } : {}, es ? { empty_stage: es } : {}) }, sel0 ? "Move saved. It is waiting for Excel." : "Split saved. It is waiting for Excel.", msg, btn);
     }
@@ -5175,6 +5229,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (pcs > r.leftP + 0.0001) return bad("That entry has only " + fmtN(r.leftP, 0) + " pcs."); if (sqft > r.leftS + 0.005) return bad("That entry has only " + fmtN(r.leftS, 2) + " sqft.");
       const old = entries.find((e) => e.type === "skins_back" && e.status === "pending" && Number(e.data.id) === r.id), note = need("#fb-note");
       if (old) { btn.disabled = true; store.doc("entries/" + old.id).update({ data: Object.assign({}, old.data, { pcs: +(old.data.pcs + pcs).toFixed(4), sqft: +(old.data.sqft + sqft).toFixed(2), note: note || old.data.note }) }).then(() => closeForm("Return updated. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return; }
+      if (/^L/i.test(r.from_key) && capCheck(f, lotLine(r.from_key), sqft, UP(r.from_key), msg)) return;
       const rs = $("#fb-rsl").style.display === "none" ? "" : $("#fb-rs").value, es = $("#fb-empty-w").style.display === "none" ? "" : $("#fb-empty").value;
       return saveNew({ type: "skins_back", lot_no: r.to_key, data: Object.assign({ id: r.id, from: r.from_key, to: r.to_key, pcs, sqft, was_pcs: r.pcs, was_sqft: r.sqft, note, date: today0() }, rs ? { recv_stage: rs } : {}, es ? { empty_stage: es } : {}) }, "Return saved. It is waiting for Excel.", msg, btn);
     }
@@ -5193,13 +5248,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const from = need("#fk-from"), to = need("#fk-to").toUpperCase(), pcs = numOf("#fk-pcs"), sqft = numOf("#fk-sqft"), date = need("#fk-date"), p = data.purchases.find((x) => x.key === from);
       if (!from) return bad("Pick the purchase."); if (!data.lotBy[to]) return bad("Pick a lot from the list."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft."); if (checkDate(date)) return bad(checkDate(date));
       if ((pcs > p.leftP + 0.0001 || sqft > p.leftS + 1) && warnOnce(f, from + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
+      if (capCheck(f, lotLine(to), sqft, to, msg)) return;
       return saveNew({ type: "skins", lot_no: to, data: Object.assign({ from, to, pcs, sqft, date, note: need("#fk-note") }, fromEntry(from)) }, "Skins saved. They are waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-new_lot") {
       const from = need("#fn-from"), pcs = numOf("#fn-pcs"), sqft = numOf("#fn-sqft"), date = need("#fn-date"), p = data.purchases.find((x) => x.key === from);
       if (!from) return bad("Pick the purchase."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft for the new lot."); if (checkDate(date)) return bad(checkDate(date));
       if ((pcs > p.leftP + 0.0001 || sqft > p.leftS + 1) && warnOnce(f, from + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
-      return saveNew({ type: "new_lot", lot_no: "NEW", data: { lot_no: nextKey("L"), ...fromEntry(from), from, pcs, sqft, date, line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") } }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
+      const nk = nextKey("L"); if (capCheck(f, need("#fn-line"), sqft, nk, msg)) return;
+      return saveNew({ type: "new_lot", lot_no: "NEW", data: { lot_no: nk, ...fromEntry(from), from, pcs, sqft, date, line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") } }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-purchase") {
       const pcs = numOf("#fp-pcs"), date = need("#fp-date");
@@ -5333,8 +5390,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (pcs > p.leftP + 0.0001 || sqft > p.leftS + 0.5) return bad("Only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft are left.");
       return saveNew({ type: "return_sale", lot_no: k, data: { key: k, date, pcs, sqft, buyer, inv: need("#fy-inv"), rate: numOf("#fy-rate") } }, "Sale saved. It is waiting for Excel.", msg, btn);
     }
+    if (f.id === "fm-po_share") {
+      const k = f.dataset.lot, l = data.lotBy[k], id = f.dataset.id, sq = numOf("#ps-sqft"), to = need("#ps-line"), why = need("#ps-why");
+      if (!(sq > 0)) return bad("Type the sqft."); if (sq > shareOn(l, id) + 0.5) return bad("Only " + fmtN(shareOn(l, id), 0) + " sqft of " + k + " count on this PO.");
+      if (!to && !why) return bad("Pick a PO, or type the reason for keeping the extra here.");
+      if (to) { const t = data.orders.find((x) => String(x.id) === to), room = t.qty_sqft * PO_CAP - poUse(t.id); if (sq > room + 0.5 && !why) return bad("PO " + t.po_no + " has room for only " + fmtN(room, 0) + " sqft. Pick another PO, or also type a reason."); }
+      return saveNew({ type: "po_share", lot_no: k, data: Object.assign({ lot: k, line_id: String(id), sqft: sq, reason: why }, to ? { to_line: to } : {}) }, "Saved.", msg, btn);
+    }
     if (f.id === "fm-po_link") {
       const line = need("#fl-line"); if (!line) return bad("Pick an order line.");
+      { const l = data.lotBy[f.dataset.lot]; if (String(lotLine(f.dataset.lot)) !== String(line) && capCheck(f, line, l ? Number(l.lot_sqft) || 0 : 0, f.dataset.lot, msg)) return; }
       return saveNew({ type: "po_link", lot_no: f.dataset.lot, line_id: Number(line), data: { lot: f.dataset.lot, line_id: line } }, "Link saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-chem") {
@@ -5579,6 +5644,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "new_lot") return `New lot from ${d.from}: ${[d.customer, d.product].filter(Boolean).join(" ")}, ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "purchase") return "New purchase: " + [d.supplier, [d.animal, d.grade].filter(Boolean).join(" "), fmtN(d.pcs, 0) + " pcs"].filter(Boolean).join(", ");
     if (e.type === "order") return `New PO for ${d.customer}: ${Object.keys(d).filter((k) => /^l\d+$/.test(k)).length} items`;
+    if (e.type === "po_share") { const po = (id) => (data.orders.find((o) => String(o.id) === String(id)) || {}).po_no || id; return fmtN(e.data.sqft, 0) + " sqft over 115% on PO " + po(e.data.line_id) + (e.data.to_line ? ", put on PO " + po(e.data.to_line) : "") + (e.data.reason ? ": " + e.data.reason : ""); }
     if (e.type === "po_link") return "Link to PO " + ((data.orders.find((o) => String(o.id) === String(e.line_id)) || {}).po_no || e.line_id);
     if (e.type === "chem") return `${d.kind.toLowerCase()} ${fmtN(d.qty, 3)}: ${d.reason}`;
     if (e.type === "recipe" && e.load_cur !== undefined) return `Process loaded from ${e.base_lot} v${e.base_version} · ${e.process}`;
@@ -5655,8 +5721,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${kv([["PO date", fmtD(o.po_date)], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
         ["Amount", o.amount ? "₹" + fmtN(o.amount, 0) : ""], ["HSN", esc(o.hsn)], ["In lots", fmtN(o.sqf, 2) + " sqft"], ["Delivered", fmtN(o.delv, 2) + " sqft"],
         ["Still to start", o.left > 0 ? fmtN(o.left, 2) + " sqft" + (o.short ? " (closed short, will not be made)" : "") : "-"], ["Left to deliver", o.leftDel > 0 ? fmtN(o.leftDel, 2) + " sqft" : "-"], ["Closed short on", o.short ? fmtD(o.short_on) : ""], ["Short note", o.short ? esc(o.short_note) : ""], ["Archived on", fmtD(o.closed_on)]])}
-      <h3>Lots of this order</h3>${o.lots.length ? o.lots.map((k) => { const l = data.lotBy[k]; return `<div style="margin-bottom:14px">
-        <p style="margin:0 0 4px">${lotLink(k)} ${l ? `· ${esc(l.stage || "")} · <span class="num">${fmtN(l.lot_pcs, 0)} pcs / ${fmtN(l.lot_sqft, 0)} sqft</span>` : ""}${store && canWrite && !o.isNew ? ` <button class="mini" data-form="po_unlink:${esc(k)}|${o.id}">Unlink</button>` : ""}</p>${skinsTable(k)}</div>`; }).join("")
+      ${(data.shares || []).filter((x) => String(x.from_line) === String(o.id)).map((x) => { const t = x.line_id != null ? data.orders.find((y) => String(y.id) === String(x.line_id)) : null;
+        return `<p class="note">${esc(x.lot_no)}: ${fmtN(x.sqft, 0)} sqft over 115% ${t ? "put on PO " + esc(t.po_no) + " · " + esc(t.item) : "kept here"}${x.reason ? " · " + esc(x.reason) : ""}${x.eid ? ' <span class="wait">(on this phone)</span>' : ""}</p>`; }).join("")}
+      <p class="note">Up to ${fmtN(o.qty_sqft * PO_CAP, 0)} sqft (115%) of wet blue can go into this PO.${o.qty_sqft && o.sqf > o.qty_sqft * PO_CAP + 0.5 ? ` <b class="late">It has ${fmtN(o.sqf - o.qty_sqft * PO_CAP, 0)} sqft more than that.</b> Use <b>Move sqft to another PO</b> on a lot below, or give the reason there.` : ""}</p>
+      <h3>Lots of this order</h3>${o.lots.length ? o.lots.map((k) => { const l = data.lotBy[k], sh = l ? shareOn(l, o.id) : 0; return `<div style="margin-bottom:14px">
+        <p style="margin:0 0 4px">${lotLink(k)} ${l ? `· ${esc(l.stage || "")} · <span class="num">${fmtN(l.lot_pcs, 0)} pcs / ${fmtN(l.lot_sqft, 0)} sqft${Math.abs(sh - (Number(l.lot_sqft) || 0)) > 0.5 ? ` · ${fmtN(sh, 0)} sqft on this PO` : ""}</span>` : ""}${store && canWrite && !o.isNew ? ` <button class="mini" data-form="po_unlink:${esc(k)}|${o.id}">Unlink</button> <button class="mini" data-form="po_share:${esc(k)}|${o.id}">Move sqft to another PO</button>` : ""}</p>${skinsTable(k)}</div>`; }).join("")
         : `<p class="note">No lot linked yet.</p>`}`;
   }
   function purchaseDetail(k) {
@@ -5715,7 +5784,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `<div class="hero"><div class="hero-top"><span class="pill ${l.flag}">${esc(l.flagText)}</span>${l.due_date ? `<span class="hero-due">Due ${fmtD(l.due_date)}${due ? " · " + due : ""}</span>` : ""}</div>
       <div class="hero-stage"><span>Stage now</span><b>${niceStage(l.stage)}</b>${l.inStage !== null ? `<em>${l.inStage} d in this stage${l.maxDays ? ` · max ${l.maxDays} d` : ""}</em>` : ""}</div>${track}
       <div class="hero-nums">${nums.map(([v, t]) => `<div><b>${v}</b><span>${t}</span></div>`).join("")}</div>
-      <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}${l.recKey && draftOf(l.recKey) ? ` <b style="color:var(--warn)">· unsaved changes</b>` : ""}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}</div>
+      <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}${l.recKey && draftOf(l.recKey) ? ` <b style="color:var(--warn)">· unsaved changes</b>` : ""}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}${(data.shares || []).filter((x) => x.lot_no === UP(l.lot_no) && x.line_id != null).map((x) => { const o = data.orders.find((y) => String(y.id) === String(x.line_id)) || {};
+        return `<button class="hlink" data-go="orders" data-k="${x.line_id}"><span>Also on</span>PO ${esc(o.po_no || x.line_id)} · ${fmtN(x.sqft, 0)} sqft</button>`; }).join("")}</div>
       ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const sv = processSaved(l), pm = pdfMade(l); return `<p class="note" style="margin:0">${sv ? "✓ Process saved" : `<span class="bad">Process not saved</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>`; })() : ""}
       ${l.chem_check ? `<p class="missing" style="margin:8px 0 0">${esc(l.chem_check.replace(/^\W+/, ""))}</p>` : ""}</div>`;
   }
