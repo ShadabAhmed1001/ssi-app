@@ -1786,7 +1786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 158, at: "2026-11-19T23:59:24+05:30", notes: "Machines can be charged per hour for the whole lot (like milling); Tally invoice files go straight to OneDrive for Excel" };
+  const APP_BUILD = { v: 159, at: "2026-11-20T00:36:00+05:30", notes: "Cost per sqft of a part-delivered lot counts the sqft still to go (90%), not only what was delivered" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2191,7 +2191,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     finRows(r).forEach((f) => { const w = Number(f.w); if (w) { fin += w * rate(f.d); noRate(f.d); } });
     const col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(r.animal || "").trim().toUpperCase()], pcs = r.pcs || (lot && lot.lot_pcs) || 0;
     r.machinery.forEach((m) => { const e = Number(m.n) || 0, u = String(m.d).toUpperCase(), rw = data.mach[u], mr = rw && col ? rw[col] || 0 : 0; const amt0 = machRun(u) ? e * mr : pcs * e * mr; mach += amt0; machRows.push({ d: m.d, n: m.n, rate: mr, amt: amt0 }); });
-    const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0, outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3), wb = over.wb ?? (lot ? lotBlue(r.lot_no, over.wb === undefined ? missing : null) : 0), blue = inSq * (Number(wb) || 0);
+    const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0;
+    // part delivered: what went out so far plus 90% of the sqft still to go (the delivered quantity alone made ₹/sqft far too high)
+    let outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3);
+    if (lot && !over.outSq && Number(lot.lot_pcs) > 0) { const dp = deliveredPcs(lot.lot_no), ds = deliveredSqft(lot.lot_no), lp = Number(lot.lot_pcs);
+      if (dp > 0 && dp < lp - 0.5 && !/DISPATCH/i.test(lot.stage || "")) outSq = +(ds + (lp - dp) / lp * inSq * 0.9).toFixed(3); }
+    const wb = over.wb ?? (lot ? lotBlue(r.lot_no, over.wb === undefined ? missing : null) : 0), blue = inSq * (Number(wb) || 0);
     const rw = lot && r.lot_no === rwRoot(r.lot_no) ? rwCost(r.lot_no) : 0;
     const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue + rw;
     return { machRows, crust, mach, fin, blue, rw, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: [...missing], rate };
