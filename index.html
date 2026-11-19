@@ -1735,7 +1735,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 148, at: "2026-11-19T13:42:49+05:30", notes: "Invoice PDFs can go to their own OneDrive folder (OneDrive settings)" };
+  const APP_BUILD = { v: 149, at: "2026-11-19T14:01:38+05:30", notes: "Costing: wet blue rate now follows skins moved or merged from other lots, and lists purchases with no rate" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2048,10 +2048,24 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // machinery: rate comes from the MACHINERY sheet column for the animal; most machines charge per piece per round
   const machCalc = (d, rounds, animal, pcs) => { const u = String(d || "").toUpperCase(), col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(animal || "").trim().toUpperCase()], rw = data.mach[u], rate = rw && col ? rw[col] || 0 : 0, e = Number(rounds) || 0, per = NOT_ROUND.includes(u); return { rate, per, col, known: !!rw, amt: per ? e * rate : (Number(pcs) || 0) * e * rate }; };
   const machLine = (d, rounds, animal, pcs) => { const m = machCalc(d, rounds, animal, pcs); if (!m.col) return "Set the animal to see the rate"; if (!m.known) return `<span class="bad">Not on the machinery sheet, no rate</span>`; if (!m.rate) return "Rate not set for " + String(animal).toLowerCase(); return `₹${fmtN(m.rate, 2)} ${m.per ? "per round" : "per pc per round"}${Number(rounds) ? ` · ₹${fmtN(m.amt, 0)}` : ""}${!m.per && Number(rounds) && !Number(pcs) ? " (pcs not set)" : ""}`; };
-  function lotBlue(lot) {
+  // wet blue rate of a lot: skins bought on a purchase are priced at its rate; skins moved in from another lot (also moves
+  // still on phones) carry that lot's own rate, so merges and splits don't lose or change the value; skins sent on to another
+  // lot leave the rate as it is. Sqft with no price (a purchase with no rate, a starting balance) is listed in miss.
+  function lotBlue(lot, miss, seen) {
+    lot = UP(lot); seen = seen || new Set(); if (!lot || seen.has(lot)) return 0; seen.add(lot);
+    const pur = (k) => rows("SELECT purchase_no, rate, rate_basis FROM purchases WHERE UPPER(purchase_no)=?", [k])[0];
+    const mv = rows("SELECT from_key, to_key, pcs, sqft, entry_type FROM purchase_ledger WHERE (UPPER(to_key)=? OR UPPER(from_key)=?) AND status<>'VOID'", [lot, lot])
+      .map((e) => ({ from: UP(e.from_key), to: UP(e.to_key), pcs: e.pcs, sqft: e.sqft, ty: e.entry_type }))
+      .concat((data.pendMv || []).filter((m) => m.from === lot || m.to === lot));
     let amt = 0, sq = 0;
-    rows(`SELECT l.from_key, l.to_key, l.pcs, l.sqft, p.rate, p.rate_basis FROM purchase_ledger l JOIN purchases p ON UPPER(p.purchase_no)=CASE WHEN l.to_key=? THEN l.from_key ELSE l.to_key END WHERE (l.to_key=? OR l.from_key=?) AND l.status<>'VOID'`, [lot, lot, lot]).forEach((e) => {
-      const g = e.to_key === lot ? 1 : -1; sq += g * (e.sqft || 0); amt += g * (String(e.rate_basis).toUpperCase() === "PC" ? (e.pcs || 0) : (e.sqft || 0)) * (e.rate || 0); });
+    mv.forEach((m) => {
+      const s = Number(m.sqft) || 0, g = m.to === lot ? 1 : -1, p = pur(g > 0 ? m.from : m.to); if (!s) return;
+      if (p) { if (!(Number(p.rate) > 0)) { if (g > 0 && miss) miss.add("wet blue rate of " + p.purchase_no); return; }
+        sq += g * s; amt += g * (UP(p.rate_basis) === "PC" ? (Number(m.pcs) || 0) : s) * Number(p.rate); return; }
+      if (g < 0) return;
+      const n0 = miss ? miss.size : 0, r = /^ADJ/.test(m.from) || m.ty === "ADJUSTMENT" ? 0 : lotBlue(m.from, miss, seen);
+      if (r > 0) { sq += s; amt += s * r; } else if (miss && miss.size === n0) miss.add(/^ADJ/.test(m.from) || m.ty === "ADJUSTMENT" ? "wet blue starting balance of " + lot : "wet blue rate of " + m.from);
+    });
     return sq > 0 && amt > 0 ? +(amt / sq).toFixed(2) : 0;
   }
   // finishing weights: Excel works most of them out from the first row of each batch (weight / ratio x ratio)
@@ -2123,7 +2137,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     finRows(r).forEach((f) => { const w = Number(f.w); if (w) { fin += w * rate(f.d); noRate(f.d); } });
     const col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(r.animal || "").trim().toUpperCase()], pcs = r.pcs || (lot && lot.lot_pcs) || 0;
     r.machinery.forEach((m) => { const e = Number(m.n) || 0, u = String(m.d).toUpperCase(), rw = data.mach[u], mr = rw && col ? rw[col] || 0 : 0; const amt0 = NOT_ROUND.includes(u) ? e * mr : pcs * e * mr; mach += amt0; machRows.push({ d: m.d, n: m.n, rate: mr, amt: amt0 }); });
-    const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0, outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3), wb = over.wb ?? (lot ? lotBlue(r.lot_no) : 0), blue = inSq * (Number(wb) || 0);
+    const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0, outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3), wb = over.wb ?? (lot ? lotBlue(r.lot_no, over.wb === undefined ? missing : null) : 0), blue = inSq * (Number(wb) || 0);
     const rw = lot && r.lot_no === rwRoot(r.lot_no) ? rwCost(r.lot_no) : 0;
     const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue + rw;
     return { machRows, crust, mach, fin, blue, rw, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: [...missing], rate };
