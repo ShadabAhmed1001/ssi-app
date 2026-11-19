@@ -88,8 +88,9 @@
       box.remove(); res(a.a); });
   });
   const pdfFolder = () => String(cfg().pdfFolder || cfg().dataFolder || "").replace(/^\/+|\/+$/g, "");
-  async function pdfToOneDrive(file) {
-    const folder = pdfFolder(); if (!folder) return { ok: false, said: "No PDF folder is set (OneDrive settings)." };
+  const invFolder = () => String(cfg().invoiceFolder || "").replace(/^\/+|\/+$/g, "") || pdfFolder();
+  async function pdfToOneDrive(file, kind) {
+    const folder = kind === "invoice" ? invFolder() : pdfFolder(); if (!folder) return { ok: false, said: "No PDF folder is set (OneDrive settings)." };
     if (!account) return { ok: false, said: "Not signed in to OneDrive." };
     if (!navigator.onLine) return { ok: false, said: "No internet just now." };
     try { const tok = await token(); if (!tok) return { ok: false, said: "Sign in to OneDrive again." };
@@ -97,9 +98,9 @@
       return { ok: true, said: folder.replace(/\//g, " › ") + " › " + file.name };
     } catch (e) { return { ok: false, said: "Could not upload: " + (e.message || e) }; }
   }
-  const downloadsApi = { save: async ({ filename, data }) => {
+  const downloadsApi = { save: async ({ filename, data, kind }) => {
     if (/\.pdf$/i.test(filename) && cfg().pdfAuto !== "off") {
-      const file = new File([data], filename, { type: "application/pdf" }), r = await pdfToOneDrive(file);
+      const file = new File([data], filename, { type: "application/pdf" }), r = await pdfToOneDrive(file, kind);
       await pdfBox(file, r.said, r.ok); return { status: "saved", onedrive: r.ok };
     }
     const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : /\.json$/i.test(filename) ? "application/json" : "application/octet-stream";
@@ -390,6 +391,7 @@
       ${f("xlsm", "Workbook file name")}${f("db", "Database file name")}
       ${f("entriesFolder", "Phone entries folder (the app puts entries here; Excel imports them on its own)", "SSI/PRODUCTION/Phone entries")}
       ${f("pdfFolder", "PDF folder (every PDF made in the app is saved here)", c.dataFolder || "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
+      ${f("invoiceFolder", "Invoice PDF folder (empty = the PDF folder above)", "")}
       <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> Save PDFs to OneDrive by themselves</label>
       ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
       ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
@@ -406,11 +408,13 @@
       const save = () => { lsSet(LSK, o); w.remove(); setMeta("dataTag", undefined).then(() => location.reload()); };
       const trim = (x) => String(x || "").replace(/^\/+|\/+$/g, "");
       // a new phone entries folder: check it is there and that Excel looks in it, or entries would wait unseen; a new PDF folder: check it is there
-      const nf = trim(o.entriesFolder ?? CFG0.entriesFolder), pf = trim(o.pdfFolder ?? CFG0.pdfFolder ?? "");
+      const nf = trim(o.entriesFolder ?? CFG0.entriesFolder), pf = trim(o.pdfFolder ?? CFG0.pdfFolder ?? ""), vf = trim(o.invoiceFolder ?? CFG0.invoiceFolder ?? "");
       if (o.entriesFolder !== undefined) o.entriesFolder = nf;
       if (o.pdfFolder !== undefined) o.pdfFolder = pf;
-      const chkE = nf !== trim(cfg().entriesFolder), chkP = !!pf && pf !== trim(cfg().pdfFolder);
-      if (!account || (!chkE && !chkP)) return save();
+      if (o.invoiceFolder !== undefined) o.invoiceFolder = vf;
+      if (vf === "" && cfg().invoiceFolder) o.invoiceFolder = "";
+      const chkE = nf !== trim(cfg().entriesFolder), chkP = !!pf && pf !== trim(cfg().pdfFolder), chkV = !!vf && vf !== trim(cfg().invoiceFolder);
+      if (!account || (!chkE && !chkP && !chkV)) return save();
       const say = w.querySelector(".odfolder") || w.querySelector("form").appendChild(Object.assign(document.createElement("span"), { className: "odfolder" }));
       say.style.cssText = "font-size:13px;color:#b45309"; say.textContent = "Checking the folder in OneDrive…";
       (async () => {
@@ -419,9 +423,10 @@
           if (chkE) { if (!nf || !(await g("GET", itemUrl(nf), null, "", tok))) msg = "There is no folder '" + nf + "' in your OneDrive.";
             else if (!(await g("GET", itemUrl(nf + "/excel-status.json"), null, "", tok))) msg = "Excel has not looked in '" + nf + "' yet. In Excel run SetPhoneEntriesFolder and pick the same folder, or entries will wait there unseen."; }
           if (!msg && chkP && !(await g("GET", itemUrl(pf), null, "", tok))) msg = "There is no folder '" + pf + "' in your OneDrive for the PDFs (it will be made when the first PDF is saved).";
+          if (!msg && chkV && !(await g("GET", itemUrl(vf), null, "", tok))) msg = "There is no folder '" + vf + "' in your OneDrive for the invoices (it will be made when the first invoice is saved).";
         } catch (x) { msg = "Could not check the folder: " + (x.message || x); }
         if (!msg) return save();
-        const key = nf + "|" + pf; if (say.dataset.sure === key) return save();
+        const key = nf + "|" + pf + "|" + vf; if (say.dataset.sure === key) return save();
         say.dataset.sure = key; say.textContent = msg + " Tap Save again to use it anyway.";
       })();
     };

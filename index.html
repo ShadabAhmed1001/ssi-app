@@ -1735,7 +1735,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 147, at: "2026-11-19T09:14:54+05:30", notes: "Fix: Load process with all parts ticked; Stages page shows phases and each product's stages; rework rule follows product stages" };
+  const APP_BUILD = { v: 148, at: "2026-11-19T13:42:49+05:30", notes: "Invoice PDFs can go to their own OneDrive folder (OneDrive settings)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2363,10 +2363,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return window.jspdf.jsPDF;
   }
   const plain = (t) => String(t ?? "").replace(/[^\x20-\x7E\n]/g, " ");
-  async function savePdf(doc, name, where) {
+  async function savePdf(doc, name, where, kind) {
     const dlp = window.claude ? await window.claude.use("downloads") : null;
     if (!dlp) { where.textContent = "Saving files isn't available in this view."; return; }
-    try { await dlp.save({ filename: name, data: doc.output("arraybuffer") }); lastPdfOk = Date.now(); } catch (e) { if (e.code !== "declined") where.textContent = "The PDF could not be saved."; }
+    try { await dlp.save(Object.assign({ filename: name, data: doc.output("arraybuffer") }, kind && window.__ssiOD ? { kind } : {})); lastPdfOk = Date.now(); } catch (e) { if (e.code !== "declined") where.textContent = "The PDF could not be saved."; }
   }
   // a picked logo is shrunk to at most 256 px and kept as a PNG on this phone
   document.addEventListener("change", (e) => {
@@ -4536,7 +4536,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       txt(105, sb + 5, o.foot || "This is a Computer Generated Invoice", { f: 8, a: "center" });
       const n = doc.getNumberOfPages(); if (n > 1) for (let i = 1; i <= n; i++) { doc.setPage(i); txt(R, 290, "Page " + i + " of " + n, { f: 7, a: "right" }); }
       const name = String(o.fname || no).replace(/[\/\\:*?"<>|]+/g, "-") + "_" + String(v.party || v.customer).replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ")[0] + "_" + Math.round(t.total) + ".pdf";
-      const w = { textContent: "" }; await savePdf(doc, name, w); if (w.textContent && btn.parentElement) btn.parentElement.insertAdjacentHTML("afterend", `<p class="note bad">${esc(w.textContent)}</p>`);
+      const w = { textContent: "" }; await savePdf(doc, name, w, "invoice"); if (w.textContent && btn.parentElement) btn.parentElement.insertAdjacentHTML("afterend", `<p class="note bad">${esc(w.textContent)}</p>`);
     } catch (e) { const m = btn.parentElement; if (m) m.insertAdjacentHTML("afterend", `<p class="note bad">The PDF could not be made: ${esc(e.message)}</p>`); }
     btn.disabled = false; btn.textContent = old;
   }
