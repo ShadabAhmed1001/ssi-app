@@ -807,11 +807,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     _machRates(d) { return ["cow", "calf", "buff", "goat"].map((k) => d[k] === undefined || d[k] === "" ? null : Number(d[k])); },
     mach_add(e) { const d = e.data || {}, n = UP(String(d.name || e.lot_no).trim()); if (!n) throw new Error("no machine name");
       if (enOne("SELECT 1 x FROM machinery WHERE UPPER(name)=?", [n])) throw new Error(n + " is already on F. MACHINERY");
-      enRun("INSERT INTO machinery(name, cow, calf, buff, goat) VALUES(?,?,?,?,?)", [n].concat(ENGINE._machRates(d))); },
+      ENGINE._machCol(); enRun("INSERT INTO machinery(name, cow, calf, buff, goat, basis) VALUES(?,?,?,?,?,?)", [n].concat(ENGINE._machRates(d), [d.basis === "run" ? "run" : d.basis ? "piece" : ""])); },
+    _machCol() { if (!rows("PRAGMA table_info(machinery)").some((c) => c.name === "basis")) enRun("ALTER TABLE machinery ADD COLUMN basis TEXT"); },
     mach_edit(e) { const d = e.data || {}, n = UP(String(d.name || e.lot_no).trim()), m = enOne("SELECT * FROM machinery WHERE UPPER(name)=?", [n]); if (!m) throw new Error(n + " is not on F. MACHINERY");
       const to = UP(String(d.to || "").trim()); if (to && to !== n && enOne("SELECT 1 x FROM machinery WHERE UPPER(name)=?", [to])) throw new Error(to + " is already on F. MACHINERY");
       const set = [], v = []; ["cow", "calf", "buff", "goat"].forEach((k) => { if (d[k] !== undefined) { set.push(k + "=?"); v.push(d[k] === "" ? null : Number(d[k])); } });
       if (to && to !== n) { set.push("name=?"); v.push(to); }
+      if (d.basis) { ENGINE._machCol(); set.push("basis=?"); v.push(d.basis === "run" ? "run" : "piece"); }
       if (set.length) enRun("UPDATE machinery SET " + set.join(", ") + " WHERE name=?", v.concat([m.name])); },
     mach_delete(e) { const n = UP(String((e.data || {}).name || e.lot_no).trim()), m = enOne("SELECT * FROM machinery WHERE UPPER(name)=?", [n]); if (!m) throw new Error(n + " is not on F. MACHINERY"); enRun("DELETE FROM machinery WHERE name=?", [m.name]); },
     chem_void(e) { const d = e.data || {}, m = enOne("SELECT * FROM chem_moves WHERE id=? AND status='OK'", [Number(d.id)]); if (!m) throw new Error("ledger entry " + d.id + " is not in the records");
@@ -1234,13 +1236,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     data.pages = rows("SELECT name FROM process_pages").map((r) => r.name);
     data.rate = {}; data.chemicals.forEach((c) => { const k = c.name.toUpperCase(); if (!(k in data.rate)) data.rate[k] = c.rate || 0; });
     data.finAnchor = {}; rows("SELECT * FROM process_fin").forEach((p) => { data.finAnchor[p.process.toUpperCase()] = JSON.parse(p.anchors); });
-    data.mach = {}; rows("SELECT * FROM machinery").forEach((m) => { data.mach[m.name.toUpperCase()] = m; });
+    data.mach = {}; rows("SELECT * FROM machinery").forEach((m) => { data.mach[m.name.toUpperCase()] = Object.assign(m, { fromXl: !!m.basis }); });
     // machines added, changed or deleted on the phone, in the order they were made
+    entries.filter((e) => /^mach_(add|edit)$/.test(e.type) && e.status !== "cancelled" && (e.data || {}).basis).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))).forEach((e) => {
+      const m = data.mach[UP(String(e.data.to || e.data.name || e.lot_no).trim())] || data.mach[UP(String(e.data.name || e.lot_no).trim())]; if (m && !m.fromXl) m.basis = e.data.basis === "run" ? "run" : "piece"; });
     live.filter((e) => /^mach_(add|edit|delete)$/.test(e.type)).forEach((e) => { const d = e.data || {}, k = UP(String(d.name || e.lot_no).trim()), wait = isWait(e), num = (x) => x === "" ? null : Number(x);
-      if (e.type === "mach_add") { if (!data.mach[k]) data.mach[k] = { name: k, cow: num(d.cow ?? ""), calf: num(d.calf ?? ""), buff: num(d.buff ?? ""), goat: num(d.goat ?? ""), wait }; return; }
+      if (e.type === "mach_add") { if (!data.mach[k]) data.mach[k] = { name: k, cow: num(d.cow ?? ""), calf: num(d.calf ?? ""), buff: num(d.buff ?? ""), goat: num(d.goat ?? ""), basis: d.basis === "run" ? "run" : d.basis ? "piece" : "", wait }; return; }
       const m = data.mach[k]; if (!m) return;
       if (e.type === "mach_delete") { delete data.mach[k]; return; }
-      const m2 = Object.assign({}, m, { wait: m.wait || wait }); ["cow", "calf", "buff", "goat"].forEach((f) => { if (d[f] !== undefined) m2[f] = num(d[f]); });
+      const m2 = Object.assign({}, m, { wait: m.wait || wait }); ["cow", "calf", "buff", "goat"].forEach((f) => { if (d[f] !== undefined) m2[f] = num(d[f]); }); if (d.basis) m2.basis = d.basis === "run" ? "run" : "piece";
       const to = UP(String(d.to || "").trim()); if (to && to !== k) { delete data.mach[k]; m2.name = to; data.mach[to] = m2; } else data.mach[k] = m2; });
     const mv = (k) => one("SELECT value FROM meta WHERE key=?", [k]);
     data.auditSet = { pct: Number(mv("audit_pct")) || 2, rs: Number(mv("audit_rs")) || 2000, qty: Number(mv("audit_qty")) || 0.5, cycle: Number(mv("audit_cycle")) || 40 };
@@ -1468,9 +1472,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function machView(ws) {
     const L = Object.values(data.mach || {}).filter((m) => match(String(m.name).toLowerCase(), ws)).sort((a, b) => String(a.name).localeCompare(String(b.name))), r = (v) => Number(v) ? fmtN(v, 2) : "-";
     return `<div class="count"><span>${L.length} machine${L.length === 1 ? "" : "s"} on F. MACHINERY</span></div>
-      <p class="note" style="margin:0 0 6px">₹ per piece per round. ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))} are ₹ per run for the whole lot.${store && canWrite ? " Tap a machine to change its rates or name, or to delete it. Excel updates F. MACHINERY." : " Rates are changed in Excel (F. MACHINERY)."}</p>
+      <p class="note" style="margin:0 0 6px">₹ per piece per round, unless marked per hour / run (₹ per hour or per run for the whole lot, like milling).${store && canWrite ? " Tap a machine to change its rates or name, or to delete it. Excel updates F. MACHINERY." : " Rates are changed in Excel (F. MACHINERY)."}</p>
       ${store && canWrite ? `<div class="acts" style="margin:0 0 8px"><button class="btn alt" data-form="mach_add:">Add machine</button></div>` : ""}
-      ${L.length ? `<div class="tbl"><table class="tview"><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr${store && canWrite ? ` data-form="mach_edit:${esc(m.name)}"` : ""}><td>${esc(m.name)}${NOT_ROUND.includes(String(m.name).toUpperCase()) ? ` <span class="note">per run</span>` : ""}${m.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
+      ${L.length ? `<div class="tbl"><table class="tview"><thead><tr><th>Machine</th><th class="r">Cow</th><th class="r">Calf</th><th class="r">Buff</th><th class="r">Goat</th></tr></thead><tbody>${L.map((m) => `<tr${store && canWrite ? ` data-form="mach_edit:${esc(m.name)}"` : ""}><td>${esc(m.name)}${machRun(m.name) ? ` <span class="note">per hour / run</span>` : ""}${m.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td class="r num">${r(m.cow)}</td><td class="r num">${r(m.calf)}</td><td class="r num">${r(m.buff)}</td><td class="r num">${r(m.goat)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No machine matches.</p>`}`;
   }
   // ---------------------------------------------------------------- Excel sheets as views: STAGE GUIDE, chemical usage by lot,
   // CHEM CLEANUP, PURCHASE LEDGER, TALLY MASTERS (read from the data the app already holds)
@@ -1782,7 +1786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 157, at: "2026-11-19T22:57:30+05:30", notes: "Unsaved changes of a new or loaded process (like a rework process) now show under Unsaved processes and on the rework" };
+  const APP_BUILD = { v: 158, at: "2026-11-19T23:59:24+05:30", notes: "Machines can be charged per hour for the whole lot (like milling); Tally invoice files go straight to OneDrive for Excel" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2093,8 +2097,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   // ---------------------------------------------------------------- costing, same sums as the process sheet
   const NOT_ROUND = ["SAMPLE DRUM", "FAT DRUM", "MILLING", "MILLING [SAMPLE]"];
+  // charged per run / per hour for the whole lot (like milling) or per piece per round: F. MACHINERY column G, else the old list
+  const machRun = (name) => { const u = String(name || "").trim().toUpperCase(), m = data.mach && data.mach[u]; return m && m.basis ? m.basis === "run" : NOT_ROUND.includes(u); };
   // machinery: rate comes from the MACHINERY sheet column for the animal; most machines charge per piece per round
-  const machCalc = (d, rounds, animal, pcs) => { const u = String(d || "").toUpperCase(), col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(animal || "").trim().toUpperCase()], rw = data.mach[u], rate = rw && col ? rw[col] || 0 : 0, e = Number(rounds) || 0, per = NOT_ROUND.includes(u); return { rate, per, col, known: !!rw, amt: per ? e * rate : (Number(pcs) || 0) * e * rate }; };
+  const machCalc = (d, rounds, animal, pcs) => { const u = String(d || "").toUpperCase(), col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(animal || "").trim().toUpperCase()], rw = data.mach[u], rate = rw && col ? rw[col] || 0 : 0, e = Number(rounds) || 0, per = machRun(u); return { rate, per, col, known: !!rw, amt: per ? e * rate : (Number(pcs) || 0) * e * rate }; };
   const machLine = (d, rounds, animal, pcs) => { const m = machCalc(d, rounds, animal, pcs); if (!m.col) return "Set the animal to see the rate"; if (!m.known) return `<span class="bad">Not on the machinery sheet, no rate</span>`; if (!m.rate) return "Rate not set for " + String(animal).toLowerCase(); return `₹${fmtN(m.rate, 2)} ${m.per ? "per round" : "per pc per round"}${Number(rounds) ? ` · ₹${fmtN(m.amt, 0)}` : ""}${!m.per && Number(rounds) && !Number(pcs) ? " (pcs not set)" : ""}`; };
   // wet blue rate of a lot: skins bought on a purchase are priced at its rate; skins moved in from another lot (also moves
   // still on phones) carry that lot's own rate, so merges and splits don't lose or change the value; skins sent on to another
@@ -2184,7 +2190,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     r.crust.forEach((c) => { if (c.p !== null && c.p !== undefined) { crust += (c.q || 0) * rate(c.d); noRate(c.d); } });
     finRows(r).forEach((f) => { const w = Number(f.w); if (w) { fin += w * rate(f.d); noRate(f.d); } });
     const col = { COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" }[String(r.animal || "").trim().toUpperCase()], pcs = r.pcs || (lot && lot.lot_pcs) || 0;
-    r.machinery.forEach((m) => { const e = Number(m.n) || 0, u = String(m.d).toUpperCase(), rw = data.mach[u], mr = rw && col ? rw[col] || 0 : 0; const amt0 = NOT_ROUND.includes(u) ? e * mr : pcs * e * mr; mach += amt0; machRows.push({ d: m.d, n: m.n, rate: mr, amt: amt0 }); });
+    r.machinery.forEach((m) => { const e = Number(m.n) || 0, u = String(m.d).toUpperCase(), rw = data.mach[u], mr = rw && col ? rw[col] || 0 : 0; const amt0 = machRun(u) ? e * mr : pcs * e * mr; mach += amt0; machRows.push({ d: m.d, n: m.n, rate: mr, amt: amt0 }); });
     const inSq = r.wb_sqft || (lot && lot.lot_sqft) || 0, outSq = r.finish_sqft || +(inSq * 0.9).toFixed(3), wb = over.wb ?? (lot ? lotBlue(r.lot_no, over.wb === undefined ? missing : null) : 0), blue = inSq * (Number(wb) || 0);
     const rw = lot && r.lot_no === rwRoot(r.lot_no) ? rwCost(r.lot_no) : 0;
     const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue + rw;
@@ -2212,7 +2218,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell,
       crust: r.crust.filter((c) => c.p !== null && c.p !== undefined && String(c.d || "").trim()).map((c) => ({ p: +(c.p * 100).toFixed(4), d: c.d, rate: cRate(c.d) })),
       fin: finRows(r).filter((f) => String(f.d || "").trim() && Number(f.w)).map((f) => ({ r: f.r, d: f.d, w: f.w, rate: cRate(f.d) })),
-      mach: r.machinery.filter((m) => String(m.d || "").trim() && m.n !== "" && m.n !== "0").map((m) => ({ d: m.d, n: m.n, rate: cMachRate(m.d, r.animal), flat: NOT_ROUND.includes(String(m.d).toUpperCase()) })),
+      mach: r.machinery.filter((m) => String(m.d || "").trim() && m.n !== "" && m.n !== "0").map((m) => ({ d: m.d, n: m.n, rate: cMachRate(m.d, r.animal), flat: machRun(m.d) })),
       extra: [] };
   }
   function calcMath() {
@@ -2267,7 +2273,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const row = calc[secN] && calc[secN][Number(i)]; if (!row) return; row[f] = val;
     if (f === "rate") row.own = true;
     if (f === "d" && secN !== "extra") { const nr = secN === "mach" ? cMachRate(val, calc.animal) : cRate(val); if (nr) { row.rate = nr; row.own = false; const ri = document.querySelector(`[data-c="${secN}|${i}|rate"]`); if (ri) ri.value = nr; }
-      if (secN === "mach") { const fl = NOT_ROUND.includes(UP(val)); row.flat = fl; const cb = document.querySelector(`[data-c="mach|${i}|flat"]`); if (cb) cb.checked = fl; } }
+      if (secN === "mach") { const fl = machRun(val); row.flat = fl; const cb = document.querySelector(`[data-c="mach|${i}|flat"]`); if (cb) cb.checked = fl; } }
     calcTotals();
   });
   // rework forms: causes follow the group; the whole-lot choice changes the hint; the cost total follows the lines
@@ -2585,7 +2591,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const recCols = "lot_no TEXT, process TEXT, version INTEGER, versions INTEGER, saved_at TEXT, saved_by TEXT, details TEXT, substance TEXT, shaved_wt REAL, pcs REAL, wb_sqft REAL, finish_sqft REAL, process_note TEXT, remarks TEXT, crust TEXT, machinery TEXT, finishing TEXT, animal TEXT";
     a.run(`DROP TABLE IF EXISTS chem_cost; DROP TABLE IF EXISTS chem_cost_proc; DROP TABLE IF EXISTS lot_recipes; DROP TABLE IF EXISTS lot_recipe_versions; DROP TABLE IF EXISTS machinery; DROP TABLE IF EXISTS chem_audits; DROP TABLE IF EXISTS last_counted;
       CREATE TABLE lot_recipes(${recCols}, PRIMARY KEY(lot_no,process)); CREATE TABLE lot_recipe_versions(${recCols}, PRIMARY KEY(lot_no,process,version));
-      CREATE TABLE machinery(name TEXT PRIMARY KEY, cow REAL, calf REAL, buff REAL, goat REAL);
+      CREATE TABLE machinery(name TEXT PRIMARY KEY, cow REAL, calf REAL, buff REAL, goat REAL, basis TEXT);
       DROP TABLE IF EXISTS process_fin; CREATE TABLE process_fin(process TEXT PRIMARY KEY, anchors TEXT);
       CREATE TABLE chem_audits(audit_no TEXT, scope TEXT, status TEXT, posted_at TEXT, n_counted REAL, n_adjusted REAL, value_short REAL, value_excess REAL, id INTEGER);
       CREATE TABLE last_counted(chemical TEXT, at TEXT);
@@ -2692,7 +2698,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       a.run("INSERT OR REPLACE INTO meta VALUES('chem_open',?)", [JSON.stringify(op)]); }
     // machinery rates and audit history
     const mw = xl(wb, "F. MACHINERY");
-    for (let r = 2, e = lastRow(mw); r <= e; r++) { const k = xtxt(cv(mw, "A" + r)); if (k) a.run("INSERT OR REPLACE INTO machinery VALUES(?,?,?,?,?)", [k.toUpperCase(), xfl(cv(mw, "B" + r)), xfl(cv(mw, "C" + r)), xfl(cv(mw, "D" + r)), xfl(cv(mw, "E" + r))]); }
+    for (let r = 2, e = lastRow(mw); r <= e; r++) { const k = xtxt(cv(mw, "A" + r)); if (k) { const g = UP(xtxt(cv(mw, "G" + r))); a.run("INSERT OR REPLACE INTO machinery VALUES(?,?,?,?,?,?)", [k.toUpperCase(), xfl(cv(mw, "B" + r)), xfl(cv(mw, "C" + r)), xfl(cv(mw, "D" + r)), xfl(cv(mw, "E" + r)), /RUN|HOUR/.test(g) ? "run" : /PIECE/.test(g) ? "piece" : ""]); } }
     q(src, "SELECT id, audit_no, scope, status, posted_at, n_counted, n_adjusted, value_short, value_excess FROM chem_audits").forEach((u) => a.run("INSERT INTO chem_audits VALUES(?,?,?,?,?,?,?,?,?)", [u.audit_no, u.scope, u.status, u.posted_at, u.n_counted, u.n_adjusted, u.value_short, u.value_excess, u.id]));
     q(src, "SELECT l.chemical c, MAX(a.snapshot_at) t FROM chem_audit_lines l JOIN chem_audits a ON a.id=l.audit_id WHERE a.status='POSTED' AND l.line_status='COUNTED' GROUP BY UPPER(l.chemical)").forEach((u) => a.run("INSERT INTO last_counted VALUES(?,?)", [u.c, u.t]));
     const setM = (k, v) => a.run("INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)", [k, v]);
@@ -3794,7 +3800,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const purchInfo = (key) => { const p = data.purchases.find((x) => x.key === key) || openPurch()[0]; return p ? `Animal: ${p.animal || "-"} · Grade: ${p.grade || "-"} · Supplier: ${p.supplier || "-"} · Left: ${fmtN(p.leftP, 0)} pcs, ${fmtN(p.leftS, 2)} sqft` : ""; };
   const lineOpts = (cur0) => data.orders.filter((o) => !o.isNew && o.grp === 1).map((o) => opt(o.id, `PO ${o.po_no} · ${o.customer} · ${o.item} · ${fmtN(o.qty_sqft, 0)} sqft`, String(o.id) === String(cur0))).join("");
   const rwCauseOpts = (g) => opt("", "Pick a cause") + rwCauses(g).map((c) => opt(c, c)).join("");
-  const machRateInputs = (m) => { const n = ' type="number" step="any" min="0" inputmode="decimal"'; return `<div class="two">${[["cow", "Cow"], ["calf", "Calf"], ["buff", "Buff"], ["goat", "Goat"]].map(([k, l]) => `<label>${l} ₹<input id="mc-${k}" value="${m[k] === null || m[k] === undefined ? "" : esc(String(m[k]))}"${n}></label>`).join("")}</div>`; };
+  const machRateInputs = (m) => { const n = ' type="number" step="any" min="0" inputmode="decimal"', run = m.name ? machRun(m.name) : false; return `<label>Charged<select id="mc-basis"><option value="piece"${run ? "" : " selected"}>per piece, per round</option><option value="run"${run ? " selected" : ""}>per hour (or per run) for the whole lot, like milling</option></select></label><div class="two">${[["cow", "Cow"], ["calf", "Calf"], ["buff", "Buff"], ["goat", "Goat"]].map(([k, l]) => `<label>${l} ₹<input id="mc-${k}" value="${m[k] === null || m[k] === undefined ? "" : esc(String(m[k]))}"${n}></label>`).join("")}</div>`; };
   // saved processes (current versions) that list this machine
   const machUse = (name) => { const u = UP(name); let n = 0; try { rows("SELECT machinery FROM lot_recipes").forEach((r) => { try { if (JSON.parse(r.machinery || "[]").some((x) => UP(String(x.d || "").trim()) === u)) n++; } catch (e) {} }); } catch (e) {} return n; };
   const formEnd = `<p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-back>Cancel</button></div>`;
@@ -3842,7 +3848,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     lot_delete: { title: "Delete lot", html: (a) => `<form class="fm" id="fm-lot_delete" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p style="margin:0">It has no skins, chemicals or deliveries. Excel removes its tracker row.</p>${formEnd}</form>` },
     recipe_delete: { title: "Delete saved process", html: (a) => { const [lot, ...pr] = a.split("|"), proc = pr.join("|"), r = dbRecipe(lot, proc); return `<form class="fm" id="fm-recipe_delete" data-lot="${esc(lot)}" data-proc="${esc(proc)}"><h3>${esc(lot)} · ${esc(proc)}</h3><p style="margin:0">${(r && r.versions) > 1 ? `All ${r.versions} saved versions of this process are` : "The saved process is"} removed from the database. This can't be undone. Any chemicals already deducted stay deducted.</p>${formEnd}</form>`; } },
     po_delete: { title: "Delete PO", html: (a) => { const o = data.orders.find((x) => String(x.id) === a), n = data.orders.filter((x) => x.order_id === o.order_id).length; return `<form class="fm" id="fm-po_delete" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">Deletes this PO and all ${n} ${n === 1 ? "item" : "items"}. This can't be undone.</p>${formEnd}</form>`; } },
-    mach_add: { title: "Add machine", html: (a) => `<form class="fm" id="fm-mach_add"><label>Name<input id="mc-name" value="${v(a)}" autocomplete="off" style="text-transform:uppercase"></label>${machRateInputs({})}<p class="note" style="margin:0">₹ per piece per round for each animal (per run for the whole lot for ${esc(NOT_ROUND.map((x) => x.toLowerCase()).join(", "))}). Leave an animal empty if the machine isn't used for it. Excel adds a row to F. MACHINERY, and process pages can pick it.</p>${formEnd}</form>` },
+    mach_add: { title: "Add machine", html: (a) => `<form class="fm" id="fm-mach_add"><label>Name<input id="mc-name" value="${v(a)}" autocomplete="off" style="text-transform:uppercase"></label>${machRateInputs({})}<p class="note" style="margin:0">₹ for each animal: per piece per round, or per hour for the whole lot (the process then gives the hours, as for milling). Leave an animal empty if the machine isn't used for it. Excel adds a row to F. MACHINERY, and process pages can pick it.</p>${formEnd}</form>` },
     mach_edit: { title: "Machine", html: (a) => { const m = data.mach[UP(a)]; if (!m) return `<p class="empty">${esc(a)} is not on F. MACHINERY any more.</p>`; const u = machUse(m.name);
       return `<form class="fm" id="fm-mach_edit" data-name="${esc(m.name)}"><label>Name<input id="mc-name" value="${v(m.name)}" autocomplete="off" style="text-transform:uppercase"></label>${machRateInputs(m)}<p class="note" style="margin:0">${u ? `Used in ${u} saved process${u === 1 ? "" : "es"}. New rates apply to costing from now on.` : "Not used in any saved process."}${m.wait ? " Waiting for Excel." : ""}</p>${formEnd}<div class="acts" style="margin-top:6px"><button class="btn alt" type="button" data-form="mach_delete:${esc(m.name)}">Delete this machine</button></div></form>`; } },
     mach_delete: { title: "Delete machine", html: (a) => { const m = data.mach[UP(a)]; if (!m) return `<p class="empty">${esc(a)} is not on F. MACHINERY any more.</p>`; const u = machUse(m.name);
@@ -5165,11 +5171,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const name = UP(need("#mc-name")).replace(/\s+/g, " "); if (!name) return bad("Enter the machine's name.");
       if (/[|~^=]/.test(name)) return bad("The name can't have | ~ ^ or =.");
       const r = {}; for (const k of ["cow", "calf", "buff", "goat"]) { const x = need("#mc-" + k); if (x !== "" && !(Number(x) >= 0)) return bad("Rates must be numbers, 0 or more."); r[k] = x; }
+      const basis = need("#mc-basis") || "piece";
       if (f.id === "fm-mach_add") { if (data.mach[name]) return bad(name + " is already on the list."); if (!["cow", "calf", "buff", "goat"].some((k) => r[k] !== "")) return bad("Enter at least one rate.");
-        return saveNew({ type: "mach_add", lot_no: name, data: Object.assign({ name }, r) }, "Machine saved. It is waiting for Excel.", msg, btn); }
+        return saveNew({ type: "mach_add", lot_no: name, data: Object.assign({ name, basis }, r) }, "Machine saved. It is waiting for Excel.", msg, btn); }
       const n0 = f.dataset.name, m = data.mach[UP(n0)], d = { name: n0 }, same = (a, b) => (a === null || a === undefined || a === "" ? "" : String(Number(a))) === (b === "" ? "" : String(Number(b)));
       if (!m) return bad(n0 + " is not on the list any more.");
       ["cow", "calf", "buff", "goat"].forEach((k) => { if (!same(m[k], r[k])) d[k] = r[k]; });
+      if ((machRun(n0) ? "run" : "piece") !== basis) d.basis = basis;
       if (name !== UP(n0)) { if (data.mach[name]) return bad(name + " is already on the list."); const u = machUse(n0); if (u && warnOnce(f, `${u} saved process${u === 1 ? " lists" : "es list"} ${n0}. They keep the old name, so their cost for it becomes 0 until the process is saved again with ${name}.`)) return; d.to = name; }
       if (Object.keys(d).length === 1) return bad("Nothing has changed.");
       return saveNew({ type: "mach_edit", lot_no: n0, data: d }, "Saved. It is waiting for Excel.", msg, btn);

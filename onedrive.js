@@ -88,6 +88,8 @@
       box.remove(); res(a.a); });
   });
   const pdfFolder = () => String(cfg().pdfFolder || cfg().dataFolder || "").replace(/^\/+|\/+$/g, "");
+  const TALLY_DIR0 = "SSI/Accountancy/tally data/SSI/XML DATA";
+  const tallyFolder = () => String(cfg().tallyFolder || TALLY_DIR0).replace(/^\/+|\/+$/g, "");
   const invFolder = () => String(cfg().invoiceFolder || "").replace(/^\/+|\/+$/g, "") || pdfFolder();
   async function pdfToOneDrive(file, kind) {
     const folder = kind === "invoice" ? invFolder() : pdfFolder(); if (!folder) return { ok: false, said: "No PDF folder is set (OneDrive settings)." };
@@ -118,7 +120,30 @@
       if (a === "od") { b.disabled = true; said.style.color = "var(--muted,#666)"; said.textContent = "Saving…"; const r = await pdfToOneDrive(file(), kind); b.disabled = false;
         said.textContent = r.ok ? "Saved: " + r.said : r.said; said.style.color = r.ok ? "var(--ok,#1d7a46)" : "#b45309"; if (r.ok) { saved = true; b.textContent = "Saved ✓ (save again)"; } } });
   });
+  // a Tally invoice file goes straight into Excel's XML DATA folder as .xml.txt; Excel's automatic import enters it in Tally
+  const tallyBox = (file, said, ok) => new Promise((res) => {
+    const box = document.createElement("div"), e = (t) => String(t).replace(/[<>&]/g, "");
+    box.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px");
+    box.innerHTML = '<div class="pdfbox" style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:440px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:6px">' + (ok ? "Sent to Excel for Tally" : "Not saved to OneDrive") + '</b><span style="display:block;word-break:break-all;margin-bottom:8px;' + (ok ? "" : "color:#b45309") + '">' + e(said) + "</span>" + (ok ? '<span style="display:block;font-size:13px;color:var(--muted,#666);margin-bottom:8px">Excel enters it in Tally on its next automatic import (every few minutes) while Tally is open. The invoice shows In Tally after that.</span>' : "") +
+      '<button data-a="share" style="width:100%;margin-top:4px;padding:12px;border-radius:10px;font-size:16px;border:1px solid var(--line,#ccc);background:transparent;color:inherit">Share the file…</button><button data-a="x" style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:10px;background:var(--accent,#1b6ef3);color:var(--accent-ink,#fff);font-weight:600;font-size:16px">Done</button></div>';
+    document.body.appendChild(box);
+    box.addEventListener("click", async (ev) => { const b = ev.target.closest("button"), a = b && b.dataset.a; if (!a) return;
+      if (a === "share") { const r = await tryShare(file); if (r !== "ok" && r !== "abort") dlFile(file); return; }
+      box.remove(); res(ok); });
+  });
+  async function tallyToOneDrive(file) {
+    if (!account) return { ok: false, said: "Not signed in to OneDrive." };
+    if (!navigator.onLine) return { ok: false, said: "No internet just now." };
+    try { const tok = await token(); if (!tok) return { ok: false, said: "Sign in to OneDrive again." };
+      await upload(tallyFolder() + "/" + file.name.replace(/[\\/:*?"<>|#%]+/g, "-"), await file.arrayBuffer(), tok, "text/plain");
+      return { ok: true, said: tallyFolder().replace(/\//g, " › ") + " › " + file.name };
+    } catch (e) { return { ok: false, said: "Could not upload: " + (e.message || e) }; }
+  }
   const downloadsApi = { save: async ({ filename, data, kind }) => {
+    if (/^tally-sales-.*\.xml$/i.test(filename)) {
+      const file = new File([data], filename + ".txt", { type: "text/plain" }), r = await tallyToOneDrive(file);
+      await tallyBox(file, r.said, r.ok); return { status: "saved", onedrive: r.ok };
+    }
     if (/\.pdf$/i.test(filename) && cfg().pdfAuto !== "off") { const r = await pdfAsk(data, filename, kind); return { status: "saved", onedrive: r }; }
     const type = /\.csv$/i.test(filename) ? "text/csv" : /\.pdf$/i.test(filename) ? "application/pdf" : /\.xml$/i.test(filename) ? "text/xml" : /\.json$/i.test(filename) ? "application/json" : "application/octet-stream";
     let file = new File([data], filename, { type });
@@ -409,6 +434,7 @@
       ${f("entriesFolder", "Phone entries folder (the app puts entries here; Excel imports them on its own)", "SSI/PRODUCTION/Phone entries")}
       ${f("pdfFolder", "PDF folder (every PDF made in the app is saved here)", c.dataFolder || "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
       ${f("invoiceFolder", "Invoice PDF folder (empty = the PDF folder above)", "")}
+      ${f("tallyFolder", "Tally files folder (Excel's XML DATA; Excel sends files from here to Tally)", TALLY_DIR0)}
       <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> For PDFs, show the box to name them and save to OneDrive or share (off: share straight away)</label>
       ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
       ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
