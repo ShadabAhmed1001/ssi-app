@@ -446,6 +446,9 @@ details.sec > summary::-webkit-details-marker { display: none; }
 details.sec > summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
 details.sec[open] > summary::after { transform: rotate(-135deg); }
 details.sec.ed { margin-top: 6px; }
+details.csec > summary .num { margin-left: auto; font-family: var(--f-body); letter-spacing: 0; text-transform: none; font-weight: 600; }
+details.csec > summary .num + ::after, details.csec > summary:has(.num)::after { margin-left: 10px; }
+details.csec[open] { padding-bottom: 8px; }
 details.sec.ed > summary { position: sticky; top: 0; z-index: 2; background: var(--bg); }
 details.sec.ed[open] { padding-bottom: 8px; }
 details.sec > summary small { font-family: var(--f-body); letter-spacing: 0; color: var(--muted); font-weight: 500; }
@@ -1735,7 +1738,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 149, at: "2026-11-19T14:01:38+05:30", notes: "Costing: wet blue rate now follows skins moved or merged from other lots, and lists purchases with no rate" };
+  const APP_BUILD = { v: 150, at: "2026-11-19T14:08:47+05:30", notes: "Costing calculator: each section can be folded away; the app remembers which are folded" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2181,7 +2184,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!calc) calc = calcBlank();
     const c = calc, n = (sec, i, f, v, ph, w) => `<input class="cin${w ? " " + w : ""}" data-c="${sec}|${i}|${f}" value="${esc(v ?? "")}"${ph ? ` placeholder="${esc(ph)}"` : ""}${f === "d" ? ` list="${sec === "mach" ? "cl-mach" : "cl-chem"}"` : ' inputmode="decimal" data-numonly'} aria-label="${esc(f)}">`;
     const head = (k, lb, v, unit) => `<label>${lb}<input class="cin" data-c="h||${k}" value="${esc(v ?? "")}" inputmode="decimal" data-numonly>${unit ? `<small class="note">${unit}</small>` : ""}</label>`;
-    const sec = (id, title, cols, rowsHtml, add) => `<h3 class="calch">${title}<span class="num" id="ct-${id}"></span></h3><div class="tbl ctbl"><table><thead><tr>${cols.map((x) => `<th${x[1] ? ' class="r"' : ""}>${x[0]}</th>`).join("")}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="note">No lines.</td></tr>`}</tbody></table></div><button class="btn alt sm" data-cadd="${id}">+ Add ${add}</button>`;
+    const sec = (id, title, cols, rowsHtml, add) => `<details class="sec csec" data-sec="calc:${id}"${secIsOpen("calc:" + id, true) ? " open" : ""}><summary>${title}<span class="num" id="ct-${id}"></span></summary><div class="tbl ctbl"><table><thead><tr>${cols.map((x) => `<th${x[1] ? ' class="r"' : ""}>${x[0]}</th>`).join("")}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="note">No lines.</td></tr>`}</tbody></table></div><button class="btn alt sm" data-cadd="${id}">+ Add ${add}</button></details>`;
     const del = (id, i) => `<td><button class="m2" data-cdel="${id}|${i}" aria-label="Remove line">×</button></td>`;
     const recs = Object.values(data.recipes).sort((a, b) => String(b.lot_no).localeCompare(String(a.lot_no), undefined, { numeric: true }));
     return `<div class="group">Costing calculator</div>
@@ -2192,8 +2195,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <datalist id="cl-src">${recs.map((x) => `<option value="${esc(x.lot_no + " · " + (x.details || x.process))}">`).join("")}</datalist>
       <datalist id="cl-chem">${[...data.chemNames].slice(0, 2000).map((x) => `<option value="${esc((data.chemBy[x] || {}).name || x)}">`).join("")}</datalist>
       <datalist id="cl-mach">${Object.keys(data.mach).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
-      <div class="two calchead"><label>Animal<select class="cin" data-c="h||animal">${["Cow", "Calf", "Buff", "Goat"].map((a) => `<option${UP(a) === UP(c.animal) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
-        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div>
+      <details class="sec csec" data-sec="calc:head"${secIsOpen("calc:head", true) ? " open" : ""}><summary>Lot figures</summary><div class="two calchead"><label>Animal<select class="cin" data-c="h||animal">${["Cow", "Calf", "Buff", "Goat"].map((a) => `<option${UP(a) === UP(c.animal) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
+        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div></details>
       ${sec("crust", "Crusting", [["%", 1], ["Chemical"], ["Qty kg", 1], ["₹ / kg", 1], ["₹", 1]], c.crust.map((x, i) => `<tr><td>${n("crust", i, "p", x.p, "", "w5")}</td><td>${n("crust", i, "d", x.d)}</td><td class="r num" id="cq-${i}"></td><td>${n("crust", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-crust-${i}"></td>${del("crust", i)}</tr>`).join(""), "chemical")}
       ${sec("fin", "Finishing", [["Ratio", 1], ["Chemical"], ["Weight kg", 1], ["₹ / kg", 1], ["₹", 1]], c.fin.map((x, i) => `<tr><td>${n("fin", i, "r", x.r, "", "w5")}</td><td>${n("fin", i, "d", x.d)}</td><td>${n("fin", i, "w", x.w, "", "w6")}</td><td>${n("fin", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-fin-${i}"></td>${del("fin", i)}</tr>`).join(""), "chemical")}
       ${sec("mach", "Machinery", [["Machine"], ["Rounds", 1], ["₹ / pc / round", 1], ["Per lot"], ["₹", 1]], c.mach.map((x, i) => `<tr><td>${n("mach", i, "d", x.d)}</td><td>${n("mach", i, "n", x.n, "", "w5")}</td><td>${n("mach", i, "rate", x.rate, "", "w6")}</td><td><input type="checkbox" class="cin" data-c="mach|${i}|flat"${x.flat ? " checked" : ""} aria-label="Charged per lot, not per piece"></td><td class="r num" id="ca-mach-${i}"></td>${del("mach", i)}</tr>`).join(""), "machine")}
@@ -2204,7 +2207,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function calcTotals() {
     if (!calc || !$("#calc-sum")) return; const m = calcMath(), f2 = (x) => fmtN(x, 2), set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     m.cr.forEach((x, i) => { set("cq-" + i, fmtN(x.q, 3)); set("ca-crust-" + i, f2(x.amt)); }); m.fi.forEach((x, i) => set("ca-fin-" + i, f2(x.amt))); m.ma.forEach((x, i) => set("ca-mach-" + i, f2(x.amt)));
-    set("ct-crust", " · ₹" + fmtN(m.crust, 0)); set("ct-fin", " · ₹" + fmtN(m.fin, 0)); set("ct-mach", " · ₹" + fmtN(m.mach, 0)); set("ct-extra", m.extra ? " · ₹" + fmtN(m.extra, 0) : "");
+    set("ct-crust", "₹" + fmtN(m.crust, 0)); set("ct-fin", "₹" + fmtN(m.fin, 0)); set("ct-mach", "₹" + fmtN(m.mach, 0)); set("ct-extra", m.extra ? "₹" + fmtN(m.extra, 0) : "");
     const line = (t, v) => `<tr><td>${t}</td><td class="r num">${fmtN(v, 0)}</td><td class="r num">${m.out ? fmtN(v / m.out, 2) : ""}</td></tr>`;
     $("#calc-sum").innerHTML = `<div><span class="note">Cost per finished sqft</span><br><span class="cost-big">₹${fmtN(m.perSqft, 2)}</span></div>
       <div class="tbl"><table><thead><tr><th>Part</th><th class="r">₹</th><th class="r">₹ / sqft</th></tr></thead><tbody>${line("Crusting", m.crust)}${line("Finishing", m.fin)}${line("Machinery", m.mach)}${line("Wet blue", m.blue)}${m.extra ? line("Other costs", m.extra) : ""}</tbody><tfoot><tr><td><b>Total</b></td><td class="r num"><b>${fmtN(m.total, 0)}</b></td><td class="r num"><b>${m.out ? fmtN(m.perSqft, 2) : ""}</b></td></tr></tfoot></table></div>
@@ -5956,7 +5959,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   });
   $("#detail").addEventListener("focusin", (e) => { const t = e.target; if (t.id === "iv-party" || (t.dataset && t.dataset.f === "item")) suggShow(t); });
   $("#detail").addEventListener("focusout", (e) => { const t = e.target; if (t.id === "iv-party" || (t.dataset && t.dataset.f === "item")) setTimeout(() => { const a = document.activeElement; if (!a || !a.closest || !a.closest(".pickw")) suggHide(); }, 200); });
-  $("#detail").addEventListener("toggle", (e) => { const t = e.target; if (t.matches && t.matches("details[data-sec]")) { SECOPEN[t.dataset.sec] = t.open; try { localStorage.setItem("ssi-secs", JSON.stringify(SECOPEN)); } catch (x) {} } }, true);
+  document.addEventListener("toggle", (e) => { const t = e.target; if (t.matches && t.matches("details[data-sec]")) { SECOPEN[t.dataset.sec] = t.open; try { localStorage.setItem("ssi-secs", JSON.stringify(SECOPEN)); } catch (x) {} } }, true);
   $("#detail").addEventListener("click", (e) => {
     { const b = e.target.closest("[data-q]"); if (b) { qAct(b.dataset.q, b); return; } }
     { const b = e.target.closest("[data-pay]"); if (b) { payAct(b.dataset.pay, b); return; } }
