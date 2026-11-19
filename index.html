@@ -714,7 +714,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       enRun("INSERT INTO lots(lot_no, customer, product, order_qty, lot_pcs, shaving, lot_sqft, order_date, due_date, stage, stage_since, weight, remarks, process_page, delivered_est, state, chem_crust, chem_finish, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [k, UP(d.customer || ""), UP(d.product || ""), d.order_qty ? Number(d.order_qty) : null, Number(d.pcs) || 0, d.shaving || "", sq, d.order_date || null, d.due_date || null, d.stage || "", String(d.date || "").slice(0, 10), wt && isFinite(Number(wt)) ? wt : d.weight || "", d.remarks || "", d.process_page || "", +(sq * 0.9).toFixed(3), "OPEN", "—", "—", e.created_at || enNow()]);
       ENGINE._led(d.date, from, k, d.pcs, d.sqft, "ALLOCATION", e, d.note); ENGINE._purchUsed(from, e);
-      if (Number(d.line_id) > 0) enRun("INSERT OR REPLACE INTO lot_orders(lot_no, line_id, linked_at, linked_by) VALUES(?,?,?,?)", [k, Number(d.line_id), e.created_at || enNow(), e.entered_by || ""]);
+      const lid = d.line_id && String(d.line_id) !== "0" ? ENGINE._line(d.line_id) : 0;
+      if (lid > 0) enRun("INSERT OR REPLACE INTO lot_orders(lot_no, line_id, linked_at, linked_by) VALUES(?,?,?,?)", [k, lid, e.created_at || enNow(), e.entered_by || ""]);
       enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", [e.id, k]);
     },
     skins(e) { const d = e.data || {}; ENGINE._purch(d.from); enLot(d.to); ENGINE._led(d.date, d.from, d.to, d.pcs, d.sqft, "ALLOCATION", e, d.note); ENGINE._lotQty(d.to, Number(d.pcs) || 0, Number(d.sqft) || 0); ENGINE._purchUsed(d.from, e); },
@@ -1063,6 +1064,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const byMade = (a, b) => String(a.created_at || "").localeCompare(String(b.created_at || ""));
     const lotBase = hiNum(rows("SELECT lot_no FROM lots").map((r) => r.lot_no).concat(moveE.filter((e) => e.data.is_new === "1").map((e) => e.data.to)), /^L(\d+)$/);
     const newLotNo = new Map(newLots.map((e) => [e.id, data.nlNo[e.id] || "L" + (lotBase + 1)]));
+    // a new lot made for a PO is linked to it straight away (a later link or unlink on the phone still wins)
+    const nlPo = []; newLots.forEach((e) => { const d = e.data || {}, ln = String(d.line_id || "").trim(), k = newLotNo.get(e.id); if (!ln || ln === "0" || !k) return;
+      if (linksE.some((x) => x.lot_no === k && String(x.created_at) > String(e.created_at)) || unlinkE.some((x) => x.lot_no === k && String(x.created_at) > String(e.created_at))) return;
+      const nw = /^n/.test(ln) ? newPO.find((o) => ln.startsWith("n" + o.id + "l")) : null;
+      po[k] = { lot_no: k, po_no: (lineInfo[ln] || {}).po_no || (nw && nw.data.po) || "", line_id: /^n/.test(ln) ? ln : Number(ln) }; nlPo.push(po[k]); });
     const purBase = hiNum(rows("SELECT purchase_no FROM purchases").map((r) => r.purchase_no), /^P(\d+)$/);
     const newPurNo = new Map(newPurch.concat(splitE).sort(byMade).map((e, i) => [e.id, "P" + String(purBase + i + 1).padStart(3, "0")]));
     // skins movements still waiting for Excel, shown in purchase and lot movements until the next update
@@ -1145,6 +1151,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     rwLoad(of);
     const links = {}; rows("SELECT * FROM lot_orders").filter((r) => !linksE.some((e) => e.lot_no === r.lot_no) && !unlinkE.some((e) => e.lot_no === r.lot_no && Number(e.line_id) === r.line_id && !linkedLater(e))).forEach((r) => (links[r.line_id] = links[r.line_id] || []).push(r.lot_no));
     linksE.forEach((e) => (links[e.line_id] = links[e.line_id] || []).push(e.lot_no));
+    nlPo.forEach((r) => { const a = (links[r.line_id] = links[r.line_id] || []); if (!a.includes(r.lot_no)) a.push(r.lot_no); });
     const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
     data.orders = rows("SELECT l.*, o.po_no, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id").map((o) => {
       orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }); });
@@ -1763,7 +1770,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 152, at: "2026-11-19T15:19:32+05:30", notes: "Delivery form shows the skins still pending delivery" };
+  const APP_BUILD = { v: 153, at: "2026-11-19T18:45:56+05:30", notes: "A new lot made for a PO shows under that PO straight away" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
