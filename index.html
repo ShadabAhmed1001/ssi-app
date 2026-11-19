@@ -1782,7 +1782,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 155, at: "2026-11-19T20:27:23+05:30", notes: "PDFs (invoices, processes) open a box first: change the file name, then Save to OneDrive, Share or Download" };
+  const APP_BUILD = { v: 156, at: "2026-11-19T20:39:12+05:30", notes: "Picking a PO for extra sqft shows its quantity, used up and pending" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4039,10 +4039,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     po_share: { title: "Move sqft to another PO", html: (a) => { const [k, id] = String(a).split("|"), l = data.lotBy[k], o = data.orders.find((x) => String(x.id) === String(id)); if (!l || !o) return "";
         const has = shareOn(l, o.id), over = o.qty_sqft ? Math.max(0, o.sqf - o.qty_sqft * PO_CAP) : 0;
         const opts = data.orders.filter((x) => !x.isNew && !x.closed_on && x.id !== o.id && x.qty_sqft).map((x) => ({ x, room: x.qty_sqft * PO_CAP - poUse(x.id) })).sort((a, b) => (b.x.customer === o.customer) - (a.x.customer === o.customer) || b.room - a.room)
-          .map((r) => `<option value="${r.x.id}">PO ${esc(r.x.po_no)} · ${esc(r.x.customer)} · ${esc(r.x.item)} · room ${fmtN(Math.max(0, r.room), 0)} sqft</option>`).join("");
+          .map((r) => `<option value="${r.x.id}">${esc(poOptTxt(r.x))}</option>`).join("");
         return `<form class="fm" id="fm-po_share" data-lot="${esc(k)}" data-id="${o.id}"><h3>${esc(k)} · PO ${esc(o.po_no)}</h3><p class="note" style="margin:0">${fmtN(has, 0)} sqft of ${esc(k)} count on this PO. ${over > 0.5 ? `The PO is ${fmtN(over, 0)} sqft over 115%.` : ""} The skins stay in the lot; only the PO they count for changes.</p>
           <label>Sqft<input id="ps-sqft" inputmode="decimal" value="${over > 0.5 ? +Math.min(over, has).toFixed(2) : ""}"></label>
-          <label>Put them on PO<select id="ps-line"><option value="">- none, keep here and give the reason -</option>${opts}</select></label>
+          <label>Put them on PO<select id="ps-line"><option value="">- none, keep here and give the reason -</option>${opts}</select></label><p class="note" id="ps-line-info" style="margin:4px 0 0"></p>
           <label>Reason<input id="ps-why" placeholder="needed when no PO is picked"></label>${formEnd}</form>`; } },
     po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
     chem: { title: "Record use", html: (a) => `<form class="fm" id="fm-chem" data-chem="${esc(a)}"><h3>${esc(a)}</h3>
@@ -5067,6 +5067,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (l.po && String(l.po.line_id) === String(id)) v += Math.max(0, (Number(l.lot_sqft) || 0) - out); return v; }
   const poUse = (id) => data.lots.reduce((a, l) => a + shareOn(l, id), 0);
   const PO_CAP = 1.15;
+  // a PO line for the "extra sqft" pickers: ordered, already used, still pending, room up to 115%
+  const poFig = (x) => { const used = poUse(x.id), q = Number(x.qty_sqft) || 0; return { q, used, pend: q - used, room: q * PO_CAP - used }; };
+  const poOptTxt = (x) => { const f = poFig(x); return `PO ${x.po_no} · ${x.item} · qty ${fmtN(f.q, 0)} · used ${fmtN(f.used, 0)} · pending ${fmtN(f.pend, 0) || 0}`; };
+  const poInfo = (id) => { const x = data.orders.find((y) => String(y.id) === String(id)); if (!x) return "";
+    const f = poFig(x); return `<b>PO ${esc(x.po_no)}</b> · ${esc(x.customer)} · ${esc(x.item)}<br>PO quantity <b>${fmtN(f.q, 0)}</b> sqft · used up <b>${fmtN(f.used, 0) || 0}</b> · pending <b class="${f.pend < 0 ? "late" : ""}">${fmtN(f.pend, 0) || 0}</b>${f.room > 0 ? ` · room up to 115%: ${fmtN(f.room, 0)}` : ` · <span class="late">already at 115%</span>`}`; };
+  document.addEventListener("change", (e) => { if (e.target.id === "pc-line" || e.target.id === "ps-line") { const i = $("#" + e.target.id + "-info"); if (i) i.innerHTML = poInfo(e.target.value); } });
   let pendShare = null;
   // stops the save (returns true) when the skins would take the PO past 115%, until another PO or a reason is given
   function capCheck(f, line, add, lot, msg) {
@@ -5077,9 +5083,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!box) {
       const opts = data.orders.filter((x) => !x.isNew && !x.closed_on && x.id !== o.id && x.qty_sqft).map((x) => ({ x, room: x.qty_sqft * PO_CAP - poUse(x.id) })).filter((r) => r.room > 0.5)
         .sort((a, b) => (b.x.customer === o.customer) - (a.x.customer === o.customer) || b.room - a.room)
-        .map((r) => `<option value="${r.x.id}">PO ${esc(r.x.po_no)} · ${esc(r.x.customer)} · ${esc(r.x.item)} · room ${fmtN(r.room, 0)} sqft</option>`).join("");
+        .map((r) => `<option value="${r.x.id}">${esc(poOptTxt(r.x))}</option>`).join("");
       f.querySelector("#fm-msg").insertAdjacentHTML("beforebegin", `<div id="pc-box" class="warnbox"><p style="margin:0 0 6px"><b>PO ${esc(o.po_no)} · ${esc(o.item)}</b> is for ${fmtN(o.qty_sqft, 0)} sqft, so up to ${fmtN(lim, 0)} sqft (115%) can go into it. It already has ${fmtN(now, 0)} sqft; this would make it ${fmtN(now + add, 0)}. <b>${fmtN(over, 0)} sqft are extra.</b></p>
-        <label>Put the extra ${fmtN(over, 0)} sqft on another PO<select id="pc-line"><option value="">-</option>${opts}</select></label>
+        <label>Put the extra ${fmtN(over, 0)} sqft on another PO<select id="pc-line"><option value="">-</option>${opts}</select></label><p class="note" id="pc-line-info" style="margin:4px 0 0"></p>
         <label>or type why this PO takes more<input id="pc-why" placeholder="e.g. customer asked for extra"></label></div>`);
       msg.textContent = "Choose the PO for the extra sqft, or type the reason, then Save again."; return true;
     }
