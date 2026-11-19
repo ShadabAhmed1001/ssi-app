@@ -1237,7 +1237,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const smallBal = (o) => o.status === "PART IN PRODUCTION" && o.left > 0 && (o.left <= 300 || o.left <= o.qty_sqft * 0.05);
   const CHIPS = {
     today: [],
-    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stage guide"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
+    lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
     orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["bills", "Tally bills"], ["ledger", "Ledger"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
@@ -1276,7 +1276,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep", "tally"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
     { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stage guide"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stages"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
     { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
@@ -1431,9 +1431,19 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function guideView(ws) {
     const open = data.lots.filter((l) => l.grp === 1), U = (x) => String(x || "").toUpperCase();
     const L = data.stages.filter((s) => match(String(s.name) + " " + String(s.notes || ""), ws));
-    return `<p class="note" style="margin:6px 2px">The production stages in order, with the days a lot is expected to stay at each. A lot past its max days shows in Needs attention. Changed in Excel's STAGE GUIDE.</p>
-      <div class="tbl"><table><thead><tr><th>#</th><th>Stage</th><th>Phase</th><th class="r">Min days</th><th class="r">Max days</th><th class="r">Lots now</th><th class="r">Over max</th><th>Notes</th></tr></thead><tbody>${L.map((s, i) => { const here = open.filter((l) => U(l.stage) === U(s.name)), over = s.max_days ? here.filter((l) => l.inStage !== null && l.inStage > s.max_days) : [];
-        return `<tr><td class="num">${esc(s.seq ?? i + 1)}</td><td><b>${esc(s.name)}</b>${s.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td>${esc(phaseOf(s.name).toLowerCase())}</td><td class="r num">${s.min_days ? fmtN(s.min_days, 0) : "-"}</td><td class="r num">${s.max_days ? fmtN(s.max_days, 0) : "-"}</td><td class="r num">${here.length || ""}</td><td class="r num ${over.length ? "late" : ""}">${over.length ? over.map((l) => `<button class="link" data-go="lots" data-k="${esc(l.lot_no)}">${esc(l.lot_no)}</button>`).join(" ") : ""}</td><td class="wrap">${esc(s.notes || "")}</td></tr>`; }).join("")}</tbody></table></div>`;
+    // phases now, products with their own stages, products on the standard order, then every stage (19-Nov-2026)
+    const ph = PHASES.slice(0, 4).map((p) => { const ls = open.filter((l) => phaseOf(l.stage) === p); return { p, n: ls.length, late: ls.filter((l) => l.flag === "late" || l.overMax).length }; });
+    const procs = data.processes.filter((p) => !p.none), own = procs.filter((p) => pageRoute(p.name) && match(p.name + " " + pageRoute(p.name).steps.join(" "), ws)), std = procs.filter((p) => !pageRoute(p.name));
+    const chips = (st) => st.map((n, i) => `<span class="pill">${i + 1}. ${esc(n)} <small>${esc(phaseOf(n).toLowerCase())}</small></span>`).join(" ");
+    const used = (n) => procs.filter((p) => { const r = pageRoute(p.name); return r ? r.steps.some((x) => U(x) === U(n)) : stdRoute().some((x) => U(x) === U(n)); }).length;
+    return `<p class="note" style="margin:6px 2px">Each product can have its own stages: open it under Process pages and tap Set stages. Products without their own use the standard order below. Crusting chemicals are needed before a lot enters a crusting-phase stage, finishing chemicals before QC.</p>
+      <div class="tbl"><table><thead><tr>${ph.map((x) => `<th class="r">${esc(x.p.toLowerCase())}</th>`).join("")}</tr></thead><tbody><tr>${ph.map((x) => `<td class="r num"><b>${x.n}</b> lots</td>`).join("")}</tr></tbody></table></div>
+      <h3>Products with their own stages · ${own.length}</h3>${own.length ? own.map((p) => `<div class="card" style="margin:6px 0;padding:8px 10px"><button class="link" data-go="lots" data-k="${esc(p.key)}"><b>${esc(p.name)}</b></button> <span class="note">${p.open} open lot${p.open === 1 ? "" : "s"}${pageRoute(p.name).wait ? " · waiting for Excel" : ""}</span><p style="margin:4px 0 0;line-height:1.9">${chips(pageRoute(p.name).steps)}</p></div>`).join("") : `<p class="empty">None yet.</p>`}
+      <h3>Standard order · ${std.length} products</h3><p style="margin:0;line-height:1.9">${chips(stdRoute())}</p>
+      <details style="margin-top:6px"><summary>Products on the standard order</summary><p style="margin:4px 0">${std.map((p) => `<button class="link" data-go="lots" data-k="${esc(p.key)}">${esc(p.name)}</button>`).join(", ")}</p></details>
+      <h3>All stages</h3><p class="note" style="margin:0 0 4px">Days a lot is expected to stay at each; past max days it shows in Needs attention. "Products" = how many products use the stage.</p>
+      <div class="tbl"><table><thead><tr><th>#</th><th>Stage</th><th>Phase</th><th class="r">Min days</th><th class="r">Max days</th><th class="r">Products</th><th class="r">Lots now</th><th class="r">Over max</th><th>Notes</th></tr></thead><tbody>${L.map((s, i) => { const here = open.filter((l) => U(l.stage) === U(s.name)), over = s.max_days ? here.filter((l) => l.inStage !== null && l.inStage > s.max_days) : [];
+        return `<tr><td class="num">${esc(s.seq ?? i + 1)}</td><td><b>${esc(s.name)}</b>${s.wait ? ` <span class="wait">waiting for Excel</span>` : ""}</td><td>${esc(phaseOf(s.name).toLowerCase())}</td><td class="r num">${s.min_days ? fmtN(s.min_days, 0) : "-"}</td><td class="r num">${s.max_days ? fmtN(s.max_days, 0) : "-"}</td><td class="r num">${OFF_ROUTE.test(s.name) || /^DISPATCHED$/i.test(s.name) ? "" : used(s.name) || ""}</td><td class="r num">${here.length || ""}</td><td class="r num ${over.length ? "late" : ""}">${over.length ? over.map((l) => `<button class="link" data-go="lots" data-k="${esc(l.lot_no)}">${esc(l.lot_no)}</button>`).join(" ") : ""}</td><td class="wrap">${esc(s.notes || "")}</td></tr>`; }).join("")}</tbody></table></div>`;
   }
   // chemicals taken for each lot (stock adjustments, re-adjustments, rework), newest lots first, 10 lots a page
   function usageView(ws) {
@@ -1725,7 +1735,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 146, at: "2026-11-19T08:26:48+05:30", notes: "Stages per product: each process page can have its own route of stages; new steps with a phase" };
+  const APP_BUILD = { v: 147, at: "2026-11-19T09:14:54+05:30", notes: "Fix: Load process with all parts ticked; Stages page shows phases and each product's stages; rework rule follows product stages" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3557,6 +3567,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     try { after = recipeFromEditor(); } catch (e) { msg.textContent = e.message; return; }
     const isLoad = ed.load_cur !== undefined, base = isLoad ? { crust: [], finishing: [], version: ed.base_ver } : ed.base_lot ? Object.assign({}, dbRecipe(ed.base_lot, ed.base_process || ed.process), { from: ed.base_lot }) : withLot(baseRecipe(ed.lot, ed.process));
     if (!base) { msg.textContent = "The saved recipe could not be found."; return; }
+    // an edit with no source lot must build on the lot's own recipe in Excel; otherwise Excel can't apply it (L551, 19-Nov-2026)
+    if (!isLoad && !ed.base_lot && !dbRecipe(ed.lot, ed.process)) { const le = data.liveRecipes[ed.lot + "|" + ed.process];
+      if (!le || (!le.base_lot && le.status !== "imported")) { msg.innerHTML = esc(ed.lot + " has no saved process on " + ed.process + " in Excel yet, so Excel can't apply this edit. Go back and use Process › Load from, so Excel knows which process it starts from.") ; return; } }
     const from0 = isLoad ? recAt(ed.base_lot, ed.base_process, ed.base_ver) || base : base, known = new Set(from0.crust.concat(from0.finishing).map((x) => String(x.d).toUpperCase()));
     const bad = after.crust.filter((x) => x.p !== null).concat(after.finishing.filter((x) => x.r !== "")).map((x) => x.d).find((d) => d && !known.has(d.toUpperCase()) && !data.chemNames.has(d.toUpperCase()));
     if (bad && warnOnce(f, bad + " is not in the chemical list, so Excel won't find its rate.")) return;
@@ -5048,7 +5061,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (f.id === "fm-pb_drop") return saveNew({ type: "purchase_decision", lot_no: "", data: { entry: f.dataset.a, choice: "none", drop: "" } }, "Saved. Excel drops the bill.", msg, btn);
     if (f.id === "fm-tally_delete") { const t = pbTally().find((x) => x.guid === f.dataset.g); if (!t) return bad("This voucher is no longer in the data."); const why = need("#td-why"); if (!why) return bad("Say why."); if (warnOnce(f, "Purchase " + t.vno + " will be deleted in Tally. Save again to confirm.")) return; return saveNew({ type: "tally_delete", lot_no: t.party, doc_no: t.ref, data: { guid: t.guid, vno: t.vno, party: t.party, ref: t.ref, why } }, "Saved. Excel deletes it in Tally at its next run.", msg, btn); }
     if (f.id === "fm-chem_alias") { const c = data.chemBy[need("#fi-to").toUpperCase()]; if (!c) return bad("Pick a chemical from the list."); return saveNew({ type: "chem_alias", lot_no: f.dataset.name, data: { name: f.dataset.name, to: c.name } }, "Saved. It is waiting for Excel.", msg, btn); }
-    if (f.id === "fm-load" || f.id === "fm-process") { const parts = lpParts(); if (!parts) return bad("Tick at least one part to bring.");
+    if (f.id === "fm-load" || f.id === "fm-process") { const parts = lpParts(); if (parts === null) return bad("Tick at least one part to bring.");
       if (f.id === "fm-load") return loadProcess(data.lotBy[f.dataset.lot], need("#fo-src"), parts); }
     if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src, lpParts()); }
     if (f.id === "fm-chem_adjust") {
@@ -5157,7 +5170,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if ((l.lot_pcs > 0 && pcs > l.lot_pcs + 0.0001) || (l.lot_sqft > 0 && sqft > l.lot_sqft + 0.5)) return bad("That is more than the lot's " + fmtN(l.lot_pcs, 0) + " pcs and " + fmtN(l.lot_sqft, 2) + " sqft.");
       if (!whole && l.lot_pcs > 0 && pcs >= l.lot_pcs - 0.0001) return bad("That is the whole lot. Choose 'The whole lot goes back' instead.");
       if (whole && rwOpen(lot)) return bad(lot + " already has a rework open. Mark it done first.");
-      const sa = stageNo(at) || 0, sb = stageNo(back) || 0;
+      const ra = routeIdx(l, at), rb = routeIdx(l, back), sa = ra >= 0 && rb >= 0 ? ra + 1 : stageNo(at) || 0, sb = ra >= 0 && rb >= 0 ? rb + 1 : stageNo(back) || 0;
       if (sa && sb && sb > sa && warnOnce(f, back + " comes after " + at + ", where the fault was found.")) return;
       const nl = whole ? "" : f.dataset.new, wt = numOf("#rw-wt") || rwWtGuess(lot, pcs, whole) || "";
       if (wt && Number(l.weight) > 0 && wt > Number(l.weight) * 1.5 && warnOnce(f, wt + " kg is much more than the lot's " + fmtN(l.weight, 2) + " kg. Tap Save again if it is right.")) return;
@@ -5315,7 +5328,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const past = (g) => up === "DISPATCHED" || (t > g && t <= qc);
     // a lot being reworked stays at or before the stage where the fault was found until the rework is done
     const ro = rwOpen(l0.lot_no);
-    if (ro && !["ON HOLD", "DUMPED"].includes(up) && (up === "DISPATCHED" || (seq(ro.at) && t > seq(ro.at)))) return { sec: [], rw: ro, text: l0.lot_no + " is being reworked (found at " + ro.at + "). Record the rework's chemicals and machines, then mark it done before the lot moves past " + ro.at + "." };
+    if (ro && !["ON HOLD", "DUMPED"].includes(up) && (up === "DISPATCHED" || rwPast(l0, ro.at, to))) return { sec: [], rw: ro, text: l0.lot_no + " is being reworked (found at " + ro.at + "). Record the rework's chemicals and machines, then mark it done before the lot moves past " + ro.at + "." };
     const l = rwSrc(l0);
     if (!fat || !l.recKey && l.chem_crust === "n/a") return null;
     const st = chemState(l), ok = (x) => ["done", "wait", "na", "nofin"].includes(st[x]), sec = [];
@@ -5324,6 +5337,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!sec.length) return null;
     return { sec, text: l0.lot_no + " can't move to " + to + " until " + sec.map((x) => x.toLowerCase()).join(" and ") + " chemicals are adjusted. If only part of the lot is going ahead (approval sample, finish setup), record it instead; the lot stays where it is." };
   }
+  // has a lot with an open rework gone past the stage where the fault was found? (product's order when both are on it)
+  function rwPast(l, at, to) { const a = routeIdx(l, at), b = routeIdx(l, to); if (a >= 0 && b >= 0) return b > a; const x = gateNo(at), y = gateNo(to); return !!x && y > x; }
   function stageForm(l) {
     const nx = nextStage(l.stage, l), R = lotRoute(l), own = pageRoute(l.process_page), inR = new Set(R.map(UP)), others = stageNames().filter((n) => !inR.has(UP(n)));
     const o = (n) => `<option value="${esc(n)}"${n === (presetStage || nx) ? " selected" : ""}>${esc(n)}${phaseOf(n) ? " · " + phaseOf(n).toLowerCase() : ""}</option>`;
