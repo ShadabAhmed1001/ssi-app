@@ -1782,7 +1782,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 154, at: "2026-11-19T20:19:17+05:30", notes: "A PO takes wet blue up to 115% of its qty; beyond that the app asks for another PO for the extra or a reason. A lot can count on more than one PO" };
+  const APP_BUILD = { v: 155, at: "2026-11-19T20:27:23+05:30", notes: "PDFs (invoices, processes) open a box first: change the file name, then Save to OneDrive, Share or Download" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
