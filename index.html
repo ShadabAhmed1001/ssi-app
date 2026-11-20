@@ -1786,7 +1786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 160, at: "2026-11-20T08:32:55+05:30", notes: "Costing warns when a lot's wet blue has no rate: lot costing, cost per lot list, calculator and cost PDF" };
+  const APP_BUILD = { v: 161, at: "2026-11-21T00:11:34+05:30", notes: "Invoice: deliveries of the same lot with the same item, rate, discount and GST go on the invoice as one item with the counts added" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4221,10 +4221,25 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (lot) { const cs = invCands(cust).filter((c) => c.lot === lot); v.lines = cs.length ? cs.map((c) => invLine(lot, c)) : [invLine(lot, null)]; }
     return v;
   }
+  const invKey = (ln) => [UP(ln.lot), UP(String(ln.item || "").trim()), Number(ln.rate) || 0, Number(ln.disc) || 0, String(ln.hsn || "").trim(), Number(ln.gst) || 0].join("|");
+  // a lot delivered in parts: lines of the same lot, item, rate, discount, HSN and GST become one invoice item with the counts added (21-Nov-2026)
+  function invMerge(src) {
+    const out = [], at = {}, key = invKey;
+    src.forEach((ln) => {
+      const k = ln.lot ? key(ln) : null, m = k != null && at[k] != null ? out[at[k]] : null;
+      if (!m) { if (k != null) at[k] = out.length; out.push(Object.assign({}, ln, { parts: 1 })); return; }
+      const add = (f) => r2((Number(m[f]) || 0) + (Number(ln[f]) || 0));
+      m.hides = add("hides"); m.sides = add("sides"); m.sqft = add("sqft"); m.parts++;
+      m.dkeys = (m.dkeys || [m.dkey]).concat(ln.dkey);
+      if (m.autodesc !== false && ln.autodesc !== false) m.desc = descOf(m);
+      else if (ln.desc && ln.desc !== m.desc) { m.desc = descOf(m); m.autodesc = true; }
+    });
+    return out;
+  }
   // totals: GST on each line's rate; freight / packing / discount go at the main line's rate when taxed
   function invCalc(v) {
     const S = iset(), intra = UP(v.state || S.state) === UP(S.state);
-    const lines = (v.lines || []).map((ln) => { const q = Number(ln.sqft) || 0, r = Number(ln.rate) || 0, d = Number(ln.disc) || 0; return Object.assign({}, ln, { amt: r2(q * r * (1 - d / 100)) }); });
+    const lines = invMerge(v.lines || []).map((ln) => { const q = Number(ln.sqft) || 0, r = Number(ln.rate) || 0, d = Number(ln.disc) || 0; return Object.assign({}, ln, { amt: r2(q * r * (1 - d / 100)) }); });
     const goods = r2(lines.reduce((t, x) => t + x.amt, 0)), fr = r2(v.freight), pk = r2(v.packing), sm = r2(v.sampling), ds = r2(v.discount), extra = r2(fr + pk + sm - ds);
     const byRate = {}; lines.forEach((x) => { const g = Number(x.gst) || 0; byRate[g] = r2((byRate[g] || 0) + x.amt); });
     const main = lines.slice().sort((a, b) => b.amt - a.amt)[0], mr = main ? Number(main.gst) || 0 : Number(S.gst) || 0;
@@ -4309,7 +4324,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || v.vno || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
       ${formOpen === "invdel" ? `<div class="fm"><p style="margin:0">Delete ${esc(invName(v))}? Its deliveries stay recorded and can go on another invoice.</p><div class="acts" style="margin:0"><button class="btn" data-inv="delsure">Delete invoice</button><button class="btn alt" type="button" data-formclose>Keep it</button></div></div>` : ""}
       <h3>Items</h3><div class="tbl"><table><thead><tr><th>Item / description</th><th class="r">Sqft</th><th class="r">Rate</th><th class="r">Disc</th><th class="r">Amount</th></tr></thead><tbody>${t.lines.map((ln) => { const d = invDelInfo(ln.dkey);
-        return `<tr><td><b>${esc(ln.item)}</b><br><span class="note">${esc(ln.desc)} · HSN ${esc(ln.hsn)} · GST ${fmtN(ln.gst, 2)}%${d ? " · delivered " + fmtD(d.date) + (d.wait ? " (waiting for Excel)" : "") : ""}</span> <button class="mini" data-go="lots" data-k="${esc(ln.lot)}">${esc(ln.lot)}</button></td><td class="r num">${fmtN(ln.sqft, 2)}</td><td class="r num">${fmtN(ln.rate, 2)}</td><td class="r num">${ln.disc ? fmtN(ln.disc, 2) + "%" : ""}</td><td class="r num">${fmtN(ln.amt, 2)}</td></tr>`; }).join("")}</tbody></table></div>
+        return `<tr><td><b>${esc(ln.item)}</b><br><span class="note">${esc(ln.desc)} · HSN ${esc(ln.hsn)} · GST ${fmtN(ln.gst, 2)}%${ln.parts > 1 ? " · " + ln.parts + " deliveries added together" : d ? " · delivered " + fmtD(d.date) + (d.wait ? " (waiting for Excel)" : "") : ""}</span> <button class="mini" data-go="lots" data-k="${esc(ln.lot)}">${esc(ln.lot)}</button></td><td class="r num">${fmtN(ln.sqft, 2)}</td><td class="r num">${fmtN(ln.rate, 2)}</td><td class="r num">${ln.disc ? fmtN(ln.disc, 2) + "%" : ""}</td><td class="r num">${fmtN(ln.amt, 2)}</td></tr>`; }).join("")}</tbody></table></div>
       <p class="note" style="margin:4px 2px">${fmtN(t.hides, 1)} hides${t.sides ? " + " + fmtN(t.sides, 0) + " sides" : ""}, ${fmtN(t.sqft, 2)} sqft</p>
       ${invTotHtml(v)}
       ${tr.length ? `<h3>Transport</h3><div class="kv">${tr.map((x) => `<div><span>${x[0]}</span><b>${esc(x[1])}</b></div>`).join("")}</div>` : ""}
@@ -4368,6 +4383,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <label class="chk"><input type="checkbox" data-ivl="${i}" data-f="newitem"${ln.newitem ? " checked" : ""}> Create this item in Tally with the invoice</label>
       ${ln.newitem ? `<label>Stock group<select data-ivl="${i}" data-f="newgrp">${grps.map((g) => `<option${g === (ln.newgrp || "4107") ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>` : ""}</div>`;
   }
+  // says when a line will be added together with another line of the same lot on the invoice
+  function invMergeNote(i) {
+    const ln = inv && inv.lines[i]; if (!ln || !ln.lot) return "";
+    const n = inv.lines.filter((x) => invKey(x) === invKey(ln)).length;
+    return n > 1 ? ` · <b>goes on the invoice as one item with the other ${esc(ln.lot)} ${n === 2 ? "line" : "lines"}</b> (same item, rate, discount and GST)` : "";
+  }
   function invLineHtml(ln, i) {
     const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = !ln.newdel;
     const n = (f, lb, more) => `<label>${lb}<input data-ivl="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" type="number" step="any" inputmode="decimal"${lock && ["hides", "sides", "sqft"].includes(f) ? " readonly" : ""}${more || ""}></label>`;
@@ -4376,7 +4397,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${invItemNote(ln, i)}
       <label>Description<input data-ivl="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
       <div class="two">${n("hides", "Hides")}${n("sides", "Sides", ' step="1"')}${n("sqft", "Sqft")}${ln.newdel ? `<label>Delivery date<input data-ivl="${i}" data-f="ddate" type="date" value="${esc(ln.ddate || "")}"></label>` : ""}${n("rate", "Rate / sqft")}${n("disc", "Discount %")}<label>HSN<input data-ivl="${i}" data-f="hsn" value="${esc(ln.hsn)}" inputmode="numeric"></label>${n("gst", "GST %")}</div>
-      <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${lock ? " · counts come from the delivery" : ""}</p></div>`;
+      <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${lock ? " · counts come from the delivery" : ""}<span class="ivmerge" id="ivm-${i}">${invMergeNote(i)}</span></p></div>`;
   }
   function invRedraw() { const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
   function invInput(t) {
@@ -4395,6 +4416,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const a = $("#ivl-amt-" + t.dataset.ivl); if (a) a.textContent = rs(r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)));
     }
     const box = $("#iv-tot"); if (box) box.innerHTML = invTotHtml(v);
+    v.lines.forEach((x, i) => { const m = $("#ivm-" + i); if (m) m.innerHTML = invMergeNote(i); });
     if (t.id === "iv-party" || t.dataset.f === "item") suggShow(t);
   }
   function invClick(b) {
