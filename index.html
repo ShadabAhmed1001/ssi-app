@@ -593,7 +593,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp() };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -1786,7 +1786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 159, at: "2026-11-20T00:36:00+05:30", notes: "Cost per sqft of a part-delivered lot counts the sqft still to go (90%), not only what was delivered" };
+  const APP_BUILD = { v: 160, at: "2026-11-20T08:32:55+05:30", notes: "Costing warns when a lot's wet blue has no rate: lot costing, cost per lot list, calculator and cost PDF" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2199,11 +2199,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const wb = over.wb ?? (lot ? lotBlue(r.lot_no, over.wb === undefined ? missing : null) : 0), blue = inSq * (Number(wb) || 0);
     const rw = lot && r.lot_no === rwRoot(r.lot_no) ? rwCost(r.lot_no) : 0;
     const sell = over.sell ?? (lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : ""), total = crust + mach + fin + blue + rw;
-    return { machRows, crust, mach, fin, blue, rw, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: [...missing], rate };
+    const wbMiss = [...missing].filter((x) => /^wet blue /.test(x)).map((x) => x.replace(/^wet blue (rate of )?/, "")), chemMiss = [...missing].filter((x) => !/^wet blue /.test(x));
+    return { machRows, crust, mach, fin, blue, rw, chem: crust + fin, total, inSq, outSq, wb, sell, perSqft: outSq ? total / outSq : 0, chemSqft: outSq ? (crust + fin) / outSq : 0, profit: sell !== "" && outSq ? Number(sell) * outSq - total : null, missing: chemMiss, wbMiss, rate };
   }
+  const wbName = (x) => /^starting balance of /.test(x) ? "the opening skins of " + x.replace(/^starting balance of /, "") + " (no purchase)" : x;
+  const wbWarn = (c) => c.wbMiss && c.wbMiss.length ? `Wet blue cost is not complete: no rate for ${c.wbMiss.map(wbName).join(", ")}. ${Number(c.wb) > 0 ? "Only part of the wet blue is costed" : "Wet blue is counted as ₹0"}, so the cost per sqft is too low. ${c.wbMiss.some((x) => /^P/.test(x)) ? "Enter the rate on the purchase." : "Link the skins to their purchase, or type a wet blue rate."}` : "";
   function costBox(r) {
     const c = costOf(r), line = (t, v) => `<tr><td>${t}</td><td class="r num">${fmtN(v, 0)}</td><td class="r num">${c.outSq ? fmtN(v / c.outSq, 2) : ""}</td></tr>`;
-    return `<div class="coststk"><div><span class="note">Cost price per finished sqft</span><br><span class="cost-big">₹${fmtN(c.perSqft, 2)}</span></div>
+    return `<div class="coststk">${c.wbMiss.length ? `<div class="warnbox" style="margin:0">${esc(wbWarn(c))}</div>` : ""}<div><span class="note">Cost price per finished sqft</span><br><span class="cost-big">₹${fmtN(c.perSqft, 2)}</span></div>
       <div class="tbl"><table><thead><tr><th>Part</th><th class="r">₹</th><th class="r">₹ / sqft</th></tr></thead><tbody>${line("Crusting", c.crust)}${line("Machinery", c.mach)}${line("Finishing", c.fin)}${c.rw ? line("Rework", c.rw) : ""}${line("Wet blue", c.blue)}</tbody><tfoot><tr><td><b>Total</b></td><td class="r num"><b>${fmtN(c.total, 0)}</b></td><td class="r num"><b>${fmtN(c.perSqft, 2)}</b></td></tr></tfoot></table></div>
       <p class="note" style="margin:0">${r.shaved_wt ? "Crusting ₹" + fmtN(Math.ceil(c.crust / r.shaved_wt), 0) + " per kg. " : ""}${r.pcs ? "Machinery ₹" + fmtN(Math.ceil(c.mach / r.pcs), 0) + " per pc. " : ""}On ${fmtN(c.inSq, 0)} sqft in, ${fmtN(c.outSq, 0)} sqft finished.${r.animal ? "" : " No animal set, so machinery is ₹0."}</p>
       ${c.profit !== null ? `<p class="${c.profit < 0 ? "late" : ""}" style="margin:0">Profit ₹${fmtN(c.profit, 0)} at ₹${fmtN(c.sell, 2)} / sqft</p>` : ""}
@@ -2218,9 +2221,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function calcBlank() { return { src: "", animal: "Cow", pcs: "", wt: "", inSq: "", outSq: "", wb: "", sell: "", crust: [], fin: [], mach: [], extra: [] }; }
   function calcLoad(key) {
     const r = key ? getRecipe(key) : null; if (!r) { calc = calcBlank(); return; }
-    const lot = data.lotBy[r.lot_no], wb = lot ? lotBlue(r.lot_no) : 0, sell = lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : "";
+    const wbM = new Set(), lot = data.lotBy[r.lot_no], wb = lot ? lotBlue(r.lot_no, wbM) : 0, sell = lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : "";
     const inSq = r.wb_sqft || (lot && lot.lot_sqft) || "";
-    calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell,
+    calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell, wbMiss: [...wbM].map((x) => x.replace(/^wet blue (rate of )?/, "")),
       crust: r.crust.filter((c) => c.p !== null && c.p !== undefined && String(c.d || "").trim()).map((c) => ({ p: +(c.p * 100).toFixed(4), d: c.d, rate: cRate(c.d) })),
       fin: finRows(r).filter((f) => String(f.d || "").trim() && Number(f.w)).map((f) => ({ r: f.r, d: f.d, w: f.w, rate: cRate(f.d) })),
       mach: r.machinery.filter((m) => String(m.d || "").trim() && m.n !== "" && m.n !== "0").map((m) => ({ d: m.d, n: m.n, rate: cMachRate(m.d, r.animal), flat: machRun(m.d) })),
@@ -2252,7 +2255,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <datalist id="cl-chem">${[...data.chemNames].slice(0, 2000).map((x) => `<option value="${esc((data.chemBy[x] || {}).name || x)}">`).join("")}</datalist>
       <datalist id="cl-mach">${Object.keys(data.mach).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
       <details class="sec csec" data-sec="calc:head"${secIsOpen("calc:head", true) ? " open" : ""}><summary>Lot figures</summary><div class="two calchead"><label>Animal<select class="cin" data-c="h||animal">${["Cow", "Calf", "Buff", "Goat"].map((a) => `<option${UP(a) === UP(c.animal) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
-        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div></details>
+        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div>${c.wbMiss && c.wbMiss.length ? `<div class="warnbox">${esc(wbWarn({ wbMiss: c.wbMiss, wb: c.wb }))}</div>` : ""}</details>
       ${sec("crust", "Crusting", [["%", 1], ["Chemical"], ["Qty kg", 1], ["₹ / kg", 1], ["₹", 1]], c.crust.map((x, i) => `<tr><td>${n("crust", i, "p", x.p, "", "w5")}</td><td>${n("crust", i, "d", x.d)}</td><td class="r num" id="cq-${i}"></td><td>${n("crust", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-crust-${i}"></td>${del("crust", i)}</tr>`).join(""), "chemical")}
       ${sec("fin", "Finishing", [["Ratio", 1], ["Chemical"], ["Weight kg", 1], ["₹ / kg", 1], ["₹", 1]], c.fin.map((x, i) => `<tr><td>${n("fin", i, "r", x.r, "", "w5")}</td><td>${n("fin", i, "d", x.d)}</td><td>${n("fin", i, "w", x.w, "", "w6")}</td><td>${n("fin", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-fin-${i}"></td>${del("fin", i)}</tr>`).join(""), "chemical")}
       ${sec("mach", "Machinery", [["Machine"], ["Rounds", 1], ["₹ / pc / round", 1], ["Per lot"], ["₹", 1]], c.mach.map((x, i) => `<tr><td>${n("mach", i, "d", x.d)}</td><td>${n("mach", i, "n", x.n, "", "w5")}</td><td>${n("mach", i, "rate", x.rate, "", "w6")}</td><td><input type="checkbox" class="cin" data-c="mach|${i}|flat"${x.flat ? " checked" : ""} aria-label="Charged per lot, not per piece"></td><td class="r num" id="ca-mach-${i}"></td>${del("mach", i)}</tr>`).join(""), "machine")}
@@ -2358,10 +2361,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const all = allCosts(), list = all.filter((x) => match(x.l.hay, ws)).sort((a, b) => b.l.num - a.l.num);
     const sum = (key) => { const m = {}; all.forEach((x) => { const k = key(x.l) || "-", o = m[k] = m[k] || { k, n: 0, sq: 0, chem: 0, total: 0 }; o.n++; o.sq += x.outSq; o.chem += x.chem; o.total += x.total; }); return Object.values(m).filter((o) => o.sq > 0).sort((a, b) => b.chem / b.sq - a.chem / a.sq); };
     const tb = (t, col, l) => `<div class="group">${t}</div><div class="tbl"><table style="background:var(--surface)"><thead><tr><th>${col}</th><th class="r">Lots</th><th class="r">Sqft</th><th class="r">Chem ₹ / sqft</th><th class="r">Cost ₹ / sqft</th></tr></thead><tbody>${l.map((o) => `<tr><td>${esc(o.k)}</td><td class="r num">${o.n}</td><td class="r num">${fmtN(o.sq, 0)}</td><td class="r num">${fmtN(o.chem / o.sq, 2)}</td><td class="r num">${fmtN(o.total / o.sq, 2)}</td></tr>`).join("")}</tbody></table></div>`;
+    const noWb = all.filter((x) => x.wbMiss && x.wbMiss.length), noWbP = [...new Set(noWb.flatMap((x) => x.wbMiss))].sort();
     return `<p class="note">Each saved recipe at the chemical prices from your last update (data of ${data.asOf}). "Deducted" is what CHEM COST shows: quantities actually taken from stock, at the same prices. Wet blue comes from the lot's purchases.</p>
+      ${noWb.length ? `<div class="warnbox"><b>${noWb.length} ${noWb.length === 1 ? "lot has" : "lots have"} no wet blue rate</b>, so their cost per sqft is too low: ${esc(noWb.map((x) => x.l.lot_no).join(", "))}.<br>No rate for: ${esc(noWbP.map(wbName).join(", "))}.</div>` : ""}
       ${tb("By process page", "Process page", sum((l) => l.process_page))}${tb("By customer", "Customer", sum((l) => l.customer))}
       <div class="group">By lot · ${list.length}</div>` + list.slice(0, 200).map((x) => `<button class="row" data-hgo="lots" data-k="${esc(x.l.recKey)}"><span class="k">${esc(x.l.lot_no)}</span><span class="pill info num">₹${fmtN(x.perSqft, 2)} / sqft</span>
-        <span class="t">${esc(x.l.customer)} · ${esc(x.l.product)}</span><span class="m num"><span>recipe ₹${fmtN(x.chem, 0)}</span>${data.deducted[x.l.lot_no] ? `<span>deducted ₹${fmtN(data.deducted[x.l.lot_no][0], 0)}</span>` : ""}<span>₹${fmtN(x.chemSqft, 2)} / sqft</span>${x.missing.length ? `<span class="soon">${x.missing.length} not priced</span>` : ""}</span></button>`).join("");
+        <span class="t">${esc(x.l.customer)} · ${esc(x.l.product)}</span><span class="m num"><span>recipe ₹${fmtN(x.chem, 0)}</span>${data.deducted[x.l.lot_no] ? `<span>deducted ₹${fmtN(data.deducted[x.l.lot_no][0], 0)}</span>` : ""}<span>₹${fmtN(x.chemSqft, 2)} / sqft</span>${x.wbMiss && x.wbMiss.length ? `<span class="late">no wet blue rate</span>` : ""}${x.missing.length ? `<span class="soon">${x.missing.length} not priced</span>` : ""}</span></button>`).join("");
   }
   // ---------------------------------------------------------------- stock audit, from start to post
   const openAudit = () => audits.find((a) => a.status === "OPEN");
@@ -2502,6 +2507,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (withCost) {
         const b = (t, x, u, ps) => [t, fmtN(x, 0), ps === null ? "" : c0.outSq ? fmtN((ps ?? x) / c0.outSq, 2) : "", u || ""];
         put(["Costing", "Total", "Per sqft", "Per unit"], [b("Crusting", c0.crust, r.shaved_wt ? Math.ceil(c0.crust / r.shaved_wt) + " per kg" : ""), b("Machinery", c0.mach, r.pcs ? Math.ceil(c0.mach / r.pcs) + " per pc" : ""), b("Finishing", c0.fin)].concat(c0.rw ? [b("Rework", c0.rw)] : []).concat([b("Blue cost at " + fmtN(c0.wb, 2), c0.blue, "", null), b("Total cost", c0.total, "", c0.crust + c0.mach + c0.fin + (c0.rw || 0)), ["Final cost price", fmtN(c0.perSqft, 2), "", ""]]).concat(c0.profit !== null ? [[`Profit at ${fmtN(c0.sell, 2)} / sqft`, fmtN(c0.profit, 0), "", ""]] : []));
+        if (c0.wbMiss.length) put(["Wet blue not costed"], [[plain(wbWarn(c0))]]);
         if (c0.missing.length) put(["No price for"], [[plain(c0.missing.join(", "))]]);
       }
     }
@@ -3380,7 +3386,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${dyeRows(r.process).length ? `<details class="sec sub" data-sec="rec:dye"${secIsOpen("rec:dye", false) ? " open" : ""}><summary>Dye combinations</summary><div class="tbl"><table><thead><tr><th>Rechrome</th><th>Dye</th><th class="r">Main</th><th class="r">Top 1</th><th class="r">Top 2</th><th>Product</th></tr></thead><tbody>${dyeRows(r.process).map((d) => `<tr><td class="num">${esc(d.c)}</td><td>${esc(d.d)}</td><td class="r num">${esc(d.m)}</td><td class="r num">${esc(d.a)}</td><td class="r num">${esc(d.b)}</td><td>${esc(d.r)}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
       ${mach.length ? `<h3>Machinery</h3><div class="tbl"><table class="recipe"><thead><tr><th>Machine</th><th class="r">Round / coat</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${mach.map((x) => { const m = machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0); return `<tr><td>${esc(x.d)}</td><td class="r num">${esc(x.n)}</td>${showRates ? `<td class="r num">${fmtN(m.rate, 2)}${m.per ? "" : "/pc"}</td><td class="r num">${fmtN(m.amt, 0)}</td>` : ""}</tr>`; }).join("")}</tbody>${showRates ? `<tfoot><tr><td colspan="3"><b>Total</b>${r.animal ? "" : " (no animal set)"}</td><td class="r num"><b>${fmtN(mach.reduce((t, x) => t + machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0).amt, 0), 0)}</b></td></tr></tfoot>` : ""}</table></div>` : ""}
       ${fin.length ? `<h3>Finishing</h3><div class="tbl"><table class="recipe"><thead><tr><th>Ratio</th><th>Chemical</th><th class="r">Weight</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${fin.map((f, n) => frow(f, n)).join("")}</tbody></table></div>` : ""}
-      <h3>Costing</h3>${costInputs(r)}<div id="costbox">${costBox(r)}</div>
+      <h3>Costing${costOf(r).wbMiss.length ? " ⚠ wet blue rate missing" : ""}</h3>${costInputs(r)}<div id="costbox">${costBox(r)}</div>
       ${older.length && !old ? `<h3>Older versions</h3><p style="margin:0">${older.map((o) => `<button class="link" data-go="lots" data-k="${esc(base + "@v" + o.version)}">v${o.version} · ${fmtD(o.saved_at)} · ${esc(o.saved_by)}</button>`).join("<br>")}</p>` : ""}
       ${old ? "" : `<p class="note foot" style="margin-top:12px">This is the latest version saved in Excel. Prices are from your last update.</p>`}`;
   }
