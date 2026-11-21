@@ -867,6 +867,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       enRun("CREATE TABLE IF NOT EXISTS lot_po_shares(id INTEGER PRIMARY KEY, lot_no TEXT, line_id INTEGER, from_line INTEGER, sqft REAL, reason TEXT, entry_id TEXT, created_at TEXT, made_by TEXT)");
       if (to) ENGINE._lineRow(to);
       enRun("INSERT INTO lot_po_shares(lot_no, line_id, from_line, sqft, reason, entry_id, created_at, made_by) VALUES(?,?,?,?,?,?,?,?)", [l.lot_no, to, from, Number(d.sqft) || 0, d.reason || "", e.id, e.created_at || enNow(), e.entered_by || ""]); },
+    sup_party() { /* skins supplier -> Tally party, read from the entries (22-Nov-2026) */ },
+    pur_bill() { /* a link to a bill already in Tally: read from the entries, nothing to write (22-Nov-2026) */ },
     po_unlink(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=UPPER(?) AND line_id=?", [d.lot || e.lot_no, id]); },
     po_delete(e) { const oid = Number((e.data || {}).order_id) || 0;
       if (enOne("SELECT COUNT(*) n FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id WHERE l.order_id=?", [oid]).n) throw new Error("lots are linked to this PO. Unlink them first");
@@ -1525,7 +1527,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // A chemical purchase bill typed on the phone counts in stock at once. Excel posts it to Tally as a Purchase voucher
   // (module TallyPurchase) unless the same bill is already there; then the phone shows both and the user chooses.
   const TALLY_TYPES = ["chem_purchase", "purchase_decision", "tally_delete"];
-  const APP_ONLY = ["po_share"]; // kept by the app itself in either mode; Excel never sees them
+  const APP_ONLY = ["po_share", "pur_bill", "sup_party"]; // kept by the app itself in either mode; Excel never sees them
   const PB = { vtype: "Purchase", purchase: "Purchase", cgst: "Input CGST", sgst: "Input SGST", igst: "Input IGST", round: "Rounding Off", godown: "Main Location", home: "West Bengal" };
   const pbNorm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=.)/, "");
   const pbCred = () => trows("SELECT * FROM tally_creditors ORDER BY name");
@@ -1537,12 +1539,23 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const pbIsLeather = (n) => /^(SQF|PCS)/.test(UP(pbUnit(n)));
   const pbLeatherItems = () => trows("SELECT name FROM tally_items WHERE (unit LIKE 'SQF%' OR unit LIKE 'pcs%') AND (UPPER(name) LIKE '%WET BLUE%' OR UPPER(name) LIKE '%CRUST%' OR UPPER(name) LIKE '%RAW HIDE%' OR grp IN ('4104','4106','Crust/ Tanned Leather','Primary')) ORDER BY CASE WHEN UPPER(name)='WET BLUE LEATHER' THEN 0 ELSE 1 END, name").map((r) => r.name);
   const pbWbOf = (k) => entries.filter((e) => e.type === "chem_purchase" && e.status !== "cancelled" && e.data.pkey && String(e.data.pkey).split(",").includes(k));
+  // a skins purchase linked to a bill that is already in Tally (22-Nov-2026): app-only entry pur_bill {pkey, vno, vdate, party, guid}
+  // a purchase can be split over several bills and a bill over several purchases: each link carries its sqft (22-Nov-2026)
+  const purLinks = () => entries.filter((e) => e.type === "pur_bill" && e.status !== "cancelled");
+  const purBillsOf = (k) => purLinks().filter((e) => UP(e.data.pkey) === UP(k)).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  const purBilled = (k) => purBillsOf(k).reduce((t, e) => t + (Number(e.data.sqft) || 0), 0);
+  const billKey = (t) => t.guid || t.vno;
+  const billUsed = (key) => purLinks().filter((e) => (e.data.guid || e.data.vno) === key).reduce((t, e) => t + (Number(e.data.sqft) || 0), 0);
+  const tLeather = (ln) => String(ln || "").split("~^~").map((x) => x.split("|")).filter((x) => x[0] && /LEATHER|WET BLUE|CRUST|HIDE|SPLIT|PRINT/i.test(x[0]) && Number(x[1])).map((x) => ({ n: x[0], q: Number(x[1]) || 0, r: Number(x[2]) || 0 }));
+  const tLeatherBills = () => trows("SELECT guid, vno, vdate, party, ref, amount, lines FROM tally_purchases ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC").map((t) => { const lv = tLeather(t.lines), tot = lv.reduce((a, x) => a + x.q, 0), used = billUsed(t.guid || t.vno); return Object.assign(t, { lv, tot, used, open: tot - used }); }).filter((t) => t.lv.length);
+  // the Tally party this supplier's skins were billed under last time (a linked bill or a bill made in the app)
+  const supParty = (sup) => { const U = UP(sup), m = entries.filter((e) => e.type === "sup_party" && e.status !== "cancelled" && UP(e.data.supplier) === U).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]; if (m) return m.data.party; const l = entries.filter((e) => (e.type === "pur_bill" || (e.type === "chem_purchase" && e.data.pkey)) && e.status !== "cancelled").map((e) => ({ e, p: data.purchases.find((x) => String(e.data.pkey || "").split(",").map(UP).includes(UP(x.key))) })).filter((x) => x.p && UP(x.p.supplier) === U).sort((a, b) => String(b.e.created_at).localeCompare(String(a.e.created_at)))[0]; return l ? l.e.data.party : ""; };
   // a wet blue bill seeded from a skins purchase: Tally party used last time for this supplier, sqft received, rate per sqft, GST 5%
   function pbFromSkins(P) {
     const last = entries.filter((e) => e.type === "chem_purchase" && e.status !== "cancelled" && e.data.pkey).map((e) => ({ e, p: data.purchases.find((x) => String(e.data.pkey).split(",").includes(x.key)) })).filter((x) => x.p && UP(x.p.supplier) === UP(P.supplier)).sort((a, b) => String(b.e.created_at).localeCompare(String(a.e.created_at)))[0];
     const item = pbLeatherItems().find((n) => /SPLIT/i.test(P.grade || "") ? /SPLIT/i.test(n) : UP(n) === "WET BLUE LEATHER") || "WET BLUE LEATHER";
     const perPc = String(P.rate_basis || "").toUpperCase() === "PC", sq = r2(P.inS || 0);
-    return { party: last ? last.e.data.party : (pbCredOf(P.supplier) || {}).name || "", date: String(P.received_date || iso(today)).slice(0, 10),
+    return { party: last ? last.e.data.party : supParty(P.supplier) || (pbCredOf(P.supplier) || {}).name || "", date: String(P.received_date || iso(today)).slice(0, 10),
       line: { n: item, q: sq || "", r: P.rate ? (perPc ? (sq ? r2(P.rate * (P.inP || 0) / sq) : "") : P.rate) : "", g: 5 } };
   }
   const pbUnit = (n) => ((trows("SELECT unit FROM tally_items WHERE UPPER(name)=UPPER(?)", [n])[0] || {}).unit || "kgs.").trim();
@@ -1881,7 +1894,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 172, at: "2026-11-22T00:12:07+05:30", notes: "Menu: Dispatches inside Sales, setup lists in Settings; General settings without repeats; bottom bar lights only its own pages; health check lists data problems only; PO shares no longer counted as waiting for Excel" };
+  const APP_BUILD = { v: 173, at: "2026-11-22T01:55:20+05:30", notes: "Skins purchases: Link Tally bill with sqft per link (purchase and bill keep what's left open); supplier to Tally party list" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4147,6 +4160,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return_sale: { title: "Sell rejected skins", html: (a) => { const p = data.purchases.find((x) => x.key === a), n = ' type="number" step="any" min="0" inputmode="decimal"';
       return `<form class="fm" id="fm-return_sale" data-key="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc(p.grade || "")}. Left ${fmtN(p.leftP, 0) || 0} pcs, ${fmtN(p.leftS, 2) || 0} sqft. Billing stays in Tally.</p>
       <div class="two"><label>Pcs<input id="fy-pcs"${n}></label><label>Sqft<input id="fy-sqft"${n}></label><label>Rate<input id="fy-rate"${n}></label>${dateF("fy-date", "Date", today0())}</div>${txtF("fy-buyer", "Buyer")}${txtF("fy-inv", "Invoice no")}${formEnd}</form>`; } },
+    pur_bill: { title: "Link a Tally bill", html: (k) => { const P = data.purchases.find((x) => x.key === k) || {}, party = supParty(P.supplier), left = Math.max(0, (Number(P.inS) || 0) - purBilled(k));
+      const L = tLeatherBills().filter((t) => t.open > 0.5).map((t) => Object.assign(t, { near: t.lv.some((x) => Math.abs(x.q - left) <= 1) || Math.abs(t.open - left) <= 1, mine: !!party && UP(t.party) === UP(party) })).sort((a, b) => (b.mine - a.mine) || (b.near - a.near) || String(b.vdate).localeCompare(String(a.vdate)));
+      return `<form class="fm" id="fm-pur_bill" data-key="${esc(k)}" data-left="${left}"><h3>${esc(k)} · ${esc(P.supplier || "")}${party ? " (" + esc(party) + ")" : ""}</h3>
+      <p class="note" style="margin:0">${fmtN(P.inS, 2)} sqft received ${fmtD(P.received_date)}${P.rate ? " · ₹" + fmtN(P.rate, 2) : ""} · <b>${fmtN(left, 2)} sqft without a bill</b>. Pick the bill and how much of this purchase is on it. Whatever is left stays open, on the purchase and on the bill, for another link. Nothing is sent to Tally.</p>
+      <div class="ipc" style="max-height:46vh;overflow:auto">${L.length ? L.map((t, i) => `<label class="ipr"><input type="radio" name="pbl" value="${esc(billKey(t))}" data-open="${t.open}"${i === 0 && (t.mine || t.near) ? " checked" : ""}><span><b>${esc(t.vno)}</b> · ${esc(t.party)} · ${fmtD(String(t.vdate).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"))}${t.ref ? " · bill " + esc(t.ref) : ""}<span class="note" style="display:block">${t.lv.map((x) => `${fmtN(x.q, 2)} sqft @ ${fmtN(x.r, 2)}`).join(" · ")}${t.used > 0.005 ? ` · <b>${fmtN(t.open, 2)} sqft still open</b>` : ""}${t.mine ? " · this supplier" : ""}${t.near ? " · quantity matches" : ""}</span></span></label>`).join("") : `<p class="note">No leather bill in Tally has sqft left to link.</p>`}</div>
+      <div class="two">${numF("pbl-sqft", "Sqft of this purchase on that bill", (() => { const c = L.find((t, i) => i === 0 && (t.mine || t.near)); return c ? r2(Math.min(left, c.open)) : ""; })())}</div><p class="note" id="pbl-hint" style="margin:0"></p>${formEnd}</form>`; } },
     po_unlink: { title: "Unlink lot", html: (a) => { const [lot, id] = a.split("|"), o = data.orders.find((x) => String(x.id) === id);
       return `<form class="fm" id="fm-po_unlink" data-lot="${esc(lot)}" data-id="${esc(id)}"><h3>${esc(lot)}</h3><p style="margin:0">Unlink from PO ${esc(o.po_no)}, ${esc(o.item)}?</p>${formEnd}</form>`; } },
     skins_back: { title: "Return skins", html: (a) => { const l = backRows(a);
@@ -5233,6 +5252,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const poOptTxt = (x) => { const f = poFig(x); return `PO ${x.po_no} · ${x.item} · qty ${fmtN(f.q, 0)} · used ${fmtN(f.used, 0)} · pending ${fmtN(f.pend, 0) || 0}`; };
   const poInfo = (id) => { const x = data.orders.find((y) => String(y.id) === String(id)); if (!x) return "";
     const f = poFig(x); return `<b>PO ${esc(x.po_no)}</b> · ${esc(x.customer)} · ${esc(x.item)}<br>PO quantity <b>${fmtN(f.q, 0)}</b> sqft · used up <b>${fmtN(f.used, 0) || 0}</b> · pending <b class="${f.pend < 0 ? "late" : ""}">${fmtN(f.pend, 0) || 0}</b>${f.room > 0 ? ` · room up to 115%: ${fmtN(f.room, 0)}` : ` · <span class="late">already at 115%</span>`}`; };
+  // Link Tally bill: picking a bill puts the smaller of "without a bill" and "bill still open" in the sqft box (22-Nov-2026)
+  document.addEventListener("change", (e) => { const t = e.target; if (t && t.name === "pbl") { const f = t.closest("form"), q = $("#pbl-sqft"); if (f && q) q.value = r2(Math.min(Number(f.dataset.left) || 0, Number(t.dataset.open) || 0)); } });
   document.addEventListener("change", (e) => { if (e.target.id === "pc-line" || e.target.id === "ps-line") { const i = $("#" + e.target.id + "-info"); if (i) i.innerHTML = poInfo(e.target.value); } });
   let pendShare = null;
   // stops the save (returns true) when the skins would take the PO past 115%, until another PO or a reason is given
@@ -5369,6 +5390,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       { const lot = f.dataset.lot, sum = (key) => rows(`SELECT IFNULL(SUM(${key}),0) t FROM lot_deliveries WHERE status='OK' AND lot_no=?`, [lot])[0].t + (data.phoneDel[lot] || []).reduce((a, e) => a + (Number(e[key]) || 0), 0) - data.voidLive.filter((e) => e.lot_no === lot).reduce((a, e) => a + (Number(e.data[key]) || 0), 0) - (Number(d[key]) || 0);
         if (sum("pcs") < -0.0001 || sum("sqft") < -0.5) { msg.textContent = "This can't be cancelled: Delivered would go below zero, because a customer return is recorded on this lot."; return; } }
       return saveNew({ type: "delivery_void", lot_no: f.dataset.lot, data: { id: d.id, lot: f.dataset.lot, pcs: d.pcs, sqft: d.sqft, date: d.del_date, reason: need("#fv-why") } }, "Cancellation saved. It is waiting for Excel.", msg, btn); }
+    if (f.id === "fm-pur_bill") { const v = (f.querySelector('input[name="pbl"]:checked') || {}).value; if (!v) { msg.textContent = "Pick a bill."; return; }
+      const t = tLeatherBills().find((x) => billKey(x) === v) || {}, d8 = String(t.vdate || "").replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"), q = r2(Number($("#pbl-sqft").value) || 0), left = Number(f.dataset.left) || 0;
+      if (!(q > 0)) { msg.textContent = "Type the sqft of this purchase that is on the bill."; return; }
+      if (q > left + 0.5) { msg.textContent = `Only ${fmtN(left, 2)} sqft of this purchase is without a bill.`; return; }
+      if (q > t.open + 0.5) { msg.textContent = `Bill ${t.vno} has only ${fmtN(t.open, 2)} sqft left to link.`; return; }
+      return saveNew({ type: "pur_bill", data: { pkey: f.dataset.key, vno: t.vno, vdate: d8, party: t.party, ref: t.ref || "", guid: t.guid || "", sqft: q } }, `Linked ${fmtN(q, 2)} sqft to Tally bill ${t.vno}.`, msg, btn); }
     if (f.id === "fm-po_unlink") return saveNew({ type: "po_unlink", lot_no: f.dataset.lot, line_id: Number(f.dataset.id), data: { lot: f.dataset.lot, line_id: f.dataset.id } }, "Unlink saved. It is waiting for Excel.", msg, btn);
     if (f.id === "fm-order_short") { const o = data.orders.find((x) => String(x.id) === f.dataset.id); return saveNew({ type: "order_short", lot_no: "PO " + o.po_no, line_id: o.id, data: { line_id: o.id, close: o.short ? "0" : "1", note: $("#fz-note") ? need("#fz-note") : "" } }, o.short ? "Balance reopened. It is waiting for Excel." : "Closed short. It is waiting for Excel.", msg, btn); }
     if (f.id === "fm-order_close") { const o = data.orders.find((x) => String(x.id) === f.dataset.id); return saveNew({ type: "order_close", lot_no: "PO " + o.po_no, line_id: o.id, data: { line_id: o.id, close: o.closed_on ? "0" : "1", note: $("#fz-note") ? need("#fz-note") : "" } }, o.closed_on ? "Reopen saved. It is waiting for Excel." : "Archive saved. It is waiting for Excel.", msg, btn); }
@@ -5808,6 +5835,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (e.type === "order_close") return d.close === "1" ? "Archive order item" : "Reopen order item";
     if (e.type === "order_short") return d.close === "1" ? "Close order item short" : "Reopen order balance";
     if (e.type === "po_unlink") return "Unlink from PO";
+    if (e.type === "sup_party") return "Skins supplier " + (d.supplier || "") + " is " + (d.party || "") + " in Tally";
+    if (e.type === "pur_bill") return (d.pkey || "") + ": " + fmtN(d.sqft, 2) + " sqft linked to Tally bill " + (d.vno || "") + " (" + (d.party || "") + ")";
     if (e.type === "skins_back") return `Skins back to ${d.from}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft${d.note ? " · " + d.note : ""}`;
     if (e.type === "skins") return `Skins from ${d.from}: ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
     if (e.type === "new_lot") return `New lot from ${d.from}: ${[d.customer, d.product].filter(Boolean).join(" ")}, ${fmtN(d.pcs, 0) || 0} pcs, ${fmtN(d.sqft, 2) || 0} sqft`;
@@ -5903,12 +5932,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const can = store && canWrite && !p.isNew, canUse = store && canWrite && p.isNew && p.leftP > 0;
     return `<p class="sub">${esc(p.supplier)} · ${esc([p.animal, p.grade].filter(Boolean).join(" - "))}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
-      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button>${pbWbOf(k).length ? "" : `<button class="btn alt" data-form="chem_purchase:${esc(k)}">Make Tally bill</button>`}<button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
+      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button>${(Number(p.inS) || 0) - purBilled(k) > 0.5 ? `<button class="btn alt" data-form="pur_bill:${esc(k)}">Link Tally bill</button>` : ""}${pbWbOf(k).length || purBillsOf(k).length ? "" : `<button class="btn alt" data-form="chem_purchase:${esc(k)}">Make Tally bill</button>`}<button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
       ${canUse ? `<div class="acts"><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button></div>` : ""}
       ${p.isNew ? `<p class="note"><span class="wait">New purchase, waiting for Excel.</span> You can already give its skins to lots. To change the purchase itself, cancel its entry in Entries and make it again. The number was given on the phone. Excel keeps it unless that number was used on the PC in the meantime; then it takes the next free one.</p>` : p.phone ? `<p class="note"><span class="wait">Includes phone entries not in Excel yet.</span></p>` : ""}
       ${kv([["Received", fmtD(p.received_date)], ["Rate", p.rate ? "₹" + fmtN(p.rate, 2) + (String(p.rate_basis).toUpperCase() === "PC" ? " / pc" : " / sqft") : ""],
         ["Pcs in", fmtN(p.inP, 0)], ["Sqft in", fmtN(p.inS, 2)], ["Pcs left", `<span class="${p.over ? "late" : ""}">${fmtN(p.leftP, 0)}</span>`], ["Sqft left", fmtN(p.leftS, 2)],
         ["Closed on", fmtD(p.closed_on)], ["Note", esc(p.note)]])}
+      ${(() => { const L = purBillsOf(k); if (!L.length) return ""; const left = (Number(p.inS) || 0) - purBilled(k);
+        return `<p style="margin-bottom:2px">Tally bills linked:</p>${L.map((lb) => `<p style="margin:2px 0"><b>${esc(lb.data.vno)}</b> · ${esc(lb.data.party)} · ${fmtD(lb.data.vdate)}${lb.data.ref ? " · bill " + esc(lb.data.ref) : ""} · <span class="num">${fmtN(lb.data.sqft, 2)} sqft</span>${can ? ` <button class="mini" data-cancel="${esc(lb.id)}">Unlink</button>` : ""}</p>`).join("")}
+          <p class="note">${left > 0.5 ? `<b>${fmtN(left, 2)} sqft</b> of this purchase is still without a bill.` : left < -0.5 ? `<b class="late">${fmtN(-left, 2)} sqft more is linked than was received.</b>` : "All of this purchase is on a bill."}</p>`; })()}
       ${(() => { const bs = pbWbOf(k); if (!bs.length) return ""; const all = pbBills(); return `<p>Tally bill: ${bs.map((e) => { const b = all.find((x) => x.id === e.id); return `<button class="link" data-go="chemicals" data-k="bill:${esc(e.id)}">${esc(e.data.party)} bill ${esc(e.data.ref)}</button> <span class="pill ${b ? pbStateCls(b) : ""}">${esc(b ? b.label : "")}</span>`; }).join("<br>")}</p>`; })()}
       ${p.over ? `<p class="late">More skins were given out than were received. Correct the purchase quantity or one of the lots below.</p>` : ""}
       <h3>Movements</h3><div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>To / from</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Note</th></tr></thead><tbody>${r.map((e) => {
