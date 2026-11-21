@@ -28,7 +28,7 @@
   --idle: #6b7780; --idle-soft: #eceff1;
   --f-display: "Archivo Narrow", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-body: "IBM Plex Sans", "Segoe UI", Roboto, sans-serif;
-  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --f-mono: var(--f-body); /* 21-Nov-2026: figures in the normal font with even-width digits (font-variant-numeric) instead of a typewriter font */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -143,6 +143,7 @@ main { overflow: hidden; display: grid; grid-template-columns: 1fr; min-height: 
 .row.down { opacity: .7; }
 .pinmark { font-size: 10px; margin-right: 5px; color: var(--accent); vertical-align: 2px; }
 .mutebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 13px; background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+.mutebar .tipx { background: none; border: 0; color: var(--muted); font-size: 15px; line-height: 1; padding: 4px 6px; cursor: pointer; margin-left: auto; }
 .mutebar .lnk, .lnk { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; padding: 4px 2px; text-decoration: underline; cursor: pointer; }
 .row.muted { opacity: .6; }
 .row[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
@@ -213,6 +214,9 @@ label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .ipc { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .ipr { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-top: 1px solid var(--line); font-weight: 400; margin: 0; }
 .ipr:first-child { border-top: 0; }
+.ipr.iplot { background: var(--bg2, rgba(127,127,127,.06)); }
+.ipr.iplot .note { display: block; }
+.ipr.sub { padding-left: 34px; }
 .ipr input { width: 20px; height: 20px; flex: none; margin-top: 2px; }
 .rwsteps { margin-top: 8px; border-left: 3px solid var(--line); padding-left: 10px; }
 .rws { margin: 0 0 10px; }
@@ -443,7 +447,8 @@ main.solo .detail.open { display: block; }
 .hlink { display: grid; text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--accent); border-radius: 10px; padding: 6px 10px; font-weight: 600; font-size: 14px; max-width: 100%; }
 .hlink span { font-size: 11px; font-weight: 400; color: var(--muted); }
 details.sec { border-top: 1px solid var(--line); }
-details.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 13px 2px; font-family: var(--f-display); font-weight: 700; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+details.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 13px 2px; font-family: var(--f-display); font-weight: 600; font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+details.sec > summary small { display: inline-block; min-width: 20px; padding: 0 7px; border-radius: 10px; background: var(--line); color: var(--muted); font-size: 12px; text-align: center; }
 details.sec > summary::-webkit-details-marker { display: none; }
 details.sec > summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
 details.sec[open] > summary::after { transform: rotate(-135deg); }
@@ -1445,12 +1450,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!items.length) html += `<p class="empty">Nothing matches. Try fewer words, or another filter above.</p>`;
     let lastGrp = null;
     const gname = { lots: ["", "Open lots", "Dispatched / dumped", "Archived"], orders: ["", "Open", "Delivered / archived"], purchases: ["", "Skins left", "Closed"], chemicals: ["", "In stock", "Zero stock"] }[tab];
+    const tipGone = (k) => { try { return localStorage.getItem("ssi-tip-" + k) === "gone"; } catch (x) { return false; } };
     const late = tab === "lots" && filter.lots === "late";
     if (late) {
       const mutedL = data.lots.filter((l) => needsAttn(l) && isMuted(l.lot_no) && match(l.hay, ws)).sort(sorters.lots);
-      const top = lastMuted && isMuted(lastMuted) ? `<span>${esc(lastMuted)} muted until ${esc(muteUntilText(lastMuted))}.</span><button class="lnk" data-unmute="${esc(lastMuted)}">Undo</button>` : `<span>Swipe a lot left to mute it for a day.</span>`;
+      const top = lastMuted && isMuted(lastMuted) ? `<span>${esc(lastMuted)} muted until ${esc(muteUntilText(lastMuted))}.</span><button class="lnk" data-unmute="${esc(lastMuted)}">Undo</button>` : tipGone("late") ? "" : `<span>Swipe a lot left to mute it for a day.</span><button class="tipx" data-tipx="late" aria-label="Hide this tip">✕</button>`;
       const tail = mutedL.length ? `<button class="lnk" data-showmuted>${showMuted ? "Hide" : "Show"} muted (${mutedL.length})</button>` : "";
-      html = `<div class="mutebar">${top}${tail}</div>` + html;
+      if (top || tail) html = `<div class="mutebar">${top}${tail}</div>` + html;
       items.slice(0, 400).forEach((it) => { html += card(it); });
       if (showMuted && mutedL.length) html += `<div class="group">Muted for a day · ${mutedL.length}</div>` + mutedL.map((l) => card(l).replace("</button>", `<span class="m"><span>Muted until ${esc(muteUntilText(l.lot_no))}</span><span class="lnk" role="button" tabindex="0" data-unmute="${esc(l.lot_no)}">Unmute</span></span></button>`)).join("");
       $("#list").innerHTML = html; return;
@@ -1458,8 +1464,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && (filter.lots || "open") === "open") {
       items.sort((a, b) => lordSort(a, b) || sorters.lots(a, b));
       const np = items.filter(lordPin).length, nd = items.filter(lordDown).length, u = lordLast && data.lotBy[lordLast.k];
-      const top = u ? `<span>${esc(lordLast.k)} ${lordLast.way === "down" ? "moved to the end" : lordPin(u) ? "pinned to the top" : "put back in its place"}.</span><button class="lnk" data-lordundo>Undo</button>` : `<span>Swipe a lot left to move it to the end, right to pin it to the top.</span>`;
-      html = `<div class="mutebar">${top}${np + nd ? `<button class="lnk" data-lordreset>Reset order${np ? " · " + np + " pinned" : ""}${nd ? " · " + nd + " at the end" : ""}</button>` : ""}</div>` + html;
+      const top = u ? `<span>${esc(lordLast.k)} ${lordLast.way === "down" ? "moved to the end" : lordPin(u) ? "pinned to the top" : "put back in its place"}.</span><button class="lnk" data-lordundo>Undo</button>` : tipGone("open") ? "" : `<span>Swipe a lot left to move it to the end, right to pin it to the top.</span><button class="tipx" data-tipx="open" aria-label="Hide this tip">✕</button>`;
+      if (top || np + nd) html = `<div class="mutebar">${top}${np + nd ? `<button class="lnk" data-lordreset>Reset order${np ? " · " + np + " pinned" : ""}${nd ? " · " + nd + " at the end" : ""}</button>` : ""}</div>` + html;
       let wasDown = false;
       items.slice(0, 400).forEach((it) => { const d = lordDown(it); if (d && !wasDown) html += `<div class="group">Moved to the end · ${nd}</div>`; wasDown = d; html += card(it); });
       $("#list").innerHTML = html; return;
@@ -1874,7 +1880,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 170, at: "2026-11-21T21:28:17+05:30", notes: "OneDrive moved into Menu > Settings > OneDrive; settings panel scrolls" };
+  const APP_BUILD = { v: 171, at: "2026-11-21T22:11:36+05:30", notes: "Pending invoicing grouped by lot; figures in normal font; tips can be hidden; lot sections show counts; App vs Excel check ignores the empty starting data" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2975,13 +2981,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const name = area === "O" ? "PO " + ((y || x || {}).po || "?") + " · " + ((y || x || {}).item || "") : k;
       if (!x && !y) return; checked++;
       if (!x || !y) { out.push({ area: NAMES[area], key: name, field: "", app: x ? "there" : "not there", excel: y ? "there" : "not there", by: [...new Set(by)] }); return; }
-      Object.keys(y).forEach((f) => { if (String(x[f]) !== String(y[f])) out.push({ area: NAMES[area], key: name, field: f, app: x[f], excel: y[f], by: [...new Set(by)] }); });
+      // the process version number: the screen shows a pending save on top of the old version without counting it; the engine check covers versions (21-Nov-2026)
+      Object.keys(y).forEach((f) => { if (f !== "version" && String(x[f]) !== String(y[f])) out.push({ area: NAMES[area], key: name, field: f, app: x[f], excel: y[f], by: [...new Set(by)] }); });
     }));
     return { checked, diffs: out };
   }
   function shAfterLoad(builtAt, liveIds) {
     if (entriesSeen !== true || !data.lots) return;
+    // the empty starting data a new or reset phone shows before Excel's data arrives (built 2000-01-01) is not Excel's work: never a side of the check (21-Nov-2026)
+    if (!builtAt || builtAt < "2001") return;
     let prev = null; try { prev = JSON.parse(localStorage.getItem(SH_KEY) || "null"); } catch (e) { prev = null; }
+    if (prev && (!prev.builtAt || prev.builtAt < "2001")) prev = null;
     const fp = shFp();
     if (prev && prev.builtAt && builtAt && builtAt > prev.builtAt) {
       const now = new Set(liveIds), byId = new Map(entries.map((e) => [e.id, e]));
@@ -2997,9 +3007,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function shView() {
     let log = []; try { log = JSON.parse(localStorage.getItem(SH_LOG) || "[]") || []; } catch (e) { log = []; }
+    log = log.filter((r) => r && r.from && r.from >= "2001"); // checks made against the empty starting data were not real (fixed 21-Nov-2026)
     const head = `<div class="group">App vs Excel</div><p class="note" style="margin:4px 2px">Each time Excel's data arrives, the app checks that Excel made the same of the imported entries as the app did: stages, pcs, sqft, deliveries, skins left, chemical stock, PO deliveries. A month with no differences means the app can keep the records itself.</p>`;
     if (!log.length) return head + `<p class="note" style="margin:4px 2px">No check yet. The first one runs on this phone at the next Excel update that imports its entries.</p>`;
-    const days30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), recs = days30.reduce((t, r) => t + (r.checked || 0), 0), bad = days30.reduce((t, r) => t + new Set(r.diffs.map((d) => d.area + d.key)).size, 0);
+    const days30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), recs = days30.reduce((t, r) => t + (r.checked || 0), 0), bad = new Set(days30.flatMap((r) => r.diffs.map((d) => d.area + "|" + d.key))).size;
     return head + `<p style="margin:4px 2px"><b>Last 30 days:</b> ${days30.length} update${days30.length === 1 ? "" : "s"}, ${fmtN(recs, 0)} records checked, ${bad ? `<span class="late">${bad} differed</span>` : `<span class="ok">all matched</span>`}.</p>` +
       log.slice(0, 10).map((r) => `<details class="hcx"${r.diffs.length && r === log[0] ? " open" : ""}><summary><b>${esc(fmtST(r.at))}</b> · ${r.n} entr${r.n === 1 ? "y" : "ies"} imported · ${r.checked} records · ${r.diffs.length ? `<span class="late">${r.diffs.length + (r.more || 0)} difference${r.diffs.length + (r.more || 0) === 1 ? "" : "s"}</span>` : `<span class="ok">matched</span>`}</summary>
         <p class="note" style="margin:2px 0">${esc(Object.entries(r.types).map(([k, v]) => v + " " + shType(k).toLowerCase()).join(", "))}</p>
@@ -4372,10 +4383,13 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="count"><span>${all.length} deliveries · ${fmtN(tot, 0)} sqft${tv ? " · about ₹" + fmtN(tv, 0) + " at PO rates" : ""}</span></div>`;
     if (!all.length) return h + `<p class="empty">Nothing is waiting to be invoiced.</p>` + invMarksList();
     h += Object.keys(by).sort((a, b) => by[b].length - by[a].length || a.localeCompare(b)).map((cu) => { const L = by[cu], sq = L.reduce((t, c) => t + c.sqft, 0), n = L.filter((c) => invPick.has(c.dkey)).length, allOn = n === L.length;
+      const ipRow = (c, sub) => { const v0 = val(c); return `<label class="ipr${sub ? " sub" : ""}"><input type="checkbox" data-ipk="${esc(c.dkey)}"${invPick.has(c.dkey) ? " checked" : ""}><span>${sub ? `<b>${c.date ? fmtD(c.date) : "no date"}</b>` : `<b>${esc(c.lot)}</b>${(data.lotBy[c.lot] || {}).product ? " · " + esc(data.lotBy[c.lot].product) : ""} · ${c.date ? fmtD(c.date) : "no date"}`}${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? ` <span class="wait">waiting for Excel</span>` : ""}${c.tracker ? ` <span class="note">(${c.arch ? "archived, " : ""}tracker quantity)</span>` : ""}${c.opening ? ` <span class="note">(opening)</span>` : ""}<br>
+            <span class="note">${[c.hides ? fmtN(c.hides, 1) + " hides" : "", c.sides ? fmtN(c.sides, 0) + " sides" : ""].filter(Boolean).join(" + ")}${c.hides || c.sides ? ", " : ""}${fmtN(c.sqft, 2)} sqft${c.part ? " left of " + fmtN(c.full, 2) + " (" + fmtN(c.billed, 2) + " billed)" : ""}${v0 ? " · ₹" + fmtN(v0, 0) : ""}</span></span></label>`; };
       return `<div class="group">${esc(cu)} · ${L.length} · ${fmtN(sq, 0)} sqft</div>
-        <div class="ipc">${L.map((c) => { const v0 = val(c);
-          return `<label class="ipr"><input type="checkbox" data-ipk="${esc(c.dkey)}"${invPick.has(c.dkey) ? " checked" : ""}><span><b>${esc(c.lot)}</b>${(data.lotBy[c.lot] || {}).product ? " · " + esc(data.lotBy[c.lot].product) : ""} · ${c.date ? fmtD(c.date) : "no date"}${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? ` <span class="wait">waiting for Excel</span>` : ""}${c.tracker ? ` <span class="note">(${c.arch ? "archived, " : ""}tracker quantity)</span>` : ""}${c.opening ? ` <span class="note">(opening)</span>` : ""}<br>
-            <span class="note">${[c.hides ? fmtN(c.hides, 1) + " hides" : "", c.sides ? fmtN(c.sides, 0) + " sides" : ""].filter(Boolean).join(" + ")}${c.hides || c.sides ? ", " : ""}${fmtN(c.sqft, 2)} sqft${c.part ? " left of " + fmtN(c.full, 2) + " (" + fmtN(c.billed, 2) + " billed)" : ""}${v0 ? " · ₹" + fmtN(v0, 0) : ""}</span></span></label>`; }).join("")}</div>
+        <div class="ipc">${(() => { const byLot = {}, order = []; L.forEach((c) => { if (!byLot[c.lot]) { byLot[c.lot] = []; order.push(c.lot); } byLot[c.lot].push(c); });
+          return order.map((lot) => { const D = byLot[lot]; if (D.length === 1) return ipRow(D[0], false);
+            const on = D.filter((c) => invPick.has(c.dkey)).length, sq = D.reduce((t, c) => t + c.sqft, 0), pr = (data.lotBy[lot] || {}).product;
+            return `<label class="ipr iplot"><input type="checkbox" data-iplot="${esc(D.map((c) => c.dkey).join("\n"))}"${on === D.length ? " checked" : ""}${on && on < D.length ? " data-mixed" : ""}><span><b>${esc(lot)}</b>${pr ? " · " + esc(pr) : ""}<span class="note">${D.length} deliveries · ${fmtN(sq, 2)} sqft · tick to take them all</span></span></label>` + D.map((c) => ipRow(c, true)).join(""); }).join(""); })()}</div>
         ${store && canWrite ? `<div class="acts" style="margin:4px 0 12px"><button class="mini" data-ipa="all" data-cu="${esc(cu)}">${allOn ? "Clear" : "Select all"}</button><button class="btn" data-ipa="inv" data-cu="${esc(cu)}"${n ? "" : " disabled"}>Make invoice${n ? " (" + n + ")" : ""}</button><button class="btn alt" data-ipa="addto" data-cu="${esc(cu)}"${n ? "" : " disabled"}>Add to an invoice${n ? " (" + n + ")" : ""}</button><button class="btn alt" data-ipa="mark" data-cu="${esc(cu)}"${n ? "" : " disabled"}>Mark as invoiced${n ? " (" + n + ")" : ""}</button></div>` : ""}`; }).join("");
     return h + invMarksList();
   }
@@ -5977,6 +5991,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         if (n.classList.contains("foot")) { cur = null; return; }
         if (cur) cur.appendChild(n);
       });
+      // how many rows each folded section holds, so it is clear which are worth opening (21-Nov-2026)
+      d.querySelectorAll("details.sec").forEach((x) => { const sm = x.querySelector(":scope > summary"); if (!sm || sm.querySelector("small")) return;
+        const n = x.querySelectorAll("tbody tr").length || x.querySelectorAll(":scope li").length; if (n) { const c = document.createElement("small"); c.textContent = n; sm.appendChild(c); } });
     }
     // a lot or a process opens folded, whether viewed or edited (each section opens with its arrow and stays so until the process is opened again)
     { const fresh = formOpen === "recipe" && ed && !SEC_FRESH.has(ed) ? (SEC_FRESH.add(ed), true) : !formOpen && !!pg && secView !== sel.lots;
@@ -6161,6 +6178,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   $("#list").addEventListener("pointerup", swipeEnd);
   $("#list").addEventListener("change", (e) => {
     const t = e.target;
+    if (t.matches("[data-iplot]")) { const ks = t.dataset.iplot.split("\n"); ks.forEach((k) => t.checked ? invPick.add(k) : invPick.delete(k)); const y = window.scrollY; render(); window.scrollTo(0, y); return; }
     if (t.matches("[data-ipk]")) { if (t.checked) invPick.add(t.dataset.ipk); else invPick.delete(t.dataset.ipk); const y = window.scrollY; render(); window.scrollTo(0, y); }
     else if (t.matches("[data-drby]")) { drep.by = t.value; drSave(); render(); }
     else if (t.matches("[data-drf]")) { drep[t.dataset.drf] = t.value; render(); }
@@ -6201,6 +6219,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (swiped) { swiped = false; e.preventDefault(); return; }
     const um = e.target.closest("[data-unmute]"); if (um) { unmuteLot(um.dataset.unmute); render(); return; }
     if (e.target.closest("[data-lordundo]")) { lordUndo(); render(); return; }
+    { const tx = e.target.closest("[data-tipx]"); if (tx) { try { localStorage.setItem("ssi-tip-" + tx.dataset.tipx, "gone"); } catch (x) {} render(); return; } }
     if (e.target.closest("[data-lordreset]")) { lordLast = null; lord = { pin: {}, down: {} }; lordSave(); render(); return; }
     if (e.target.closest("[data-showmuted]")) { showMuted = !showMuted; render(); return; }
     if (tab === "entries" && await entryAction(e)) return;
