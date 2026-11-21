@@ -1730,11 +1730,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // every saved recipe, old lots and older versions included, searchable by lot, customer, product, page and the recipe's own words
   let recIndex = null, recIndexFor = null, recNext = null;
   // after Save recipe, the steps Excel's Save runs: stock check and adjust, then the PDF
-  function recNextPanel(r) {
+  function recNextPanel(r, old) {
     { const rw = rwOfPLot(r.lot_no); if (rw) return `<div class="rwc" style="margin:0 0 8px"><p style="margin:0"><b>${esc(rwName(rw))} of ${lotLink(rw.parent)}</b> ${rwStatus(rw)}</p><p class="note" style="margin:2px 0 0">${esc(rwGrpName(rw.grp))}: ${esc(rw.cause)}. ${fmtN(rw.pcs, 0)} pcs, ${fmtN(rw.sqft, 2)} sqft. This process is only for the rework; its cost goes into ${esc(rw.parent)}'s costing as rework once the stock is adjusted.</p>${rwProcNote(rw, store && canWrite)}</div>`; }
-    if (recNext !== r.lot_no + "|" + r.process) return "";
+    const just = recNext === r.lot_no + "|" + r.process;
     const l = data.lotBy[r.lot_no], sec = ["CRUSTING", "FINISHING"];
-    let stock;
+    let stock, act = false;
     if (!l || l.state !== "OPEN") stock = `<p class="note" style="margin:0">${esc(r.lot_no)} is not in production, so stock is not adjusted from it.</p>`;
     else if (l.recKey !== "rec:" + r.lot_no + "|" + r.process) stock = `<p class="note" style="margin:0">This is not ${esc(r.lot_no)}'s current process page, so stock is not adjusted from it.</p>`;
     else {
@@ -1744,8 +1744,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (todo.length === 2) b.push(`<button class="btn alt" data-form="chem_adjust:${esc(l.lot_no)}|BOTH">Adjust both</button>`);
       if (ch.length) b.push(`<button class="btn" data-form="chem_readjust:${esc(l.lot_no)}">Check stock and re-adjust</button>`);
       const notes = [wait.length ? `<span class="wait">Adjustment waiting for Excel: ${esc(wait.map((x) => x.toLowerCase()).join(", "))}.</span>` : "", rw ? `<span class="wait">Re-adjust waiting for Excel.</span>` : "", !b.length && !wait.length && !rw ? "Stock already matches this recipe, or the recipe has no quantities yet." : ""].filter(Boolean).join(" ");
+      act = b.length > 0 || wait.length > 0 || rw;
       stock = (b.length ? `<p class="note" style="margin:0">Shows what each chemical needs, what is in stock and what goes short, before anything is deducted.</p><div class="acts" style="margin:0">${b.join("")}</div>` : "") + (notes ? `<p class="note" style="margin:0">${notes}</p>` : "");
     }
+    // opened later from the lot: the stock step stays here while there is something to adjust (21-Nov-2026); the PDF buttons are in the row above
+    if (!just) return act && !old && store && canWrite ? `<div class="fm" style="margin:8px 0"><p style="margin:0"><b>Stock</b></p>${stock}</div>` : "";
     return `<div class="fm" style="margin:8px 0"><p class="okmsg" style="margin:0">1. Recipe saved as a new version. It is waiting for Excel.</p>
       <p style="margin:0"><b>2. Stock</b></p>${stock}
       <p style="margin:0"><b>3. PDF</b></p><div class="acts" style="margin:0"><button class="btn alt" data-pdf="recipe">Save PDF</button><button class="btn alt" data-pdf="recipecost">PDF with cost</button><button class="btn alt" data-pdf="recipeproc">Process PDF</button></div>
@@ -1786,7 +1789,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 162, at: "2026-11-21T08:13:23+05:30", notes: "Costing uses a purchase rate typed on the phone at once (before Excel imports it)" };
+  const APP_BUILD = { v: 163, at: "2026-11-21T13:47:04+05:30", notes: "Process page keeps the Stock step (adjust / re-adjust) whenever there is something to adjust, not only right after saving" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -3376,7 +3379,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
       ${canEd && draftOf(k) ? `<div class="draftbar"><span><b>Unsaved changes</b> from ${esc(new Date(draftOf(k).at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))}</span><button class="btn" data-edrec>Continue editing</button><button class="btn alt" data-draftdrop="${esc(k)}">Discard</button></div>` : ""}
       <div class="acts">${canEd ? `<button class="btn${draftOf(k) ? " alt" : ""}" data-edrec>Edit recipe</button>` : ""}${canEd && lot ? `<button class="btn alt" data-form="process:${esc(r.lot_no)}">Process</button>` : ""}${old && store && canWrite && lot && lot.state !== "ARCHIVED" && !lot.isNew ? `<button class="btn" data-loadver="${esc(k)}">Load this version</button>` : ""}<button class="btn alt" data-form="compare:${esc(k)}">Compare</button>${canEd && !r.phone ? `<button class="btn alt" data-form="recipe_delete:${esc(r.lot_no)}|${esc(r.process)}">Delete saved process</button>` : ""}<button class="btn alt" data-pdf="recipe">Save PDF</button><button class="btn alt" data-pdf="recipecost">PDF with cost</button><button class="btn alt" data-pdf="recipeproc">Process PDF</button><button class="btn alt" data-pdf="recipepage2">Page 2 PDF</button><button class="btn alt" data-rates>${showRates ? "Hide rates" : "Show rates"}</button></div><div id="pdfmsg" class="fmsg"></div>
-      ${recNextPanel(r)}
+      ${recNextPanel(r, old)}
       ${r.phone ? `<p class="note"><span class="wait">Edited on the phone, not in Excel yet.</span></p>` : ""}
       ${old ? `<p class="missing">Older version. <button class="link" data-go="lots" data-k="${esc(base)}">Open the latest</button></p>` : ""}
       ${kv([["Lot", lot ? lotLink(r.lot_no) : esc(r.lot_no)], ["Process page", `<button class="link" data-go="lots" data-k="${esc(pk)}">${esc(r.process)}</button>`], ["Substance", esc(r.substance)], ["Shaved wt", fmtN(r.shaved_wt, 2)],
