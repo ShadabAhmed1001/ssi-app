@@ -1288,7 +1288,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["bills", "Tally bills"], ["ledger", "Ledger"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -1323,9 +1323,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "invpend", "drep", "tally"]) },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "tsales", "invpend", "drep", "tally"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
+    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stages"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -1417,6 +1417,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "lots" && filter.lots === "rework") { $("#list").innerHTML = rwView(); return; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
     if (tab === "orders" && filter.orders === "tally") { $("#list").innerHTML = tallyView(ws); return; }
+    if (tab === "orders" && filter.orders === "tsales") { $("#list").innerHTML = tsalesView(ws); return; }
     if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "usage") { $("#list").innerHTML = usageView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
@@ -1713,6 +1714,33 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="count"><span>${L.length} rows${L.length > 300 ? " · first 300 shown, search to narrow" : ""}</span></div>
       <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Status</th><th>Note</th></tr></thead><tbody>${shown.map((r) => `<tr${r.status === "VOID" ? ' class="void"' : ""}><td class="nw">${fmtS(r.entry_date)}</td><td>${esc(String(r.entry_type || "").toLowerCase())}</td><td>${key(r.from_key)}</td><td>${key(r.to_key)}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td>${esc(r.status)}</td><td class="wrap">${esc(r.note || "")}</td></tr>`).join("")}</tbody></table></div>`;
   }
+  // Tally's sale vouchers, read by Excel (module SalesRead, every 30 minutes) into tally_sale_bills (21-Nov-2026)
+  const tsRows = () => trows("SELECT * FROM tally_sale_bills ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC");
+  const tsDate = (t) => String(t.vdate || "").replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3");
+  const tsLedgers = (t) => String(t.ledgers || "").split("~^~").filter(Boolean).map((x) => { const p = x.split("|"); return { n: p[0], a: Number(p[1]) || 0 }; }).filter((x) => x.a);
+  const tsInv = (t) => invoices.find((v) => v.status !== "deleted" && v.vno && String(v.vno).trim() === String(t.vno).trim());
+  function tsalesView(ws) {
+    const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
+    if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
+    const L = all.filter((t) => match([t.party, t.vno, t.ref, t.narration, pbTLines(t).map((x) => x.n).join(" ")].join(" "), ws));
+    const tot = L.reduce((a, t) => a + (Number(t.amount) || 0), 0), sq = L.reduce((a, t) => a + pbTLines(t).reduce((b, x) => b + (x.q || 0), 0), 0);
+    const byM = {}; L.forEach((t) => { const m = tsDate(t).slice(0, 7); (byM[m] = byM[m] || []).push(t); });
+    const row = (t) => { const ls = pbTLines(t), v = tsInv(t); return `<button class="row" data-k="tsale:${esc(t.guid || t.vno)}"${cur("tsale:" + (t.guid || t.vno))}><span class="k">${esc(fmtD(tsDate(t)))}</span><span class="d"><b>${esc(t.party)}</b> · ${esc(t.vno)}<br><small>${esc(ls.map((x) => x.n + " " + fmtN(x.q, 2)).join(", ").slice(0, 90) || t.vtype || "")}${v ? " · app " + esc(invName(v)) : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`; };
+    return `<p class="note" style="margin:6px 2px">Sale vouchers in Tally this year${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Excel reads them again every 30 minutes while Tally is open.</p>
+      ${kv([["Vouchers", String(L.length)], ["Total billed", "₹" + fmtN(tot, 0)], ["Quantity", fmtN(sq, 0)]])}
+      ${Object.keys(byM).sort().reverse().map((m) => { const ts = byM[m], mt = ts.reduce((a, t) => a + (Number(t.amount) || 0), 0); return `<div class="group">${esc(new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" }))} · ${ts.length} · ₹${fmtN(mt, 0)}</div>${ts.map(row).join("")}`; }).join("")}`;
+  }
+  function tsaleDetail(k) {
+    const id = k.slice(6), t = tsRows().find((x) => (x.guid || x.vno) === id); if (!t) return `<p class="empty">This Tally voucher is no longer in the data.</p>`;
+    const ls = pbTLines(t), v = tsInv(t), goods = ls.reduce((a, x) => a + (x.a || 0), 0);
+    // on an item invoice the sales ledger carries the items again: leave it out (a credit in Tally adds to the bill, a debit takes off)
+    const lg = tsLedgers(t).filter((x) => !(ls.length && Math.abs(x.a - goods) < 1));
+    return `<h2>${esc(t.vtype || "Sale")} ${esc(t.vno)}</h2><p class="sub">${esc(t.party)} · ${esc(fmtD(tsDate(t)))}${t.ref ? " · ref " + esc(t.ref) : ""}</p>
+      ${ls.length ? pbLinesTable(ls, false) : `<p class="note">No stock items on this voucher.</p>`}
+      <div class="tbl"><table><tbody>${ls.length ? `<tr><td>Items</td><td class="r num">₹${fmtN(goods, 2)}</td></tr>` : ""}${lg.map((x) => `<tr><td>${esc(x.n)}</td><td class="r num">₹${fmtN(x.a, 2)}</td></tr>`).join("")}<tr><td><b>Total</b></td><td class="r num"><b>₹${fmtN(t.amount, 2)}</b></td></tr></tbody></table></div>
+      ${t.narration ? `<p class="note">${esc(t.narration)}</p>` : ""}
+      ${v ? `<p><button class="link" data-go="orders" data-k="inv:${esc(v.id)}">Open the app invoice ${esc(invName(v))}</button></p>` : ""}`;
+  }
   function tallyView(ws) {
     const T = filter.tallyT || "parties";
     const P = trows("SELECT * FROM tally_parties ORDER BY name").filter((r) => match([r.name, r.gstin, r.state, r.address].join(" "), ws)), I = trows("SELECT * FROM tally_items ORDER BY name").filter((r) => match([r.name, r.grp, r.hsn].join(" "), ws));
@@ -1789,7 +1817,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 163, at: "2026-11-21T13:47:04+05:30", notes: "Process page keeps the Stock step (adjust / re-adjust) whenever there is something to adjust, not only right after saving" };
+  const APP_BUILD = { v: 164, at: "2026-11-21T16:23:24+05:30", notes: "Invoices > Sales in Tally: Tally's sale vouchers this year with items, taxes and totals (read by Excel every 30 min)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2683,7 +2711,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     // Tally masters read by Excel (TallyLink "Refresh from Tally", from 09-Nov-2026)
     [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
      ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"],
-     ["tally_purchases", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, app_id TEXT, lines TEXT", "guid, vno, vdate, party, ref, amount, narration, app_id, lines"], ["tally_creditors", "name TEXT, gstin TEXT, state TEXT", "name, gstin, state"],
+     ["tally_purchases", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, app_id TEXT, lines TEXT", "guid, vno, vdate, party, ref, amount, narration, app_id, lines"],
+     ["tally_sale_bills", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, lines TEXT, ledgers TEXT, vtype TEXT", "guid, vno, vdate, party, ref, amount, narration, lines, ledgers, vtype"], ["tally_creditors", "name TEXT, gstin TEXT, state TEXT", "name, gstin, state"],
      ["app_tally", "entry_id TEXT, kind TEXT, party TEXT, ref TEXT, vdate TEXT, total REAL, state TEXT, vno TEXT, guid TEXT, dup TEXT, msg TEXT, choice TEXT, posted_at TEXT, updated_at TEXT", "entry_id, kind, party, ref, vdate, total, state, vno, guid, dup, msg, choice, posted_at, updated_at"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
       a.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols})`); a.run(`DELETE FROM ${t}`);
       try { const n = sel.split(",").length; q(src, `SELECT ${sel} FROM ${t}`).forEach((r) => a.run(`INSERT INTO ${t} VALUES(${Array(n).fill("?").join(",")})`, Object.values(r))); } catch (e) { /* Excel has not read Tally yet */ }
@@ -2767,7 +2796,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     q(x, "SELECT name, rate, tally_stock FROM chemicals").forEach((c) => { const cur = q(b, "SELECT name, rate, tally_stock FROM chemicals WHERE UPPER(name)=UPPER(?)", [c.name])[0];
       if (cur) { if (Number(cur.rate) !== Number(c.rate) || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [c.rate, c.tally_stock, c.tally_stock, stamp, cur.name]); }
       else { add++; b.run("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [c.name, c.rate, c.tally_stock, 0, Number(c.tally_stock) || 0, null, stamp]); } });
-    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
+    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally", "tally_sale_bills"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
       const cols = q(x, `PRAGMA table_info(${t})`).map((c) => c.name); b.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols.join(", ")})`); b.run(`DELETE FROM ${t}`);
       q(x, `SELECT * FROM ${t}`).forEach((r) => b.run(`INSERT INTO ${t}(${cols.join(", ")}) VALUES(${cols.map(() => "?").join(",")})`, cols.map((c) => r[c]))); });
     b.run("INSERT OR REPLACE INTO meta(key, value) VALUES('tally_merged_at', ?)", [stamp]);
@@ -5911,6 +5940,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "orders" && String(k).startsWith("q:")) { const q = quotes.find((x) => "q:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(q ? "Quotation " + q.no : "Quotation")}</h2></div>${qDetail(k)}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("pay:")) { const p = payments.find((x) => "pay:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(p ? (p.dir === "in" ? "From " : "To ") + p.party : "Payment")}</h2></div>${payDetail(k)}`; d.classList.add("open"); return; }
     if ((tab === "chemicals" || tab === "purchases") && /^t?bill:/.test(String(k))) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${String(k).startsWith("tbill:") ? "Tally purchase" : "Purchase bill"}</h2></div>${billDetail(String(k))}`; d.classList.add("open"); return; }
+    if (tab === "orders" && String(k).startsWith("tsale:")) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>Tally sale</h2></div>${tsaleDetail(String(k))}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
     const title = isProc ? (data.processes.find((p) => p.key === k) || {}).name : isRec ? k.slice(4).split("|")[0] + " recipe" + (k.includes("@v") ? " v" + k.split("@v")[1] : "") : { lots: k, orders: (() => { const o = data.orders.find((x) => String(x.id) === String(k)); return o ? "PO " + o.po_no : ""; })(), purchases: k, chemicals: k }[tab];
