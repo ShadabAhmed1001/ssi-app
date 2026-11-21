@@ -270,10 +270,10 @@
     askExcel: async () => {
       if (!account) throw new Error("Not signed in to OneDrive.");
       if (!navigator.onLine) throw new Error("No internet just now.");
-      await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300));
+      // only the small request file is waited for; this phone's entries go up in the background straight after (Excel looks once a minute)
       const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
       await g("PUT", itemUrl(cfg().entriesFolder + "/excel-now.txt") + ":/content", new Date().toISOString() + " " + device + " " + (me.name || ""), "text/plain", tok);
-      [90, 150, 240].forEach((s2) => setTimeout(() => sync("change"), s2 * 1000));
+      kick(50); [75, 120, 180, 270].forEach((s2) => setTimeout(() => sync("change"), s2 * 1000));
       return true;
     },
     list: async () => {
