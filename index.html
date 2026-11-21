@@ -1717,29 +1717,51 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // Tally's sale vouchers, read by Excel (module SalesRead, every 30 minutes) into tally_sale_bills (21-Nov-2026)
   const tsRows = () => trows("SELECT * FROM tally_sale_bills ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC");
   const tsDate = (t) => String(t.vdate || "").replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3");
+  const tsLines = (t) => String(t.lines || "").split("~^~").filter(Boolean).map((x) => { const p = x.split("|"); return { n: p[0], q: Number(p[1]) || 0, r: Number(p[2]) || 0, d: Number(p[3]) || 0, a: Number(p[4]) || 0, desc: p[5] || "", u: p[6] || "" }; });
+  const tsMeta = (t) => String(t.meta || "").split("~^~").reduce((o, x) => { const i = x.indexOf("="); if (i > 0) o[x.slice(0, i)] = x.slice(i + 1); return o; }, {});
+  const tsYmd = (x) => String(x || "").replace(/^(\d{4})(\d\d)(\d\d)$/, "$1-$2-$3");
   const tsLedgers = (t) => String(t.ledgers || "").split("~^~").filter(Boolean).map((x) => { const p = x.split("|"); return { n: p[0], a: Number(p[1]) || 0 }; }).filter((x) => x.a);
   const tsInv = (t) => invoices.find((v) => v.status !== "deleted" && v.vno && String(v.vno).trim() === String(t.vno).trim());
+  const tsParty = (t) => rows("SELECT * FROM tally_parties WHERE UPPER(name)=?", [UP(t.party)])[0] || {};
+  const GST_STD = [0, 0.1, 0.25, 1.5, 3, 5, 6, 12, 18, 28];
+  function tsAsInv(t) {
+    const S = iset(), m = tsMeta(t), pt = tsParty(t), ls = tsLines(t), goods = r2(ls.reduce((a, x) => a + x.a, 0));
+    const isTax = (n) => [S.cgst, S.sgst, S.igst].some((x) => UP(x) === UP(n)) || /\b(CGST|SGST|UTGST|IGST)\b/i.test(n), isRo = (n) => UP(n) === UP(S.round) || /round/i.test(n);
+    const lg = tsLedgers(t).filter((x) => !(ls.length && Math.abs(x.a - goods) < 1));
+    const sum = (f) => r2(lg.filter((x) => f(x.n)).reduce((a, x) => a + x.a, 0));
+    const cg = sum((n) => /CGST/i.test(n)), sg = sum((n) => /SGST|UTGST/i.test(n)), ig = sum((n) => /IGST/i.test(n)), ro = sum(isRo);
+    const extras = lg.filter((x) => !isTax(x.n) && !isRo(x.n)).map((x) => [x.n, x.a]), ex = r2(extras.reduce((a, x) => a + x[1], 0));
+    const taxable = r2(goods + ex), rate = taxable ? (cg + sg + ig) / taxable * 100 : 0, g = GST_STD.reduce((b, x) => Math.abs(x - rate) < Math.abs(b - rate) ? x : b, 0);
+    const state = m.pos || m.state || pt.state || S.state, items = {}; rows("SELECT name, hsn, unit FROM tally_items").forEach((x) => { items[UP(x.name)] = x; });
+    const lines = ls.map((x) => ({ item: x.n, desc: x.desc, sqft: x.q, rate: x.r, disc: x.d || "", gst: g, hsn: (items[UP(x.n)] || {}).hsn || S.hsn, amt: x.a, unit: x.u || (items[UP(x.n)] || {}).unit || S.unit, lot: "" }));
+    const v = { party: t.party, addr: m.addr || [pt.address, pt.pincode].filter(Boolean).join(", "), gstin: m.gstin || pt.gstin || "", state, date: tsDate(t), vno: t.vno, tally_no: t.vno, temp: t.ref || t.vno, eway: m.eway || "", lines,
+      transporter: m.shipby || "", vehicle: m.vehicle || "", lr: m.lr || "", dest: m.dest || "", narration: t.narration || "" };
+    const calc = { intra: !(ig > 0), lines, goods, fr: 0, pk: 0, sm: 0, ds: 0, extras, taxable, cgst: cg, sgst: sg, igst: ig, ro, total: Number(t.amount) || r2(taxable + cg + sg + ig + ro), byRate: { [g]: taxable },
+      hides: 0, sides: 0, sqft: r2(lines.reduce((a, x) => a + (Number(x.sqft) || 0), 0)) };
+    return { v, calc };
+  }
   function tsalesView(ws) {
     const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
     if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
-    const L = all.filter((t) => match([t.party, t.vno, t.ref, t.narration, pbTLines(t).map((x) => x.n).join(" ")].join(" "), ws));
-    const tot = L.reduce((a, t) => a + (Number(t.amount) || 0), 0), sq = L.reduce((a, t) => a + pbTLines(t).reduce((b, x) => b + (x.q || 0), 0), 0);
+    const L = all.filter((t) => match([t.party, t.vno, t.ref, t.narration, tsLines(t).map((x) => x.n + " " + x.desc).join(" ")].join(" "), ws));
+    const tot = L.reduce((a, t) => a + (Number(t.amount) || 0), 0), sq = L.reduce((a, t) => a + tsLines(t).reduce((b, x) => b + (x.q || 0), 0), 0);
     const byM = {}; L.forEach((t) => { const m = tsDate(t).slice(0, 7); (byM[m] = byM[m] || []).push(t); });
-    const row = (t) => { const ls = pbTLines(t), v = tsInv(t); return `<button class="row" data-k="tsale:${esc(t.guid || t.vno)}"${cur("tsale:" + (t.guid || t.vno))}><span class="k">${esc(fmtD(tsDate(t)))}</span><span class="d"><b>${esc(t.party)}</b> · ${esc(t.vno)}<br><small>${esc(ls.map((x) => x.n + " " + fmtN(x.q, 2)).join(", ").slice(0, 90) || t.vtype || "")}${v ? " · app " + esc(invName(v)) : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`; };
+    const row = (t) => { const ls = tsLines(t), v = tsInv(t); return `<button class="row" data-k="tsale:${esc(t.guid || t.vno)}"${cur("tsale:" + (t.guid || t.vno))}><span class="k">${esc(fmtD(tsDate(t)))}</span><span class="d"><b>${esc(t.party)}</b> · ${esc(t.vno)}<br><small>${esc(ls.map((x) => x.n + " " + fmtN(x.q, 2) + (x.desc ? " (" + x.desc + ")" : "")).join(", ").slice(0, 120) || t.vtype || "")}${v ? " · app " + esc(invName(v)) : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`; };
     return `<p class="note" style="margin:6px 2px">Sale vouchers in Tally this year${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Excel reads them again every 30 minutes while Tally is open.</p>
       ${kv([["Vouchers", String(L.length)], ["Total billed", "₹" + fmtN(tot, 0)], ["Quantity", fmtN(sq, 0)]])}
       ${Object.keys(byM).sort().reverse().map((m) => { const ts = byM[m], mt = ts.reduce((a, t) => a + (Number(t.amount) || 0), 0); return `<div class="group">${esc(new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" }))} · ${ts.length} · ₹${fmtN(mt, 0)}</div>${ts.map(row).join("")}`; }).join("")}`;
   }
   function tsaleDetail(k) {
     const id = k.slice(6), t = tsRows().find((x) => (x.guid || x.vno) === id); if (!t) return `<p class="empty">This Tally voucher is no longer in the data.</p>`;
-    const ls = pbTLines(t), v = tsInv(t), goods = ls.reduce((a, x) => a + (x.a || 0), 0);
+    const ls = tsLines(t), v = tsInv(t), m = tsMeta(t), goods = ls.reduce((a, x) => a + (x.a || 0), 0);
     // on an item invoice the sales ledger carries the items again: leave it out (a credit in Tally adds to the bill, a debit takes off)
     const lg = tsLedgers(t).filter((x) => !(ls.length && Math.abs(x.a - goods) < 1));
     return `<h2>${esc(t.vtype || "Sale")} ${esc(t.vno)}</h2><p class="sub">${esc(t.party)} · ${esc(fmtD(tsDate(t)))}${t.ref ? " · ref " + esc(t.ref) : ""}</p>
-      ${ls.length ? pbLinesTable(ls, false) : `<p class="note">No stock items on this voucher.</p>`}
+      ${ls.length ? `<div class="tbl"><table><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Disc %</th><th class="r">Amount</th></tr></thead><tbody>${ls.map((x) => `<tr><td><b>${esc(x.n)}</b>${x.desc ? `<br><small><i>${esc(x.desc)}</i></small>` : ""}</td><td class="r num">${fmtN(x.q, 3)}${x.u ? " " + esc(x.u) : ""}</td><td class="r num">${fmtN(x.r, 2)}</td><td class="r num">${x.d ? fmtN(x.d, 2) : ""}</td><td class="r num">${fmtN(x.a, 2)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No stock items on this voucher.</p>`}
       <div class="tbl"><table><tbody>${ls.length ? `<tr><td>Items</td><td class="r num">₹${fmtN(goods, 2)}</td></tr>` : ""}${lg.map((x) => `<tr><td>${esc(x.n)}</td><td class="r num">₹${fmtN(x.a, 2)}</td></tr>`).join("")}<tr><td><b>Total</b></td><td class="r num"><b>₹${fmtN(t.amount, 2)}</b></td></tr></tbody></table></div>
+      ${kv([["GSTIN", m.gstin || tsParty(t).gstin || ""], ["Place of supply", m.pos || m.state || ""], ["Transport", [m.shipby, m.vehicle].filter(Boolean).join(" · ")], ["LR / RR", [m.lr, m.lrdate ? fmtD(tsYmd(m.lrdate)) : ""].filter(Boolean).join(" dt. ")], ["Destination", m.dest || ""], ["e-Way Bill", [m.eway, m.ewaydate ? fmtD(tsYmd(m.ewaydate)) : ""].filter(Boolean).join(" dt. ")], ["Buyer's order", m.order || ""]].filter((x) => x[1]))}
       ${t.narration ? `<p class="note">${esc(t.narration)}</p>` : ""}
-      ${v ? `<p><button class="link" data-go="orders" data-k="inv:${esc(v.id)}">Open the app invoice ${esc(invName(v))}</button></p>` : ""}`;
+      <div class="acts lotacts"><button class="btn alt" data-tspdf="${esc(t.guid || t.vno)}">Invoice PDF</button>${v ? `<button class="btn alt" data-go="orders" data-k="inv:${esc(v.id)}">Open the app invoice ${esc(invName(v))}</button>` : ""}</div>`;
   }
   function tallyView(ws) {
     const T = filter.tallyT || "parties";
@@ -1817,7 +1839,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 164, at: "2026-11-21T16:23:24+05:30", notes: "Invoices > Sales in Tally: Tally's sale vouchers this year with items, taxes and totals (read by Excel every 30 min)" };
+  const APP_BUILD = { v: 165, at: "2026-11-21T17:49:38+05:30", notes: "Sales in Tally: item descriptions, buyer / transport / e-way details, and Invoice PDF for every Tally sale voucher" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2712,7 +2734,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     [["tally_parties", "name TEXT, gstin TEXT, state TEXT, address TEXT, pincode TEXT", "name, gstin, state, address, pincode"], ["tally_items", "name TEXT, grp TEXT, unit TEXT, hsn TEXT", "name, grp, unit, hsn"],
      ["tally_sales", "vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT", "vno, vdate, party, ref, vtype"], ["tally_meta", "k TEXT, v TEXT", "k, v"],
      ["tally_purchases", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, app_id TEXT, lines TEXT", "guid, vno, vdate, party, ref, amount, narration, app_id, lines"],
-     ["tally_sale_bills", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, lines TEXT, ledgers TEXT, vtype TEXT", "guid, vno, vdate, party, ref, amount, narration, lines, ledgers, vtype"], ["tally_creditors", "name TEXT, gstin TEXT, state TEXT", "name, gstin, state"],
+     ["tally_sale_bills", "guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, lines TEXT, ledgers TEXT, vtype TEXT, meta TEXT", "guid, vno, vdate, party, ref, amount, narration, lines, ledgers, vtype, meta"], ["tally_creditors", "name TEXT, gstin TEXT, state TEXT", "name, gstin, state"],
      ["app_tally", "entry_id TEXT, kind TEXT, party TEXT, ref TEXT, vdate TEXT, total REAL, state TEXT, vno TEXT, guid TEXT, dup TEXT, msg TEXT, choice TEXT, posted_at TEXT, updated_at TEXT", "entry_id, kind, party, ref, vdate, total, state, vno, guid, dup, msg, choice, posted_at, updated_at"], ["lot_pdfs", "lot_no TEXT, file TEXT, made_at TEXT", "lot_no, file, made_at"]].forEach(([t, cols, sel]) => {
       a.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols})`); a.run(`DELETE FROM ${t}`);
       try { const n = sel.split(",").length; q(src, `SELECT ${sel} FROM ${t}`).forEach((r) => a.run(`INSERT INTO ${t} VALUES(${Array(n).fill("?").join(",")})`, Object.values(r))); } catch (e) { /* Excel has not read Tally yet */ }
@@ -4621,7 +4643,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   async function pdfInvoice(v, btn, o = {}) {
     const old = btn.textContent; btn.disabled = true; btn.textContent = "Making PDF";
     try {
-      const J = await pdfLib(), doc = new J({ unit: "mm", format: "a4" }), S = iset(), t = invCalc(v), u = S.unit;
+      const J = await pdfLib(), doc = new J({ unit: "mm", format: "a4" }), S = iset(), t = o.calc || invCalc(v), u = S.unit;
       const L = 10, R = 200, M = 105, C2 = 152.5, line = (x1, y1, x2, y2) => doc.line(x1, y1, x2, y2), box = (x, y, w, h) => doc.rect(x, y, w, h);
       const txt = (x, y, s, o = {}) => { doc.setFont("helvetica", o.b ? (o.i ? "bolditalic" : "bold") : o.i ? "italic" : "normal"); doc.setFontSize(o.f || 8.5); doc.text(String(s ?? ""), x, y, o.a ? { align: o.a } : undefined); };
       const wrap = (s, w, f) => { doc.setFontSize(f || 8.5); return doc.splitTextToSize(String(s || ""), w); };
@@ -4660,12 +4682,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       t.lines.forEach((ln, i) => {
         if (by > bottomLimit - 10) newPage();
         txt(X[0] + 6.5, by, String(i + 1), { a: "right" }); txt(X[1] + 1.2, by, ln.item, { b: true, f: 9 }); txt(X[2] + 1.2, by, ln.hsn || "");
-        txt(X[4] - 1.2, by, inr(ln.sqft) + " " + u, { b: true, a: "right" }); txt(X[5] - 1.2, by, inr(ln.rate), { a: "right" }); txt(X[5] + 1.2, by, u);
+        txt(X[4] - 1.2, by, inr(ln.sqft) + " " + (ln.unit || u), { b: true, a: "right" }); txt(X[5] - 1.2, by, inr(ln.rate), { a: "right" }); txt(X[5] + 1.2, by, ln.unit || u);
         if (Number(ln.disc)) txt(X[7] - 1.2, by, String(ln.disc), { a: "right" }); txt(R - 1.2, by, inr(ln.amt), { b: true, f: 9, a: "right" });
-        by += 3.8; const d = (ln.desc || descOf(ln)); if (d) { wrap(d, 76, 8).forEach((w) => { txt(X[1] + 5, by, w, { i: true, f: 8 }); by += 3.4; }); } by += 1.6; });
+        by += 3.8; const d = o.calc ? ln.desc : (ln.desc || descOf(ln)); if (d) { wrap(d, 76, 8).forEach((w) => { txt(X[1] + 5, by, w, { i: true, f: 8 }); by += 3.4; }); } by += 1.6; });
       by += 1; line(X[7] + 2, by, R - 1, by); by += 3.6; txt(R - 1.2, by, inr(t.goods), { a: "right" }); by += 5;
       const extra = (name, amt, less) => { if (!amt) return; if (less) txt(X[1] + 1.2, by, "Less :", { i: true }); txt(X[2] - 1.5, by, name, { b: true, i: true, a: "right" }); txt(R - 1.2, by, (amt < 0 ? "(-)" : "") + inr(Math.abs(amt)), { b: true, a: "right" }); by += 4; };
-      extra(S.freight, t.fr); extra(S.packing, t.pk); extra(S.sampling, t.sm); if (t.ds) extra(S.discount || "Discount", -t.ds, true);
+      if (t.extras) t.extras.forEach(([n, a]) => extra(n, a, a < 0)); else { extra(S.freight, t.fr); extra(S.packing, t.pk); extra(S.sampling, t.sm); if (t.ds) extra(S.discount || "Discount", -t.ds, true); }
       if (t.intra) { extra(S.cgst, t.cgst); extra(S.sgst, t.sgst); } else extra(S.igst, t.igst);
       if (t.ro) extra(S.round, t.ro, t.ro < 0);
       const tblBottom = Math.max(by + 2, bottomLimit - 40);
@@ -6187,6 +6209,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (dm) { if (dm.dataset.dmute) muteLot(dm.dataset.dmute); else unmuteLot(dm.dataset.dunmute); showDetailKeep(); render(); return; }
     const pb = e.target.closest("[data-pdf]"); if (pb) { pdfAction(pb); return; }
     const ivb = e.target.closest("[data-inv]"); if (ivb) { invClick(ivb); return; }
+    const tsp = e.target.closest("[data-tspdf]"); if (tsp) { const t = tsRows().find((x) => (x.guid || x.vno) === tsp.dataset.tspdf); if (t) { const o = tsAsInv(t); pdfInvoice(o.v, tsp, { calc: o.calc, fname: String(t.vno).replace(/\//g, "-") }); } return; }
     const ivl = e.target.closest("[data-invlot]"); if (ivl) { const l = data.lotBy[ivl.dataset.invlot]; inv = invNew(UP(l.customer), l.lot_no); invShowAll = false; openForm("invoice:new"); return; }
     if (e.target.closest("[data-backall]")) { const r = backRows($("#fm-skins_back").dataset.key).find((x) => String(x.id) === $("#fb-entry").value); if (r) { $("#fb-pcs").value = r.leftP; $("#fb-sqft").value = r.leftS; } lmShow(); return; }
     if (e.target.closest("[data-rates]")) { showRates = !showRates; showDetailKeep(); return; }
