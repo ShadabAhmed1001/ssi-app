@@ -1786,7 +1786,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 161, at: "2026-11-21T00:11:34+05:30", notes: "Invoice: deliveries of the same lot with the same item, rate, discount and GST go on the invoice as one item with the counts added" };
+  const APP_BUILD = { v: 162, at: "2026-11-21T08:13:23+05:30", notes: "Costing uses a purchase rate typed on the phone at once (before Excel imports it)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2107,7 +2107,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // lot leave the rate as it is. Sqft with no price (a purchase with no rate, a starting balance) is listed in miss.
   function lotBlue(lot, miss, seen) {
     lot = UP(lot); seen = seen || new Set(); if (!lot || seen.has(lot)) return 0; seen.add(lot);
-    const pur = (k) => rows("SELECT purchase_no, rate, rate_basis FROM purchases WHERE UPPER(purchase_no)=?", [k])[0];
+    // the purchase as the app shows it (a rate typed on the phone counts at once), else Excel's row (21-Nov-2026)
+    const pur = (k) => (data.purchases || []).find((x) => UP(x.purchase_no) === k) || rows("SELECT purchase_no, rate, rate_basis FROM purchases WHERE UPPER(purchase_no)=?", [k])[0];
     const mv = rows("SELECT from_key, to_key, pcs, sqft, entry_type FROM purchase_ledger WHERE (UPPER(to_key)=? OR UPPER(from_key)=?) AND status<>'VOID'", [lot, lot])
       .map((e) => ({ from: UP(e.from_key), to: UP(e.to_key), pcs: e.pcs, sqft: e.sqft, ty: e.entry_type }))
       .concat((data.pendMv || []).filter((m) => m.from === lot || m.to === lot));
