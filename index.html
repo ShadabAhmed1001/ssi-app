@@ -1288,7 +1288,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["sdash", "Sales dashboard"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
     purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["bills", "Tally bills"], ["ledger", "Ledger"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
@@ -1323,9 +1323,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["inv", "tsales", "invpend", "drep", "tally"]) },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally"]) },
     { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Invoices", icon: MI.inv, items: [["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
+    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stages"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -1418,6 +1418,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "orders" && filter.orders === "inv") { $("#list").innerHTML = invListView(ws); return; }
     if (tab === "orders" && filter.orders === "tally") { $("#list").innerHTML = tallyView(ws); return; }
     if (tab === "orders" && filter.orders === "tsales") { $("#list").innerHTML = tsalesView(ws); return; }
+    if (tab === "orders" && filter.orders === "sdash") { $("#list").innerHTML = sdashView(ws); return; }
     if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "usage") { $("#list").innerHTML = usageView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
@@ -1740,6 +1741,31 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       hides: 0, sides: 0, sqft: r2(lines.reduce((a, x) => a + (Number(x.sqft) || 0), 0)) };
     return { v, calc };
   }
+  // Sales dashboard (21-Nov-2026): Tally's sale vouchers this financial year, plus what is delivered and not billed yet
+  function sdashView(ws) {
+    const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
+    if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
+    const fy0 = (() => { const d = new Date(); return new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1); })(), ym = (d) => d.slice(0, 7);
+    const T = all.filter((t) => tsDate(t) >= iso(fy0)).map((t) => { const ls = tsLines(t), goods = ls.reduce((a, x) => a + x.a, 0); return { t, d: tsDate(t), amt: Number(t.amount) || 0, goods, ls, party: t.party }; });
+    const sum = (L, f) => L.reduce((a, x) => a + f(x), 0), nowM = iso(new Date()).slice(0, 7), prevM = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return iso(d).slice(0, 7); })();
+    const thisM = T.filter((x) => ym(x.d) === nowM), lastM = T.filter((x) => ym(x.d) === prevM), qty = sum(T, (x) => sum(x.ls, (l) => l.q));
+    const pend = invCands("", null, false), pSq = pend.reduce((a, c) => a + c.sqft, 0), pVal = pend.reduce((a, c) => { const p = invPoLine(c.lot); return a + (p && Number(p.rate) ? c.sqft * Number(p.rate) : 0); }, 0);
+    const months = []; for (let d = new Date(fy0); iso(d).slice(0, 7) <= nowM; d.setMonth(d.getMonth() + 1)) months.push(iso(d).slice(0, 7));
+    const mv = months.map((m) => ({ name: new Date(m + "-01").toLocaleDateString("en-IN", { month: "short", year: "2-digit" }), v: sum(T.filter((x) => ym(x.d) === m), (x) => x.amt), n: T.filter((x) => ym(x.d) === m).length }));
+    const cu = {}; T.forEach((x) => { const c = cu[x.party] = cu[x.party] || { name: x.party, v: 0, n: 0, last: "" }; c.v += x.amt; c.n++; if (x.d > c.last) c.last = x.d; });
+    const it = {}; T.forEach((x) => x.ls.forEach((l) => { const c = it[UP(l.n)] = it[UP(l.n)] || { name: l.n, v: 0, q: 0, u: l.u }; c.v += l.a; c.q += l.q; }));
+    const C = Object.values(cu).sort((a, b) => b.v - a.v), I = Object.values(it).sort((a, b) => b.v - a.v), tot = sum(T, (x) => x.amt) || 1;
+    const bar = (x, max, right) => `<div class="bar"><span class="lb">${esc(x.name)}</span><span class="tr"><i style="width:${Math.max(1, Math.round(x.v / max * 100))}%"></i></span><span class="ct num">${right}</span></div>`;
+    const mx = (L) => Math.max(1, ...L.map((x) => x.v));
+    return `<p class="note" style="margin:6px 2px">From Tally's sale vouchers since ${esc(fmtD(iso(fy0)))}${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Amounts include GST.</p>
+      ${kv([["Billed this year", "₹" + fmtN(tot, 0) + " · " + T.length + " bills"], ["This month", "₹" + fmtN(sum(thisM, (x) => x.amt), 0) + " · " + thisM.length + " bills"], ["Last month", "₹" + fmtN(sum(lastM, (x) => x.amt), 0) + " · " + lastM.length + " bills"], ["Quantity billed", fmtN(qty, 0)], ["Delivered, not billed", pend.length ? `${pend.length} deliveries · ${fmtN(pSq, 0)} sqft${pVal ? " · about ₹" + fmtN(pVal, 0) : ""}` : "nothing"]])}
+      ${pend.length ? `<div class="acts"><button class="btn alt" data-jump="orders" data-f="invpend">Open pending invoicing</button></div>` : ""}
+      <div class="group">By month</div><div class="bars">${mv.map((x) => bar(x, mx(mv), "₹" + fmtN(x.v, 0))).join("")}</div>
+      <div class="group">Customers this year</div><div class="bars">${C.slice(0, 12).map((x) => bar(x, mx(C), "₹" + fmtN(x.v, 0) + " · " + Math.round(x.v / tot * 100) + "%")).join("")}</div>
+      <div class="group">Items this year (value before GST)</div><div class="bars">${I.slice(0, 12).map((x) => bar(x, mx(I), fmtN(x.q, 0) + (x.u ? " " + esc(x.u) : "") + " · ₹" + fmtN(x.v, 0))).join("")}</div>
+      <div class="group">Latest bills</div>${T.slice(0, 6).map((x) => `<button class="row" data-k="tsale:${esc(x.t.guid || x.t.vno)}"><span class="k">${esc(fmtD(x.d))}</span><span class="d"><b>${esc(x.party)}</b> · ${esc(x.t.vno)}</span><span class="r num">₹${fmtN(x.amt, 0)}</span></button>`).join("")}
+      <div class="acts"><button class="btn alt" data-jump="orders" data-f="tsales">All sales in Tally</button></div>`;
+  }
   function tsalesView(ws) {
     const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
     if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
@@ -1839,7 +1865,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 165, at: "2026-11-21T17:49:38+05:30", notes: "Sales in Tally: item descriptions, buyer / transport / e-way details, and Invoice PDF for every Tally sale voucher" };
+  const APP_BUILD = { v: 166, at: "2026-11-21T17:52:10+05:30", notes: "Menu: Invoices renamed Sales, with a Sales dashboard (this year, month by month, customers, items, delivered not billed)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
