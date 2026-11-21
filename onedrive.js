@@ -436,8 +436,8 @@
 .odbar.ok .odt::before{content:"● ";color:#2e9d4a}.odbar.warn .odt::before{content:"● ";color:#b26a00}.odbar.bad .odt::before{content:"● ";color:#c62828}
 .odbar .odb{display:flex;gap:6px;flex:none}
 .odbar button{font:inherit;font-weight:600;border:1px solid var(--line,#c9d3d9);background:var(--surface,#fff);color:var(--ink,#15232b);border-radius:8px;padding:4px 10px}
-.odset{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9999}.odset form{background:var(--surface,#fff);color:var(--ink,#15232b);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px;display:grid;gap:10px;font-size:14px}
-.odset label{display:grid;gap:4px}.odset input{font:inherit;padding:8px;background:var(--bg,#fff);color:var(--ink,#15232b);border:1px solid var(--line,#c9d3d9);border-radius:8px}.odset .row2{display:flex;gap:8px;justify-content:flex-end}
+.odset{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9999}.odset form{background:var(--surface,#fff);color:var(--ink,#15232b);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:10px;font-size:14px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box}.pdfbox{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box}
+.odset label{display:grid;gap:4px}.odset input{font:inherit;padding:8px;background:var(--bg,#fff);color:var(--ink,#15232b);border:1px solid var(--line,#c9d3d9);border-radius:8px}.odset .row2{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;position:sticky;bottom:-16px;margin:0 -16px -16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface,#fff);border-top:1px solid var(--line,#c9d3d9)}
 .odup{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:9998;display:flex;gap:10px;align-items:center;justify-content:space-between;background:#0f3b4c;color:#fff;border-radius:12px;padding:10px 14px;font-size:14px}.odup button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:6px 12px}`;
     document.head.appendChild(css);
     bar = document.createElement("div"); bar.className = "odbar"; bar.setAttribute("role", "status");
@@ -459,7 +459,7 @@
       ${f("pdfFolder", "PDF folder (every PDF made in the app is saved here)", c.dataFolder || "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
       ${f("invoiceFolder", "Invoice PDF folder (empty = the PDF folder above)", "")}
       ${f("tallyFolder", "Tally files folder (Excel's XML DATA; Excel sends files from here to Tally)", TALLY_DIR0)}
-      <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> For PDFs, show the box to name them and save to OneDrive or share (off: share straight away)</label>
+      <label style="display:flex;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> For PDFs, show the box to name them and save to OneDrive or share (off: share straight away)</label>
       ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
       ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
         const e = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
