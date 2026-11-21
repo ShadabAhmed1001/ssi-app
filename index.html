@@ -1329,7 +1329,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stages"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
-    { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
+    { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["@onedrive", "OneDrive"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
     { id: "about", label: "About", icon: MI.about, tab: "about" },
   ];
   let menuOpenId = null, menuLast = null;
@@ -1346,7 +1346,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       const ic = g.icon || SIDE_ICON[g.id] || (document.querySelector(`.tab[data-tab="${g.tab || g.id}"] i`) || {}).innerHTML || "";
       const cur = g === g0, isOpen = !!g.items && open === g.id;
       return `<div class="sgrp"><button class="shead" ${g.items ? `data-mgrp="${g.id}" aria-expanded="${isOpen}"` : `data-side="${g.tab}|"`} aria-current="${cur && !g.items}"><i aria-hidden="true">${ic}</i>${g.label}${g.items ? `<span class="chev" aria-hidden="true">${isOpen ? "▾" : "▸"}</span>` : ""}</button>`
-        + (isOpen ? g.items.map(([x, l]) => `<button class="sitem" data-side="${x}" data-mg="${g.id}" aria-current="${cur && x === k}">${esc(l)}</button>`).join("") : "") + `</div>`;
+        + (isOpen ? g.items.filter(([x]) => x !== "@onedrive" || (window.__ssiOD && window.__ssiOD.settings)).map(([x, l]) => `<button class="sitem" data-side="${x}" data-mg="${g.id}" aria-current="${cur && x === k}">${esc(l)}</button>`).join("") : "") + `</div>`;
     }).join("");
   }
   function openSide() {
@@ -1370,7 +1370,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // pages of the app found by name in the search box ("machinery", "settings", "audit chemicals")
   const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
     "chemicals|bills": "purchase bills tally", "purchases|bills": "wet blue bill bills tally purchase leather", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
-    "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "lots|guide": "stages stage",
+    "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "@onedrive": "onedrive sync sign in cloud folder", "lots|guide": "stages stage",
     "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts" };
   let PAGES = null;
   function pageList() {
@@ -1384,7 +1384,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function pageHits() {
     const ws = words($("#q").value).map((w) => String(w).toLowerCase()).filter((w) => w.length >= 3 || /^[a-z]+$/.test(w) && w.length >= 2); if (!ws.length) return;
     const here = tab + "|" + (CHIPS[tab] && CHIPS[tab].length ? filter[tab] || CHIPS[tab][0][0] : "");
-    const hit = pageList().filter((p) => p.k !== here && ws.every((w) => p.words.some((x) => x.startsWith(w)))).slice(0, 6); if (!hit.length) return;
+    const hit = pageList().filter((p) => p.k !== here && (p.k !== "@onedrive" || window.__ssiOD) && ws.every((w) => p.words.some((x) => x.startsWith(w)))).slice(0, 6); if (!hit.length) return;
     const div = document.createElement("div"); div.className = "pagehits"; div.innerHTML = `<span>Open page:</span>` + hit.map((p) => p.k.charAt(0) === "@" ? `<button type="button" data-menuact="${esc(p.k.slice(1))}">${esc(p.label)}</button>` : `<button type="button" data-jump="${esc(p.k.split("|")[0])}" data-f="${esc(p.k.split("|")[1])}">${esc(p.label)}</button>`).join("");
     $("#list").prepend(div);
   }
@@ -1874,7 +1874,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 169, at: "2026-11-21T19:17:18+05:30", notes: "Tally sales and Excel's sync answer come from two small files Excel writes, shown within seconds instead of after the full Excel data" };
+  const APP_BUILD = { v: 170, at: "2026-11-21T21:28:17+05:30", notes: "OneDrive moved into Menu > Settings > OneDrive; settings panel scrolls" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1913,7 +1913,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const maxS = Math.max(1, ...stages.map((s) => s.n)), maxC = Math.max(1, ...cs.map((c) => c.n));
     const bar = (field, x, max) => `<button class="bar" data-pick="${field}" data-v="${esc(x.name)}"><span class="lb">${esc(x.name)}</span><span class="tr"><i class="${x.late ? "bad" : ""}" style="width:${Math.round(x.n / max * 100)}%"></i></span><span class="ct">${x.n}</span></button>`;
     // a new phone with nothing loaded yet: say how to get the data instead of showing empty boards
-    if (data.empty) return `<div class="alert" style="display:block"><b>No data yet.</b> ${window.__ssiOD ? "Sign in to OneDrive (the bar at the top) and the app reads the Excel files by itself, or load" : "Load"} the two Excel files (the .xlsm and the .db) from this phone.
+    if (data.empty) return `<div class="alert" style="display:block"><b>No data yet.</b> ${window.__ssiOD ? "Sign in to OneDrive (Menu › Settings › OneDrive) and the app reads the Excel files by itself, or load" : "Load"} the two Excel files (the .xlsm and the .db) from this phone.
       <div class="acts">${canAdmin ? `<button class="btn" data-new="update">Load the Excel files</button>` : `<span class="note">Ask the owner to share the data with you.</span>`}</div></div>`;
     return `<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
       <div class="group">Lots by status</div><div class="bars">${statusRows().map((s) => bar("status", s, Math.max(1, ...statusRows().map((x) => x.n)))).join("")}</div>
@@ -6089,6 +6089,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const v0 = t.value; let v = v0.replace(/,/g, ".").replace(/[^0-9.]/g, ""); const d = v.indexOf("."); if (d >= 0) v = v.slice(0, d + 1) + v.slice(d + 1).replace(/\./g, "");
     if (v !== v0) { const pos = Math.max(0, (t.selectionStart || v.length) - (v0.length - v.length)); t.value = v; try { t.setSelectionRange(pos, pos); } catch (x) {} } }, true);
   function menuAct(a) {
+    if (a === "onedrive") { if (sideOpen) hideSide(); if (window.__ssiOD && window.__ssiOD.settings) window.__ssiOD.settings(); return; }
     const wasOpen = sideOpen; if (sideOpen) hideSide();
     filter.orders = "inv"; pick = null; stack = []; formOpen = null; ed = null; sel.orders = null;
     if (tab !== "orders") route("orders"); else render();

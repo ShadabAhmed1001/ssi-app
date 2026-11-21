@@ -264,6 +264,7 @@
   }
   window.__ssiOD = {
     records,
+    settings: () => settings(),
     ready: () => configured() && !!account && !needLogin,
     syncNow: async () => { await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300)); },
     // "Sync with Excel and Tally now": this phone's entries go up first, then excel-now.txt asks Excel to run its import at once (21-Nov-2026)
@@ -421,7 +422,10 @@
 
   // ---------- small status bar + settings ----------
   let bar = null;
+  let lastSt = { text: "Starting…", tone: "" };
   function setStatus(text, tone, action) {
+    lastSt = { text, tone: tone || "" };
+    const ss = document.querySelector(".odset .odst"); if (ss) { ss.className = "odst odbar " + (tone || ""); ss.querySelector(".odt").textContent = text; }
     if (!bar) return;
     bar.className = "odbar " + (tone || "");
     bar.querySelector(".odt").textContent = text;
@@ -429,6 +433,8 @@
     b.hidden = (syncing && !action) || (!configured() && !action);
     b.textContent = action === "signin" ? "Sign in" : action === "retry" ? "Try again" : configured() ? (account ? "Sync now" : "Sign in") : "Set up";
     b.dataset.act = action || (configured() ? (account ? "sync" : "signin") : "settings");
+    // OneDrive lives in Menu > Settings > OneDrive (21-Nov-2026); the line under the top bar shows only when the user has to sign in or set up
+    bar.hidden = !(b.dataset.act === "signin" || b.dataset.act === "settings");
   }
   function ui() {
     const css = document.createElement("style");
@@ -450,7 +456,9 @@
   function settings() {
     const c = cfg(), w = document.createElement("div"); w.className = "odset";
     const f = (k, label, hint) => `<label>${label}<input name="${k}" value="${String(c[k] || "").replace(/"/g, "&quot;")}"${hint ? ` placeholder="${hint}"` : ""}></label>`;
+    const act = bar ? bar.querySelector(".oda").dataset.act : "";
     w.innerHTML = `<form><span style="font-size:12px;color:var(--muted,#567)">${window.__ssiVersion ? window.__ssiVersion().replace(/</g, "&lt;") : ""}</span><strong>OneDrive</strong>
+      <div class="odst odbar ${lastSt.tone}" style="margin:0;padding:0;border:0"><span class="odt">${String(lastSt.text).replace(/</g, "&lt;")}</span>${configured() ? `<button type="button" data-x="act">${act === "signin" ? "Sign in" : account ? "Sync now" : "Sign in"}</button>` : ""}</div>
       ${account ? `<span>Signed in as ${(me.name || "").replace(/</g, "&lt;")}</span>` : ""}
       ${f("userName", "Your name (shown on entries)")}
       ${f("dataFolder", "Folder with the Excel workbook and database", "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
@@ -467,7 +475,7 @@
       <details><summary>Advanced</summary>${f("clientId", "App (client) ID")}${f("authority", "Sign-in authority")}</details>
       <span class="row2"><button type="button" data-x="upd">Check for updates</button>${account ? `<button type="button" data-x="out">Sign out</button>` : ""}<button type="button" data-x="cancel">Cancel</button><button type="submit">Save</button></span></form>`;
     document.body.appendChild(w);
-    w.onclick = (e) => { const x = e.target.dataset && e.target.dataset.x; if (e.target === w || x === "cancel") w.remove(); if (x === "out") signOut(); if (x === "upd" && window.__ssiCheckUpdate) { e.target.disabled = true; e.target.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { e.target.textContent = r; }); } };
+    w.onclick = (e) => { const x = e.target.dataset && e.target.dataset.x; if (e.target === w || x === "cancel") w.remove(); if (x === "out") signOut(); if (x === "act") { if (account && !needLogin) sync("button"); else { w.remove(); signIn(); } } if (x === "upd" && window.__ssiCheckUpdate) { e.target.disabled = true; e.target.textContent = "Checking…"; window.__ssiCheckUpdate().then((r) => { e.target.textContent = r; }); } };
     w.querySelector("form").onsubmit = (e) => {
       e.preventDefault(); const o = {};
       new FormData(e.target).forEach((v, k) => { if (k === "pdfAutoOn") return; v = String(v).trim(); if (v !== String(CFG0[k] || "")) o[k] = v; });
