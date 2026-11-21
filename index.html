@@ -1307,7 +1307,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const f = !CHIPS[tab].length ? "" : filter[tab] || CHIPS[tab][0][0];
     const p = tab === "lots" && pick ? `<button class="chip pick" data-clear="1" aria-label="Remove filter ${esc(pick.value)}">${esc(pick.value)} ×</button>` : "";
     $("#chips").innerHTML = p;
-    { const g = menuGroup(), it = g && g.items && g.items.find(([k]) => k === menuKey()); $("#viewname").textContent = it ? (["disp", "inv", "proc", "settings"].includes(g.id) && it[1] !== "Costing calculator" ? g.label + " · " : "") + it[1] : g ? g.label : SIDE_T[tab] || ""; }
+    { const g = menuGroup(), it = g && g.items && g.items.find(([k]) => k === menuKey()); $("#viewname").textContent = it ? it[1].replace(/ \(.*\)$/, "") : g ? g.label : SIDE_T[tab] || ""; } // just the page name, so it fits (22-Nov-2026)
     if (sideOpen || WIDE.matches) $("#side").innerHTML = sideHtml();
   }
   // ---------------------------------------------------------------- sidebar: every tab and its views
@@ -1329,12 +1329,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
     { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally"]) },
-    { id: "disp", label: "Dispatches", icon: MI.disp, items: [["orders|drep", "Delivery report"], ["lots|ready", "Ready to dispatch"], ["lots|done", "Dispatched lots"]] },
-    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["orders|invpend", "Pending invoicing"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["@invnew", "New invoice"], ["orders|tally", "Tally parties and items"], ["@invset", "Tally names"]] },
-    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["lots|guide", "Stages"], ["calc|", "Costing calculator"], ["mach|", "Machinery rates"]] },
+    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"]] },
+    { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
-    { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["@onedrive", "OneDrive"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["health|", "Health check"], ["@invset", "Tally names for invoices"]] },
+    { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "General"], ["@onedrive", "OneDrive"], ["health|", "Health check"], ["entries|pending", "Phone entries waiting"], ["entries|all", "All phone entries"], ["lots|guide", "Stages"], ["mach|", "Machinery rates"], ["@invset", "Tally names for invoices"], ["orders|tally", "Tally parties and items"]] },
     { id: "about", label: "About", icon: MI.about, tab: "about" },
   ];
   let menuOpenId = null, menuLast = null;
@@ -1393,7 +1392,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const div = document.createElement("div"); div.className = "pagehits"; div.innerHTML = `<span>Open page:</span>` + hit.map((p) => p.k.charAt(0) === "@" ? `<button type="button" data-menuact="${esc(p.k.slice(1))}">${esc(p.label)}</button>` : `<button type="button" data-jump="${esc(p.k.split("|")[0])}" data-f="${esc(p.k.split("|")[1])}">${esc(p.label)}</button>`).join("");
     $("#list").prepend(div);
   }
-  function render() { render0(); try { pageHits(); } catch (e) { /* never stops the page */ } }
+  // a bottom tab is lit only for pages of its own menu group: Sales, Processes or Settings pages light none (22-Nov-2026)
+  function tabLight() { const g = menuGroup(), gid = g ? g.id : tab; document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === tab && (gid === tab || (!!g && g.tab === tab)))); }
+  function render() { render0(); try { tabLight(); pageHits(); } catch (e) { /* never stops the page */ } }
   function render0() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
@@ -1880,7 +1881,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 171, at: "2026-11-21T22:11:36+05:30", notes: "Pending invoicing grouped by lot; figures in normal font; tips can be hidden; lot sections show counts; App vs Excel check ignores the empty starting data" };
+  const APP_BUILD = { v: 172, at: "2026-11-22T00:12:07+05:30", notes: "Menu: Dispatches inside Sales, setup lists in Settings; General settings without repeats; bottom bar lights only its own pages; health check lists data problems only; PO shares no longer counted as waiting for Excel" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2146,8 +2147,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   // ---------------------------------------------------------------- settings and about
   function settingsView() {
     const row = (attrs, t, sub) => `<button class="alert" ${attrs}><span>${t}${sub ? `<br><small class="note">${sub}</small>` : ""}</span><span aria-hidden="true">›</span></button>`;
-    const muted = data.lots.filter((l) => needsAttn(l) && isMuted(l.lot_no)).length, hc = healthItems().length;
-    return `<div class="group">Settings</div>
+    return `<div class="group">General</div>
       <div class="setlist">
       <div class="alert" style="display:block"><b>Look</b><br><span class="lookpick" role="group" aria-label="Look"><button data-look="classic" aria-pressed="${document.documentElement.dataset.look === "cards" ? "false" : "true"}">Classic</button><button data-look="cards" aria-pressed="${document.documentElement.dataset.look === "cards" ? "true" : "false"}">Compact cards</button></span></div>
       <div class="alert" style="display:block"><b>Theme</b><br><span class="lookpick" role="group" aria-label="Theme">${[["", "Auto"], ["light", "Light"], ["dark", "Dark"], ["leather", "Leather"], ["night", "Night"]].map(([v, t]) => `<button data-theme-set="${v}" aria-pressed="${lsGet("ssi-theme") === v}">${t}</button>`).join("")}</span><br><small class="note">Auto follows the phone's light or dark mode.</small></div>
@@ -2159,10 +2159,6 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${row('data-tour-replay="1"', "App tour", "A short walk through the app's pages. Shown once when the app is first opened on a phone.")}
       ${row('data-backup="1"', "Back up app data", "Saves the Excel data, all phone entries, invoices, audits, PDF records and settings on this phone as one file. Put it in OneDrive › SSI › Phone entries. " + (lastBackup() ? "Last backup: " + bkWhen(lastBackup()) + " (" + bkAgo(lastBackup()) + ")." : "No backup made on this phone yet."))}
       ${row('data-restore="1"', "Restore from a backup", "After a reinstall or on a new phone: brings back the Excel data, entries, invoices and settings from a backup file" + (window.SSI_STANDALONE ? " or a OneDrive backup" : "") + ". Nothing is deleted.")}
-      ${row('data-menuact="invset"', "Tally names for invoices", "Company, sales ledger, GST ledgers, number series")}
-      ${store ? row('data-jump="entries" data-f="pending"', "Phone entries", data.pending.length + " waiting for Excel") : ""}
-      ${row('data-jump="health" data-f=""', "Health check", hc ? hc + " to look at" : "nothing to look at")}
-      ${row('data-jump="lots" data-f="late"', "Muted lots", muted ? muted + " muted for a day" : "none muted")}
       </div>
       ${canAdmin ? (recMode() ? `<div class="group">Data</div><p class="note" style="margin:0">The app keeps the records. Chemical stock and prices from Tally come in through Excel${(() => { const t = one("SELECT value FROM meta WHERE key='tally_merged_at'"); return t ? ", last on " + esc(fmtST(t)) : ""; })()}.</p>` : `<div class="group">Data</div><p class="note" style="margin:0">Data is from ${esc(data.asOf || "not loaded")}.</p><div class="acts"><button class="btn alt" data-new="update">Update from Excel</button></div>`) + recView() : ""}`;
   }
@@ -2171,7 +2167,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (!window.__ssiOD || !window.__ssiOD.records) return "";
     let log = []; try { log = JSON.parse(localStorage.getItem(EN_LOG) || "[]") || []; } catch (e) { log = []; }
     const d30 = log.filter((r) => r.at >= iso(new Date(today.getTime() - 30 * DAY))), n = d30.reduce((t, r) => t + r.n, 0), bad = d30.reduce((t, r) => t + r.diffs.length + (r.more || 0) + r.errs.length, 0);
-    const fails = Object.keys(engineErr).length, wait = entries.filter((e) => e.status === "pending").length;
+    const fails = Object.keys(engineErr).length, wait = entries.filter((e) => e.status === "pending" && !APP_ONLY.includes(e.type)).length;
     if (recMode()) return `<div class="group">Who keeps the records</div><div class="alert" style="display:block"><b>The app</b> keeps the records on OneDrive. Excel only brings Tally's chemical stock and prices.
       ${fails ? `<br><span class="late">${fails} entr${fails === 1 ? "y" : "ies"} could not be recorded. See Phone entries.</span>` : ""}
       <div class="acts"><button class="btn alt" data-recmode="excel">Give the records back to Excel</button></div><small class="note">Excel then imports every entry made since the app took over, in order. Nothing is lost.</small><p class="note" id="recmsg"></p></div>`;
@@ -2888,7 +2884,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     excelDone: (o) => { excelLast = o; const el = document.getElementById("askx-said"); if (el) { el.textContent = "Excel finished " + fmtST(String(o.at || "")) + ": " + String(o.result || "") + (o.tally === false ? " (Tally was not answering)" : ""); el.className = o.tally === false ? "note bad" : "note"; } },
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
     // records kept by the app: the base all phones start from, and Tally's stock and prices from Excel's files
-    waitingForExcel: () => entries.filter((e) => e.status === "pending").length,
+    waitingForExcel: () => entries.filter((e) => e.status === "pending" && !APP_ONLY.includes(e.type)).length, // app-only entries (PO shares) never go to Excel (22-Nov-2026)
     baseBytes: () => baseBytes,
     compact: (cutoff, min) => enCompact(cutoff, min),
     useBase: async (bytes) => { await publishSnapshot(bytes, () => {}); open(window.__SQL, bytes, "base"); },
@@ -2916,6 +2912,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return data.stages.map((s) => { const ls = open.filter((l) => (l.stage || "").toUpperCase() === s.name.toUpperCase());
       return { name: s.name, max: s.max_days, n: ls.length, over: ls.filter((l) => s.max_days > 0 && l.inStage > s.max_days).length, longest: ls.length ? Math.max(...ls.map((l) => l.inStage || 0)) : 0 }; }).filter((s) => s.n);
   }
+  const finBefore = (l) => { const st = data.stages || [], i = st.findIndex((x) => UP(x.name) === UP(l.stage)), f = st.findIndex((x) => UP(x.name) === "FINISHING"); return l.state === "OPEN" && (i < 0 || f < 0 || i <= f); };
   function healthItems() {
     const out = [], guide = new Set(data.stages.map((x) => x.name.toUpperCase()));
     const badDate = (v) => { if (!v) return ""; const m = /^(\d{4})-\d{2}-\d{2}/.exec(String(v)); if (!m) return `'${v}' is text, not a date`; const d = toDate(v); return Number(m[1]) < 2024 || d - today > 730 * DAY ? `'${fmtD(v)}' looks wrong` : ""; };
@@ -2928,9 +2925,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       else if (!guide.has(stU)) out.push({ lot: l.lot_no, area: "Tracker", text: `Stage '${l.stage}' is not on the STAGE GUIDE`, todo: "Use Move stage and pick from the list" });
       {
         if (!l.process_page && !wait && stU !== "PENDING - NOT STARTED") out.push({ lot: l.lot_no, area: "Tracker", text: "No process page", todo: "Use Process" });
-        if (!wait && l.maxDays > 0 && l.inStage > l.maxDays) out.push({ lot: l.lot_no, area: "Stage", text: `In ${l.stage} for ${l.inStage} days (expected up to ${l.maxDays})`, todo: "Move it on, or note why it is late" });
-        if (!wait && l.dueIn !== null && l.dueIn < 0) out.push({ lot: l.lot_no, area: "Due date", text: `Due ${fmtS(l.due_date)}, ${-l.dueIn} days late (${l.stage})`, todo: "Check with production or update the customer" });
+        // late in a stage or past the due date is production, not a data problem: it shows on Today and in Production › Needs attention (22-Nov-2026)
       }
+      // Excel's "Finishing missing" while the lot is still in finishing (or before) is expected: the chemicals go in at the end (22-Nov-2026)
+      if (l.chem_check && /finishing missing/i.test(l.chem_check) && finBefore(l)) return;
       if (l.chem_check && l.chem_check.trim()) out.push({ lot: l.lot_no, area: "Chemicals", text: l.chem_check.replace(/^\W+/, ""), todo: "Open the lot and use Adjust under Chemical entries" });
     });
     const inn = {}, ot = {}; rows("SELECT from_key f, to_key t, pcs p, sqft s FROM purchase_ledger WHERE status<>'VOID'").forEach((e) => { const a0 = inn[e.t] = inn[e.t] || [0, 0], b0 = ot[e.f] = ot[e.f] || [0, 0]; a0[0] += e.p || 0; a0[1] += e.s || 0; b0[0] += e.p || 0; b0[1] += e.s || 0; });
@@ -5825,14 +5823,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function entriesView() {
     if (!store) return `<p class="empty">Phone entries are not available in this view.</p>`;
     if (!entriesSeen) return `<p class="empty">Loading phone entries…</p>`;
-    const f = filter.entries || "pending", cnt = 0, list = entries.filter((e) => e.type !== "count" && (f === "all" || e.status === f)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), allN = list.length;
+    const f = filter.entries || "pending", cnt = 0, list = entries.filter((e) => e.type !== "count" && (f === "all" || (e.status === f && !(f === "pending" && !recMode() && APP_ONLY.includes(e.type))))).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), allN = list.length;
     list.splice(300);
     const n = data.pending.length, rec = recMode(), nErr = Object.keys(engineErr).length;
     const tools = rec ? `<p class="note" style="margin-top:8px">The app keeps the records: each entry is written as soon as it is saved.${nErr ? ` <span class="late">${nErr} could not be written; the reason is on each one. Cancel it and enter it again corrected.</span>` : ""}</p>` : n && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn" data-export>Send to Excel</button><button class="btn alt" data-copycsv>Copy</button><button class="btn alt" data-markall>Mark ${n} as imported</button></div><p class="note">Tap Send to Excel, choose OneDrive and save in your Phone entries folder. Then press Import from phone in Excel. (If OneDrive sync is switched on in the top bar, this happens by itself.) Update from Excel marks them as imported. If you won't update yet, mark them here.</p><div id="csvout"></div>` : "";
     return `${entriesSeen === "late" ? `<p class="note">Phone entries can't be reached yet, so this list may be out of date.</p>` : ""}${tools}<div class="count"><span>${list.length + (cnt ? 1 : 0)} shown${allN > list.length ? ` (the latest ${list.length} of ${allN})` : ""}</span></div>${cnt ? `<div class="ent"><span class="k">Stock count</span><button class="mini" data-jump="chemicals" data-f="count">Open</button><span class="tx">${cnt} chemicals counted</span></div>` : ""}` +
       (list.length || cnt ? list.map((e) => `<div class="ent"><span class="k">${data.lotBy[e.lot_no] ? `<button class="link" data-lot="${esc(e.lot_no)}">${esc(e.lot_no)}</button>` : esc(e.lot_no)}</span>
         ${e.status === "pending" && canWrite && !enFolded.has(e.id) ? `<button class="mini" data-cancel="${esc(e.id)}">Cancel</button>` : rec && enFolded.has(e.id) && e.status === "pending" ? `<span class="pill idle">closed</span>` : `<span class="pill ${e.status === "cancelled" ? "idle" : "ok"}">${esc(e.status)}</span>`}
-        <span class="tx">${rec && e.status === "pending" ? (engineErr[e.id] && enFolded.has(e.id) ? `<span class="pill bad">${esc(engineErr[e.id])}</span> ` : enApplied.has(e.id) ? (enFolded.has(e.id) ? "" : `<span class="pill ok">recorded</span> `) : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
+        <span class="tx">${!rec && e.status === "pending" && APP_ONLY.includes(e.type) ? `<span class="pill idle">kept in the app, Excel doesn't need it</span> ` : ""}${rec && e.status === "pending" ? (engineErr[e.id] && enFolded.has(e.id) ? `<span class="pill bad">${esc(engineErr[e.id])}</span> ` : enApplied.has(e.id) ? (enFolded.has(e.id) ? "" : `<span class="pill ok">recorded</span> `) : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
         <span class="by">${fmtD(e.entry_date || (e.data && e.data.date) || e.created_at)} · <span${e.entered_by ? ` data-uid="${esc(e.entered_by)}"` : ""}>Someone</span></span></div>`).join("") : `<p class="empty">${f === "pending" && rec ? "No entries yet." : f === "pending" ? "Nothing is waiting for Excel. Open a lot and use Move stage or Record delivery." : "No entries here."}</p>`);
   }
   async function exportCsv() {
@@ -6053,7 +6051,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function route(force) {
     const h = typeof force === "string" ? force : (location.hash || "").replace("#", "");
     tab = TABS.includes(h) ? h : "today";
-    document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === tab));
+
     render(); showDetail();
   }
   window.addEventListener("hashchange", route);
