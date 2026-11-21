@@ -1742,9 +1742,17 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return { v, calc };
   }
   // Sales dashboard (21-Nov-2026): Tally's sale vouchers this financial year, plus what is delivered and not billed yet
+  // asks Excel on the PC to run its import now: entries, invoice files to Tally, Tally's sales (installed app with OneDrive only)
+  const askXBtn = () => window.__ssiOD && window.__ssiOD.askExcel ? `<div class="acts"><button class="btn alt" data-askexcel>Sync with Excel and Tally now</button></div><p class="note" id="askx-said" style="margin:0 2px"></p>` : "";
+  async function askExcel(b) {
+    const said = document.getElementById("askx-said"), old = b.textContent; b.disabled = true; b.textContent = "Asking Excel…";
+    try { await window.__ssiOD.askExcel(); if (said) { said.textContent = "Asked at " + new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) + ". Excel on the PC does it within about a minute (it must be open), and Tally must be open for bills. The app fetches the new data by itself in 2 to 4 minutes."; said.className = "note"; } }
+    catch (e) { if (said) { said.textContent = "Could not ask Excel: " + (e.message || e); said.className = "note bad"; } }
+    b.disabled = false; b.textContent = old;
+  }
   function sdashView(ws) {
     const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
-    if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
+    if (!all.length) return `${askXBtn()}<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
     const fy0 = (() => { const d = new Date(); return new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1); })(), ym = (d) => d.slice(0, 7);
     const T = all.filter((t) => tsDate(t) >= iso(fy0)).map((t) => { const ls = tsLines(t), goods = ls.reduce((a, x) => a + x.a, 0); return { t, d: tsDate(t), amt: Number(t.amount) || 0, goods, ls, party: t.party }; });
     const sum = (L, f) => L.reduce((a, x) => a + f(x), 0), nowM = iso(new Date()).slice(0, 7), prevM = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return iso(d).slice(0, 7); })();
@@ -1757,7 +1765,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     const C = Object.values(cu).sort((a, b) => b.v - a.v), I = Object.values(it).sort((a, b) => b.v - a.v), tot = sum(T, (x) => x.amt) || 1;
     const bar = (x, max, right) => `<div class="bar"><span class="lb">${esc(x.name)}</span><span class="tr"><i style="width:${Math.max(1, Math.round(x.v / max * 100))}%"></i></span><span class="ct num">${right}</span></div>`;
     const mx = (L) => Math.max(1, ...L.map((x) => x.v));
-    return `<p class="note" style="margin:6px 2px">From Tally's sale vouchers since ${esc(fmtD(iso(fy0)))}${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Amounts include GST.</p>
+    return `${askXBtn()}<p class="note" style="margin:6px 2px">From Tally's sale vouchers since ${esc(fmtD(iso(fy0)))}${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Amounts include GST.</p>
       ${kv([["Billed this year", "₹" + fmtN(tot, 0) + " · " + T.length + " bills"], ["This month", "₹" + fmtN(sum(thisM, (x) => x.amt), 0) + " · " + thisM.length + " bills"], ["Last month", "₹" + fmtN(sum(lastM, (x) => x.amt), 0) + " · " + lastM.length + " bills"], ["Quantity billed", fmtN(qty, 0)], ["Delivered, not billed", pend.length ? `${pend.length} deliveries · ${fmtN(pSq, 0)} sqft${pVal ? " · about ₹" + fmtN(pVal, 0) : ""}` : "nothing"]])}
       ${pend.length ? `<div class="acts"><button class="btn alt" data-jump="orders" data-f="invpend">Open pending invoicing</button></div>` : ""}
       <div class="group">By month</div><div class="bars">${mv.map((x) => bar(x, mx(mv), "₹" + fmtN(x.v, 0))).join("")}</div>
@@ -1768,12 +1776,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function tsalesView(ws) {
     const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
-    if (!all.length) return `<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
+    if (!all.length) return `${askXBtn()}<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
     const L = all.filter((t) => match([t.party, t.vno, t.ref, t.narration, tsLines(t).map((x) => x.n + " " + x.desc).join(" ")].join(" "), ws));
     const tot = L.reduce((a, t) => a + (Number(t.amount) || 0), 0), sq = L.reduce((a, t) => a + tsLines(t).reduce((b, x) => b + (x.q || 0), 0), 0);
     const byM = {}; L.forEach((t) => { const m = tsDate(t).slice(0, 7); (byM[m] = byM[m] || []).push(t); });
     const row = (t) => { const ls = tsLines(t), v = tsInv(t); return `<button class="row" data-k="tsale:${esc(t.guid || t.vno)}"${cur("tsale:" + (t.guid || t.vno))}><span class="k">${esc(fmtD(tsDate(t)))}</span><span class="d"><b>${esc(t.party)}</b> · ${esc(t.vno)}<br><small>${esc(ls.map((x) => x.n + " " + fmtN(x.q, 2) + (x.desc ? " (" + x.desc + ")" : "")).join(", ").slice(0, 120) || t.vtype || "")}${v ? " · app " + esc(invName(v)) : ""}</small></span><span class="r num">₹${fmtN(t.amount, 0)}</span></button>`; };
-    return `<p class="note" style="margin:6px 2px">Sale vouchers in Tally this year${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Excel reads them again every 30 minutes while Tally is open.</p>
+    return `${askXBtn()}<p class="note" style="margin:6px 2px">Sale vouchers in Tally this year${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Excel reads them again every 30 minutes while Tally is open.</p>
       ${kv([["Vouchers", String(L.length)], ["Total billed", "₹" + fmtN(tot, 0)], ["Quantity", fmtN(sq, 0)]])}
       ${Object.keys(byM).sort().reverse().map((m) => { const ts = byM[m], mt = ts.reduce((a, t) => a + (Number(t.amount) || 0), 0); return `<div class="group">${esc(new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" }))} · ${ts.length} · ₹${fmtN(mt, 0)}</div>${ts.map(row).join("")}`; }).join("")}`;
   }
@@ -1865,7 +1873,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 166, at: "2026-11-21T17:52:10+05:30", notes: "Menu: Invoices renamed Sales, with a Sales dashboard (this year, month by month, customers, items, delivered not billed)" };
+  const APP_BUILD = { v: 167, at: "2026-11-21T18:54:25+05:30", notes: "Sales: Sync with Excel and Tally now (asks Excel on the PC to import and send bills to Tally within a minute)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4400,7 +4408,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         ${store && canWrite ? `<div class="acts" style="margin:6px 0 0"><button class="btn alt" data-inv="fixdone">Tally is updated</button></div>` : ""}</div>` : ""}
       <div class="kv"><div><span>Status</span><b>${v.tally_no ? "In Tally as " + esc(v.tally_no) : v.exported_at ? "Tally file made " + esc(fmtS(v.exported_at)) + ", not marked in Tally yet" : "Draft"}</b></div><div><span>App number</span><b>${esc(v.temp)}</b></div><div><span>Tally invoice no</span><b>${esc(v.tally_no || v.vno || "—")}</b></div><div><span>Date</span><b>${fmtD(v.date)}</b></div>
       <div><span>Party (Tally)</span><b>${esc(v.party)}</b></div><div><span>GSTIN</span><b>${esc(v.gstin || "—")}</b></div><div><span>State</span><b>${esc(v.state)}${t.intra ? " (CGST + SGST)" : " (IGST)"}</b></div></div>
-      ${store && canWrite ? `<div class="acts lotacts">${v.tally_no ? "" : `<button class="btn" data-inv="xml">Make Tally file</button>`}<button class="btn${v.tally_no ? "" : " alt"}" data-inv="edit">Edit: add or remove deliveries</button><button class="btn alt" data-inv="pdf">Invoice PDF</button><button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>` : ""}
+      ${store && canWrite ? `<div class="acts lotacts">${v.tally_no ? "" : `<button class="btn" data-inv="xml">Make Tally file</button>`}<button class="btn${v.tally_no ? "" : " alt"}" data-inv="edit">Edit: add or remove deliveries</button><button class="btn alt" data-inv="pdf">Invoice PDF</button><button class="btn alt" data-inv="tally">${v.tally_no ? "Change Tally number" : "Entered in Tally"}</button>${!v.tally_no ? `<button class="btn alt" data-inv="delete">Delete</button>` : ""}</div>${!v.tally_no ? askXBtn() : ""}` : ""}
       <div id="invout"></div>
       ${formOpen === "invtally" ? `<form class="fm" id="fm-invtally"><label>Invoice number Tally gave<input id="it-no" autocomplete="off" value="${esc(v.tally_no || v.vno || "")}"></label><p class="note" style="margin:0">Deliveries typed on this invoice that are still waiting for Excel get this number as their bill no.</p><p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>` : ""}
       ${formOpen === "invdel" ? `<div class="fm"><p style="margin:0">Delete ${esc(invName(v))}? Its deliveries stay recorded and can go on another invoice.</p><div class="acts" style="margin:0"><button class="btn" data-inv="delsure">Delete invoice</button><button class="btn alt" type="button" data-formclose>Keep it</button></div></div>` : ""}
@@ -6206,6 +6214,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (nb) { sel[tab] = null; stack = []; if (tab === "today" && nb.dataset.new !== "new_lot") { const k = nb.dataset.new; filter.lots = filter.lots === "table" ? "open" : filter.lots; go("lots"); openForm(k); return; } openForm(nb.dataset.new); return; }
     const hg = e.target.closest("[data-hgo]");
     if (hg) { stack = []; const t = hg.dataset.hgo; sel[t] = hg.dataset.k; if (t === "lots" && filter.lots === "proc") filter.lots = "open"; go(t); return; }
+    { const axb = e.target.closest("[data-askexcel]"); if (axb) { askExcel(axb); return; } }
     const j = e.target.closest("[data-jump]");
     if (j) { filter[j.dataset.jump] = j.dataset.f; pick = null; if (!j.dataset.keepq) $("#q").value = ""; go(j.dataset.jump); return; }
     const pk = e.target.closest("[data-pick]");
@@ -6235,6 +6244,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (dm) { if (dm.dataset.dmute) muteLot(dm.dataset.dmute); else unmuteLot(dm.dataset.dunmute); showDetailKeep(); render(); return; }
     const pb = e.target.closest("[data-pdf]"); if (pb) { pdfAction(pb); return; }
     const ivb = e.target.closest("[data-inv]"); if (ivb) { invClick(ivb); return; }
+    const axb = e.target.closest("[data-askexcel]"); if (axb) { askExcel(axb); return; }
     const tsp = e.target.closest("[data-tspdf]"); if (tsp) { const t = tsRows().find((x) => (x.guid || x.vno) === tsp.dataset.tspdf); if (t) { const o = tsAsInv(t); pdfInvoice(o.v, tsp, { calc: o.calc, fname: String(t.vno).replace(/\//g, "-") }); } return; }
     const ivl = e.target.closest("[data-invlot]"); if (ivl) { const l = data.lotBy[ivl.dataset.invlot]; inv = invNew(UP(l.customer), l.lot_no); invShowAll = false; openForm("invoice:new"); return; }
     if (e.target.closest("[data-backall]")) { const r = backRows($("#fm-skins_back").dataset.key).find((x) => String(x.id) === $("#fb-entry").value); if (r) { $("#fb-pcs").value = r.leftP; $("#fb-sqft").value = r.leftS; } lmShow(); return; }

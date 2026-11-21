@@ -124,7 +124,7 @@
   const tallyBox = (file, said, ok) => new Promise((res) => {
     const box = document.createElement("div"), e = (t) => String(t).replace(/[<>&]/g, "");
     box.setAttribute("style", "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px");
-    box.innerHTML = '<div class="pdfbox" style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:440px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:6px">' + (ok ? "Sent to Excel for Tally" : "Not saved to OneDrive") + '</b><span style="display:block;word-break:break-all;margin-bottom:8px;' + (ok ? "" : "color:#b45309") + '">' + e(said) + "</span>" + (ok ? '<span style="display:block;font-size:13px;color:var(--muted,#666);margin-bottom:8px">Excel enters it in Tally on its next automatic import (every few minutes) while Tally is open. The invoice shows In Tally after that.</span>' : "") +
+    box.innerHTML = '<div class="pdfbox" style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:440px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:6px">' + (ok ? "Sent to Excel for Tally" : "Not saved to OneDrive") + '</b><span style="display:block;word-break:break-all;margin-bottom:8px;' + (ok ? "" : "color:#b45309") + '">' + e(said) + "</span>" + (ok ? '<span style="display:block;font-size:13px;color:var(--muted,#666);margin-bottom:8px">Excel enters it in Tally within about a minute while Excel and Tally are open on the PC. The invoice shows In Tally after that.</span>' : "") +
       '<button data-a="share" style="width:100%;margin-top:4px;padding:12px;border-radius:10px;font-size:16px;border:1px solid var(--line,#ccc);background:transparent;color:inherit">Share the file…</button><button data-a="x" style="width:100%;margin-top:8px;padding:12px;border:0;border-radius:10px;background:var(--accent,#1b6ef3);color:var(--accent-ink,#fff);font-weight:600;font-size:16px">Done</button></div>';
     document.body.appendChild(box);
     box.addEventListener("click", async (ev) => { const b = ev.target.closest("button"), a = b && b.dataset.a; if (!a) return;
@@ -266,6 +266,16 @@
     records,
     ready: () => configured() && !!account && !needLogin,
     syncNow: async () => { await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300)); },
+    // "Sync with Excel and Tally now": this phone's entries go up first, then excel-now.txt asks Excel to run its import at once (21-Nov-2026)
+    askExcel: async () => {
+      if (!account) throw new Error("Not signed in to OneDrive.");
+      if (!navigator.onLine) throw new Error("No internet just now.");
+      await sync("restore"); while (syncing) await new Promise((r) => setTimeout(r, 300));
+      const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
+      await g("PUT", itemUrl(cfg().entriesFolder + "/excel-now.txt") + ":/content", new Date().toISOString() + " " + device + " " + (me.name || ""), "text/plain", tok);
+      [90, 150, 240].forEach((s2) => setTimeout(() => sync("change"), s2 * 1000));
+      return true;
+    },
     list: async () => {
       const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
       const items = await listFolder(cfg().entriesFolder + "/app/backups", tok);
