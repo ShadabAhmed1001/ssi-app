@@ -1743,10 +1743,11 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   // Sales dashboard (21-Nov-2026): Tally's sale vouchers this financial year, plus what is delivered and not billed yet
   // asks Excel on the PC to run its import now: entries, invoice files to Tally, Tally's sales (installed app with OneDrive only)
-  const askXBtn = () => window.__ssiOD && window.__ssiOD.askExcel ? `<div class="acts"><button class="btn alt" data-askexcel>Sync with Excel and Tally now</button></div><p class="note" id="askx-said" style="margin:0 2px"></p>` : "";
+  let excelLast = null;
+  const askXBtn = () => window.__ssiOD && window.__ssiOD.askExcel ? `<div class="acts"><button class="btn alt" data-askexcel>Sync with Excel and Tally now</button></div><p class="note" id="askx-said" style="margin:0 2px">${excelLast ? esc("Excel last synced " + fmtST(String(excelLast.at || "")) + ": " + String(excelLast.result || "")) : ""}</p>` : "";
   async function askExcel(b) {
     const said = document.getElementById("askx-said"), old = b.textContent; b.disabled = true; b.textContent = "Asking Excel…";
-    try { await window.__ssiOD.askExcel(); if (said) { said.textContent = "Asked at " + new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) + ". Excel on the PC does it within about a minute (it must be open), and Tally must be open for bills. The app fetches the new data by itself in 2 to 4 minutes."; said.className = "note"; } }
+    try { await window.__ssiOD.askExcel(); if (said) { said.textContent = "Asked at " + new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) + ". Excel on the PC does it within about a minute (Excel and Tally must be open). Its answer and Tally's sales show here as soon as they come."; said.className = "note"; } }
     catch (e) { if (said) { said.textContent = "Could not ask Excel: " + (e.message || e); said.className = "note bad"; } }
     b.disabled = false; b.textContent = old;
   }
@@ -1873,7 +1874,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 168, at: "2026-11-21T18:59:35+05:30", notes: "Sync with Excel and Tally now answers at once (entries go up in the background)" };
+  const APP_BUILD = { v: 169, at: "2026-11-21T19:17:18+05:30", notes: "Tally sales and Excel's sync answer come from two small files Excel writes, shown within seconds instead of after the full Excel data" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2867,6 +2868,18 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
     exportCsv: () => exportCsv(),
     backupBody: () => bkBody(),
+    // Tally's sales from Excel's small file app/tally-sales.json: shown at once, before Excel's whole data comes (21-Nov-2026)
+    tallySales: (o) => { if (!db || !o || !Array.isArray(o.rows)) return;
+      try { db.run("CREATE TABLE IF NOT EXISTS tally_sale_bills (guid TEXT, vno TEXT, vdate TEXT, party TEXT, ref TEXT, amount REAL, narration TEXT, lines TEXT, ledgers TEXT, vtype TEXT, meta TEXT)");
+        try { db.run("ALTER TABLE tally_sale_bills ADD COLUMN meta TEXT"); } catch (e) { /* there */ }
+        db.run("CREATE TABLE IF NOT EXISTS tally_sales (vno TEXT, vdate TEXT, party TEXT, ref TEXT, vtype TEXT)"); db.run("CREATE TABLE IF NOT EXISTS tally_meta (k TEXT, v TEXT)");
+        db.run("BEGIN"); db.run("DELETE FROM tally_sale_bills"); db.run("DELETE FROM tally_sales");
+        o.rows.forEach((r) => { db.run("INSERT INTO tally_sale_bills (guid, vno, vdate, party, ref, amount, narration, lines, ledgers, vtype, meta) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [r.guid, r.vno, r.vdate, r.party, r.ref, Number(r.amount) || 0, r.narration, r.lines, r.ledgers, r.vtype, r.meta]);
+          db.run("INSERT INTO tally_sales VALUES (?,?,?,?,?)", [r.vno, r.vdate, r.party, r.ref, r.vtype]); });
+        db.run("DELETE FROM tally_meta WHERE k='sales_at'"); db.run("INSERT INTO tally_meta VALUES ('sales_at', ?)", [String(o.at || "")]); db.run("COMMIT");
+      } catch (e) { try { db.run("ROLLBACK"); } catch (e2) { /* none */ } return; }
+      if (!formOpen) { const y = window.scrollY; render(); if (sel[tab]) showDetailKeep(); window.scrollTo(0, y); } },
+    excelDone: (o) => { excelLast = o; const el = document.getElementById("askx-said"); if (el) { el.textContent = "Excel finished " + fmtST(String(o.at || "")) + ": " + String(o.result || "") + (o.tally === false ? " (Tally was not answering)" : ""); el.className = o.tally === false ? "note bad" : "note"; } },
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
     // records kept by the app: the base all phones start from, and Tally's stock and prices from Excel's files
     waitingForExcel: () => entries.filter((e) => e.status === "pending").length,

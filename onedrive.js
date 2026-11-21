@@ -274,6 +274,9 @@
       const tok = await token(); if (!tok) throw new Error("Sign in to OneDrive again.");
       await g("PUT", itemUrl(cfg().entriesFolder + "/excel-now.txt") + ":/content", new Date().toISOString() + " " + device + " " + (me.name || ""), "text/plain", tok);
       kick(50); [75, 120, 180, 270].forEach((s2) => setTimeout(() => sync("change"), s2 * 1000));
+      // Excel's answer and Tally's sales are two small files: look every 10 s for 4 minutes, without waiting for Excel's whole data
+      const t0 = Date.now(), poll = async () => { try { const t = await token(); if (t) await lightCheck(t); } catch (e) { /* next time */ } if (Date.now() - t0 < 240000 && !lightDone) setTimeout(poll, 10000); };
+      lightDone = false; askedAt = new Date().toISOString(); setTimeout(poll, 15000);
       return true;
     },
     list: async () => {
@@ -290,6 +293,16 @@
     },
   };
 
+  // ---------- small files from Excel (21-Nov-2026) ----------
+  // app/tally-sales.json (Tally's sale vouchers) and app/excel-now-done.json (what Excel did when asked); tags kept in memory so a restart reads them again
+  let tsTag = "", doneTag = "", lightDone = true, askedAt = "";
+  async function lightCheck(tok) {
+    const H = window.__ssiHooks; if (!H || !H.ready() || !H.tallySales) return;
+    const app = cfg().entriesFolder + "/app", rd = async (it) => JSON.parse((await (await download(it, tok)).text()).replace(/^\uFEFF/, ""));
+    const [ts, dn] = await Promise.all([g("GET", itemUrl(app + "/tally-sales.json"), null, "", tok).catch(() => null), g("GET", itemUrl(app + "/excel-now-done.json"), null, "", tok).catch(() => null)]);
+    if (ts && ts.eTag !== tsTag) { H.tallySales(await rd(ts)); tsTag = ts.eTag; }
+    if (dn && dn.eTag !== doneTag) { const o = await rd(dn); doneTag = dn.eTag; if (H.excelDone) H.excelDone(o); if (askedAt && new Date(String(o.at).replace(" ", "T")) >= new Date(new Date(askedAt).getTime() - 60000)) lightDone = true; }
+  }
   // ---------- sync ----------
   let syncing = false, again = false, kickT = null, lastErr = "";
   function kick(ms) { clearTimeout(kickT); kickT = setTimeout(() => sync("change"), ms == null ? 2500 : ms); }
@@ -330,6 +343,7 @@
       // 3. who keeps the records, then fresh data from Excel
       const H = window.__ssiHooks;
       if (H && H.ready()) {
+        try { await lightCheck(tok); } catch (e) { /* not there yet */ }
         const rec = await readRecords(tok), appMode = !!rec && rec.mode === "app";
         if (appMode && rec.base && rec.base !== meta.baseName) {
           setStatus("Getting the app's records from OneDrive…", "");
