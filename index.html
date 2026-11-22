@@ -501,6 +501,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   .dhead { padding-top: 12px; }
   main:not(.solo) .dhead .back { display: none; }
 }
+.plbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+.plbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.plbar input[type=date] { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
+.pltbl tr.plo td { background: var(--bg); }
+.pltbl td.wrap { white-space: normal; min-width: 12em; }
+@media (max-width: 700px) { .pltbl thead th:nth-child(4), .pltbl td.wrap { display: none; } .pltbl td, .pltbl th { padding-inline: 4px; font-size: 13px; } }
+button.bar.barlink { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; padding: 0; cursor: pointer; }
+button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline; }
 .topnav, .subnav { display: none; }
 /* ---- desktop (v180): menu across the top with drop-downs, the group's pages as tabs under it; no side panel ---- */
 @media (min-width: 1100px) {
@@ -652,6 +660,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function open(SQL, bytes, label) {
     const prevBytes = label === "new" ? baseBytes : null;
     db = new SQL.Database(bytes); baseBytes = bytes;
+    if (plObj && String(plObj.at || "") > String(trows("SELECT v FROM tally_meta WHERE k='ledgers_at'").map((r) => r.v)[0] || "")) plApply(plObj); // the ledgers from the small file stay after a rebuild (22-Nov-2026)
     const asof = one("SELECT value FROM meta WHERE key='data_as_of'") || one("SELECT value FROM meta WHERE key='built_at'");
     data.asOf = asof ? fmtD(asof) : label;
     data.empty = !one("SELECT COUNT(*) FROM lots") && !one("SELECT COUNT(*) FROM chemicals");
@@ -1343,8 +1352,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["sdash", "Sales dashboard"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
-    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["bills", "Tally bills"], ["ledger", "Ledger"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["sdash", "Sales dashboard"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["pled", "Customer ledgers"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
+    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["pdash", "Purchase dashboard"], ["sled", "Supplier ledgers"], ["bills", "Tally bills"], ["ledger", "Skins ledger"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
     settings: [],
@@ -1379,8 +1388,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally"]) },
-    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"]] },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally", "pled"]) },
+    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["orders|pled", "Customer ledgers"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -1437,7 +1446,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
     "chemicals|bills": "purchase bills tally", "purchases|bills": "wet blue bill bills tally purchase leather", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
     "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "@onedrive": "onedrive sync sign in cloud folder", "lots|guide": "stages stage",
-    "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts" };
+    "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts", "orders|pled": "ledger ledgers party parties customer debtors receivable outstanding balance statement", "purchases|sled": "ledger ledgers party parties supplier creditors payable outstanding balance statement", "purchases|pdash": "purchase purchases dashboard bought" };
   let PAGES = null;
   function pageList() {
     if (PAGES) return PAGES; const seen = new Set(); PAGES = [];
@@ -1460,7 +1469,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function render0() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend")) || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend" || filter.orders === "sdash")) || (tab === "purchases" && filter.purchases === "pdash") || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
@@ -1487,6 +1496,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "orders" && filter.orders === "tally") { $("#list").innerHTML = tallyView(ws); return; }
     if (tab === "orders" && filter.orders === "tsales") { $("#list").innerHTML = tsalesView(ws); return; }
     if (tab === "orders" && filter.orders === "sdash") { $("#list").innerHTML = sdashView(ws); return; }
+    if ((tab === "orders" && filter.orders === "pled") || (tab === "purchases" && filter.purchases === "sled")) { $("#list").innerHTML = plListView(ws); return; }
+    if (tab === "purchases" && filter.purchases === "pdash") { $("#list").innerHTML = pdashView(); return; }
     if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "usage") { $("#list").innerHTML = usageView(ws); return; }
     if (tab === "chemicals" && filter.chemicals === "cleanup") { $("#list").innerHTML = cleanupView(ws); return; }
@@ -1795,6 +1806,118 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <div class="count"><span>${L.length} rows${L.length > 300 ? " · first 300 shown, search to narrow" : ""}</span></div>
       <div class="tbl"><table><thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Status</th><th>Note</th></tr></thead><tbody>${shown.map((r) => `<tr${r.status === "VOID" ? ' class="void"' : ""}><td class="nw">${fmtS(r.entry_date)}</td><td>${esc(String(r.entry_type || "").toLowerCase())}</td><td>${key(r.from_key)}</td><td>${key(r.to_key)}</td><td class="r num">${fmtN(r.pcs, 0)}</td><td class="r num">${fmtN(r.sqft, 2)}</td><td>${esc(r.status)}</td><td class="wrap">${esc(r.note || "")}</td></tr>`).join("")}</tbody></table></div>`;
   }
+  // ---------------------------------------------------------------- party ledgers from Tally and the purchase dashboard (22-Nov-2026)
+  // Excel (module PartyLedgers, every 30 minutes) reads every customer and supplier with its balance, and this year's vouchers that touch one:
+  // tables tally_ledgers (name, grp D/C, ob, cb, gstin) and tally_ledger_rows (vdate, vtype, base, vno, party, dr, ref, narration, guid). Debit is plus.
+  const plRows = () => trows("SELECT * FROM tally_ledger_rows ORDER BY vdate, rowid");
+  const plParties = (g) => trows("SELECT * FROM tally_ledgers" + (g ? " WHERE grp=?" : ""), g ? [g] : []);
+  const plYmd = (x) => tsYmd(x);
+  const plBal = (v) => { const a = Math.abs(Number(v) || 0) < 0.5 ? 0 : Number(v); return a ? "₹" + fmtN(Math.abs(a), 2) + (a > 0 ? " Dr" : " Cr") : "nil"; };
+  const plMeta = () => trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
+  const plKind = (r) => { const b = UP(r.base || r.vtype); return /SALE/.test(b) ? "Sale" : /PURCHASE/.test(b) ? "Purchase" : /RECEIPT/.test(b) ? "Receipt" : /PAYMENT/.test(b) ? "Payment" : /CREDIT NOTE/.test(b) ? "Credit note" : /DEBIT NOTE/.test(b) ? "Debit note" : /JOURNAL/.test(b) ? "Journal" : /CONTRA/.test(b) ? "Contra" : String(r.vtype || "Voucher"); };
+  const plFY0 = () => { const d = new Date(); return iso(new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1)); };
+  const plGrp = () => tab === "orders" ? "D" : "C";
+  const plSince = (m) => (m.ledgers_company ? " (" + esc(m.ledgers_company) + ")" : "") + (m.ledgers_at ? ", as Excel read them " + esc(fmtST(m.ledgers_at)) : "");
+  const plNoData = () => `${askXBtn()}<p class="empty">Excel has not read the party ledgers from Tally yet. It reads them every 30 minutes while Tally is open with S. S. International loaded.</p>`;
+  let plF = { from: "", to: "", kind: "all", show: "bal" }; var plObj = null; // var: open() may look at it first
+  // Excel's small file app/tally-ledgers.json into the tables: {at, company, vtypes, parties:[[name, D/C, ob, cb, gstin]], rows:[[date, vtype, vno, party, dr, ref, narration, guid]]}
+  function plApply(o) {
+    if (!db || !o || !Array.isArray(o.parties) || !Array.isArray(o.rows)) return false; plObj = o;
+    try { db.run("CREATE TABLE IF NOT EXISTS tally_ledgers (name TEXT, grp TEXT, ob REAL, cb REAL, gstin TEXT)"); db.run("CREATE TABLE IF NOT EXISTS tally_ledger_rows (vdate TEXT, vtype TEXT, base TEXT, vno TEXT, party TEXT, dr REAL, ref TEXT, narration TEXT, guid TEXT)"); db.run("CREATE TABLE IF NOT EXISTS tally_meta (k TEXT, v TEXT)");
+      const vt = o.vtypes || {}; db.run("BEGIN"); db.run("DELETE FROM tally_ledgers"); db.run("DELETE FROM tally_ledger_rows");
+      o.parties.forEach((p) => db.run("INSERT INTO tally_ledgers VALUES (?,?,?,?,?)", [String(p[0]), String(p[1]), Number(p[2]) || 0, Number(p[3]) || 0, String(p[4] || "")]));
+      o.rows.forEach((r) => db.run("INSERT INTO tally_ledger_rows VALUES (?,?,?,?,?,?,?,?,?)", [String(r[0]), String(r[1]), String(vt[r[1]] || r[1]), String(r[2] || ""), String(r[3]), Number(r[4]) || 0, String(r[5] || ""), String(r[6] || ""), String(r[7] || "")]));
+      db.run("DELETE FROM tally_meta WHERE k IN ('ledgers_at','ledgers_company')"); db.run("INSERT INTO tally_meta VALUES ('ledgers_at', ?)", [String(o.at || "")]); db.run("INSERT INTO tally_meta VALUES ('ledgers_company', ?)", [String(o.company || "")]); db.run("COMMIT"); return true;
+    } catch (e) { try { db.run("ROLLBACK"); } catch (e2) { /* none */ } return false; }
+  }
+  // per party: entries this year, last entry, bills and payments
+  function plStats(R) {
+    const by = {};
+    R.forEach((r) => { const x = by[UP(r.party)] = by[UP(r.party)] || { n: 0, last: "", bills: 0, paid: 0 }; x.n++; if (r.vdate > x.last) x.last = r.vdate;
+      const k = plKind(r); if (k === "Sale" || k === "Purchase") x.bills += Math.abs(Number(r.dr) || 0); if (k === "Receipt" || k === "Payment") x.paid += Math.abs(Number(r.dr) || 0); });
+    return by;
+  }
+  function plListView(ws) {
+    const g = plGrp(), P = plParties(g); if (!P.length) return plNoData();
+    const m = plMeta(), by = plStats(plRows()), sign = g === "D" ? 1 : -1; // a customer owes us when Dr, we owe a supplier when Cr
+    let L = P.map((p) => ({ p, s: by[UP(p.name)] || { n: 0, last: "", bills: 0, paid: 0 }, due: sign * (Number(p.cb) || 0) })).filter((x) => match([x.p.name, x.p.gstin].join(" "), ws));
+    const show = plF.show;
+    if (show === "bal") L = L.filter((x) => Math.abs(x.due) >= 1); else if (show === "active") L = L.filter((x) => x.s.n || Math.abs(x.due) >= 1);
+    L.sort((a, b) => b.due - a.due || String(a.p.name).localeCompare(String(b.p.name)));
+    const tot = L.reduce((a, x) => a + Math.max(0, x.due), 0), adv = L.reduce((a, x) => a + Math.max(0, -x.due), 0);
+    return `${askXBtn()}<p class="note" style="margin:6px 2px">Every ${g === "D" ? "customer (Sundry Debtors)" : "supplier (Sundry Creditors)"} in Tally${plSince(m)}, with this year's bills, ${g === "D" ? "receipts" : "payments"} and the balance. Tap a party for its full ledger, with dates to pick and a PDF.</p>
+      ${kv([[g === "D" ? "To receive" : "To pay", "₹" + fmtN(tot, 0)], [g === "D" ? "Advances from customers" : "Advances to suppliers", adv >= 1 ? "₹" + fmtN(adv, 0) : "none"], ["Parties shown", String(L.length)]])}
+      <div class="acts">${[["bal", "With a balance"], ["active", "Active this year"], ["all", "All"]].map(([k, l]) => `<button class="chip${show === k ? " on" : ""}" data-plshow="${k}">${l}</button>`).join("")}</div>
+      ${L.map((x) => `<button class="row" data-k="pled:${esc(x.p.name)}"${cur("pled:" + x.p.name)}><span class="d"><b>${esc(x.p.name)}</b><br><small>${x.s.n ? x.s.n + " entries this year · last " + esc(fmtD(plYmd(x.s.last))) : "no entries this year"}${x.s.bills ? " · billed ₹" + fmtN(x.s.bills, 0) : ""}</small></span><span class="r num">${x.due >= 1 ? `<b>₹${fmtN(x.due, 0)}</b><br><small>${g === "D" ? "to receive" : "to pay"}</small>` : x.due <= -1 ? `₹${fmtN(-x.due, 0)}<br><small>advance</small>` : "nil"}</span></button>`).join("") || `<p class="empty">No ${g === "D" ? "customer" : "supplier"} matches.</p>`}`;
+  }
+  // one party's ledger between two dates, with the running balance
+  function plLedger(name) {
+    const p = trows("SELECT * FROM tally_ledgers WHERE name=?", [name])[0]; if (!p) return null;
+    const from = plF.from || plFY0(), to = plF.to || iso(new Date()), all = trows("SELECT * FROM tally_ledger_rows WHERE party=? ORDER BY vdate, rowid", [name]);
+    const open = (Number(p.ob) || 0) + all.filter((r) => plYmd(r.vdate) < from).reduce((a, r) => a + (Number(r.dr) || 0), 0);
+    let bal = open; const lines = all.filter((r) => plYmd(r.vdate) >= from && plYmd(r.vdate) <= to).map((r) => { bal += Number(r.dr) || 0; return { r, bal }; });
+    const dr = lines.reduce((a, x) => a + Math.max(0, Number(x.r.dr) || 0), 0), cr = lines.reduce((a, x) => a + Math.max(0, -(Number(x.r.dr) || 0)), 0);
+    const pick = (x) => plF.kind === "all" || (plF.kind === "bills" ? /Sale|Purchase|note/i.test(plKind(x.r)) : /Receipt|Payment/i.test(plKind(x.r)));
+    return { p, g: p.grp, from, to, open, close: open + dr - cr, dr, cr, lines, shown: lines.filter(pick) };
+  }
+  function plDetail(k) {
+    const name = k.slice(5), L = plLedger(name); if (!L) return `<p class="empty">This party is no longer in Tally's data.</p>`;
+    const { p, g } = L, due = (v) => g === "D" ? (v >= 1 ? " · to receive" : v <= -1 ? " · advance" : "") : (v <= -1 ? " · to pay" : v >= 1 ? " · advance" : "");
+    return `<p class="sub">${g === "D" ? "Customer" : "Supplier"}${p.gstin ? " · GSTIN " + esc(p.gstin) : ""}</p>
+      ${kv([["Opening " + fmtD(L.from), plBal(L.open) + due(L.open)], [g === "D" ? "Billed" : "Bills", "₹" + fmtN(g === "D" ? L.dr : L.cr, 2)], [g === "D" ? "Received" : "Paid", "₹" + fmtN(g === "D" ? L.cr : L.dr, 2)], ["Closing " + fmtD(L.to), plBal(L.close) + due(L.close)], ["Balance in Tally now", plBal(p.cb) + due(Number(p.cb) || 0)]])}
+      <div class="plbar"><label>From <input type="date" data-plf="from" value="${esc(L.from)}"></label><label>To <input type="date" data-plf="to" value="${esc(L.to)}"></label>
+        ${[["all", "All entries"], ["bills", "Bills and notes"], ["pay", g === "D" ? "Receipts" : "Payments"]].map(([x, l]) => `<button class="chip${plF.kind === x ? " on" : ""}" data-plkind="${x}">${l}</button>`).join("")}
+        ${plF.from || plF.to ? `<button class="lnk" data-plreset>This year</button>` : ""}</div>
+      <div class="tbl"><table class="pltbl"><thead><tr><th>Date</th><th>Type</th><th>No.</th><th>Details</th><th class="r">Debit</th><th class="r">Credit</th><th class="r">Balance</th></tr></thead><tbody>
+        <tr class="plo"><td class="nw">${esc(fmtD(L.from))}</td><td colspan="5"><b>Opening balance</b></td><td class="r num nw">${plBal(L.open)}</td></tr>
+        ${L.shown.map(({ r, bal }) => `<tr><td class="nw">${esc(fmtD(plYmd(r.vdate)))}</td><td class="nw">${esc(plKind(r))}</td><td class="nw">${esc(r.vno || "")}</td><td class="wrap">${esc([r.ref ? "ref " + r.ref : "", r.narration || ""].filter(Boolean).join(" · "))}</td><td class="r num nw">${r.dr > 0 ? fmtN(r.dr, 2) : ""}</td><td class="r num nw">${r.dr < 0 ? fmtN(-r.dr, 2) : ""}</td><td class="r num nw">${plBal(bal)}</td></tr>`).join("") || `<tr><td colspan="7" class="note">No entries between these dates.</td></tr>`}
+        <tr class="plo"><td class="nw">${esc(fmtD(L.to))}</td><td colspan="3"><b>Total · closing balance</b></td><td class="r num nw"><b>${fmtN(L.dr, 2)}</b></td><td class="r num nw"><b>${fmtN(L.cr, 2)}</b></td><td class="r num nw"><b>${plBal(L.close)}</b></td></tr>
+      </tbody></table></div>
+      ${plF.kind !== "all" ? `<p class="note">Only ${plF.kind === "bills" ? "bills and notes" : g === "D" ? "receipts" : "payments"} are listed; the totals and the balance still count every entry.</p>` : ""}
+      <p class="note">Dr means ${g === "D" ? "the customer owes us" : "we have paid more than billed (an advance)"}; Cr means ${g === "D" ? "the customer has paid ahead (an advance)" : "we owe the supplier"}. From Tally, as Excel last read it; entries before ${esc(fmtD(plFY0()))} are inside the opening balance.</p>
+      <div class="acts lotacts"><button class="btn alt" data-plpdf="${esc(name)}">Ledger PDF</button></div><div id="plmsg"></div>`;
+  }
+  async function pdfLedger(name, where) {
+    const L = plLedger(name); if (!L) return;
+    const JS = await pdfLib(), doc = new JS({ unit: "mm", format: "a4" }), m = plMeta(), bal = (v) => plBal(v).replace("₹", "Rs ");
+    pdfHead(doc, "Ledger: " + name, (m.ledgers_company || "") + "   " + fmtD(L.from) + " to " + fmtD(L.to) + (L.p.gstin ? "   GSTIN " + L.p.gstin : ""));
+    const body = [[fmtD(L.from), "", "", "Opening balance", "", "", bal(L.open)]].concat(L.shown.map(({ r, bal: b }) => [fmtD(plYmd(r.vdate)), plKind(r), plain(r.vno || ""), plain([r.ref ? "ref " + r.ref : "", r.narration || ""].filter(Boolean).join(" - ")), r.dr > 0 ? fmtN(r.dr, 2) : "", r.dr < 0 ? fmtN(-r.dr, 2) : "", bal(b)]));
+    doc.autoTable(Object.assign({}, TBL, { startY: 26, head: [["Date", "Type", "No.", "Details", "Debit", "Credit", "Balance"]], body, foot: [[fmtD(L.to), "", "", "Total / closing balance", fmtN(L.dr, 2), fmtN(L.cr, 2), bal(L.close)]],
+      footStyles: { fillColor: [235, 240, 245], textColor: 20, fontStyle: "bold" }, columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 20 }, 2: { cellWidth: 18 }, 4: { halign: "right", cellWidth: 24 }, 5: { halign: "right", cellWidth: 24 }, 6: { halign: "right", cellWidth: 28 } } }));
+    await savePdf(doc, "ledger " + name.replace(/[\\/:*?"<>|]/g, " ") + " " + L.to + ".pdf", where);
+  }
+  // purchases this year from Tally's vouchers: like the sales dashboard
+  function pdashView() {
+    const P = plParties("C"); if (!P.length) return plNoData();
+    const m = plMeta(), fy0 = plFY0(), C = new Set(P.map((p) => UP(p.name))), rs = plRows().filter((r) => C.has(UP(r.party)) && plYmd(r.vdate) >= fy0);
+    const buys = rs.filter((r) => plKind(r) === "Purchase"), pays = rs.filter((r) => plKind(r) === "Payment"), notes = rs.filter((r) => plKind(r) === "Debit note");
+    const amt = (r) => -(Number(r.dr) || 0), sum = (L, f) => L.reduce((a, x) => a + f(x), 0), ym = (r) => plYmd(r.vdate).slice(0, 7);
+    const nowM = iso(new Date()).slice(0, 7), prevM = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return iso(d).slice(0, 7); })();
+    const thisM = buys.filter((r) => ym(r) === nowM), lastM = buys.filter((r) => ym(r) === prevM), tot = sum(buys, amt) || 1;
+    const owe = P.reduce((a, p) => a + Math.max(0, -(Number(p.cb) || 0)), 0), adv = P.reduce((a, p) => a + Math.max(0, Number(p.cb) || 0), 0);
+    const months = []; for (let d = new Date(fy0); iso(d).slice(0, 7) <= nowM; d.setMonth(d.getMonth() + 1)) months.push(iso(d).slice(0, 7));
+    const mv = months.map((mm) => ({ name: new Date(mm + "-01").toLocaleDateString("en-IN", { month: "short", year: "2-digit" }), v: sum(buys.filter((r) => ym(r) === mm), amt), p: sum(pays.filter((r) => ym(r) === mm), (r) => Number(r.dr) || 0) }));
+    const su = {}; buys.forEach((r) => { const c = su[UP(r.party)] = su[UP(r.party)] || { name: r.party, v: 0, n: 0 }; c.v += amt(r); c.n++; });
+    const S = Object.values(su).sort((a, b) => b.v - a.v), O = P.filter((p) => -(Number(p.cb) || 0) >= 1).map((p) => ({ name: p.name, v: -(Number(p.cb) || 0) })).sort((a, b) => b.v - a.v);
+    const bar = (x, max, right, k) => `<${k ? `button class="bar barlink" data-k="pled:${esc(k)}"` : 'div class="bar"'}><span class="lb">${esc(x.name)}</span><span class="tr"><i style="width:${Math.max(1, Math.round(x.v / max * 100))}%"></i></span><span class="ct num">${right}</span></${k ? "button" : "div"}>`;
+    const mx = (L) => Math.max(1, ...L.map((x) => x.v));
+    return `${askXBtn()}<p class="note" style="margin:6px 2px">From Tally's purchase and payment vouchers since ${esc(fmtD(fy0))}${plSince(m)}. Amounts include GST.</p>
+      ${kv([["Bought this year", "₹" + fmtN(sum(buys, amt), 0) + " · " + buys.length + " bills"], ["This month", "₹" + fmtN(sum(thisM, amt), 0) + " · " + thisM.length + " bills"], ["Last month", "₹" + fmtN(sum(lastM, amt), 0) + " · " + lastM.length + " bills"], ["Paid this year", "₹" + fmtN(sum(pays, (r) => Number(r.dr) || 0), 0) + " · " + pays.length + " payments"], ["To pay suppliers now", "₹" + fmtN(owe, 0)], ["Advances to suppliers", adv >= 1 ? "₹" + fmtN(adv, 0) : "none"], ["Debit notes this year", notes.length ? "₹" + fmtN(sum(notes, (r) => Number(r.dr) || 0), 0) + " · " + notes.length : "none"]])}
+      <div class="acts"><button class="btn alt" data-jump="purchases" data-f="sled">Supplier ledgers</button></div>
+      <div class="group">By month (bought · paid)</div><div class="bars">${mv.map((x) => bar(x, mx(mv), "₹" + fmtN(x.v, 0) + " · paid ₹" + fmtN(x.p, 0))).join("")}</div>
+      <div class="group">Suppliers this year</div><div class="bars">${S.slice(0, 12).map((x) => bar(x, mx(S), "₹" + fmtN(x.v, 0) + " · " + Math.round(x.v / tot * 100) + "%", x.name)).join("")}</div>
+      <div class="group">To pay, biggest first</div><div class="bars">${O.slice(0, 12).map((x) => bar(x, mx(O), "₹" + fmtN(x.v, 0), x.name)).join("") || `<p class="note">Nothing to pay.</p>`}</div>
+      <div class="group">Latest purchase bills</div>${buys.slice(-8).reverse().map((r) => `<button class="row" data-k="pled:${esc(r.party)}"><span class="k">${esc(fmtD(plYmd(r.vdate)))}</span><span class="d"><b>${esc(r.party)}</b> · ${esc(r.vno || "")}${r.ref ? " · ref " + esc(r.ref) : ""}</span><span class="r num">₹${fmtN(amt(r), 0)}</span></button>`).join("")}`;
+  }
+  // receivables for the sales dashboard
+  function plSalesBits() {
+    const P = plParties("D"); if (!P.length) return "";
+    const fy0 = plFY0(), D = new Set(P.map((p) => UP(p.name))), rec = plRows().filter((r) => D.has(UP(r.party)) && plYmd(r.vdate) >= fy0 && plKind(r) === "Receipt");
+    const owe = P.filter((p) => (Number(p.cb) || 0) >= 1).map((p) => ({ name: p.name, v: Number(p.cb) })).sort((a, b) => b.v - a.v), tot = owe.reduce((a, x) => a + x.v, 0), mx = Math.max(1, ...owe.map((x) => x.v));
+    return `${kv([["Customers owe us", "₹" + fmtN(tot, 0) + " · " + owe.length + " customers"], ["Received this year", "₹" + fmtN(rec.reduce((a, r) => a + -(Number(r.dr) || 0), 0), 0) + " · " + rec.length + " receipts"]])}
+      <div class="group">To collect, biggest first</div><div class="bars">${owe.slice(0, 10).map((x) => `<button class="bar barlink" data-k="pled:${esc(x.name)}"><span class="lb">${esc(x.name)}</span><span class="tr"><i style="width:${Math.max(1, Math.round(x.v / mx * 100))}%"></i></span><span class="ct num">₹${fmtN(x.v, 0)}</span></button>`).join("")}</div>
+      <div class="acts"><button class="btn alt" data-jump="orders" data-f="pled">Customer ledgers</button></div>`;
+  }
   // Tally's sale vouchers, read by Excel (module SalesRead, every 30 minutes) into tally_sale_bills (21-Nov-2026)
   const tsRows = () => trows("SELECT * FROM tally_sale_bills ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC");
   const tsDate = (t) => String(t.vdate || "").replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3");
@@ -1833,7 +1956,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   function sdashView(ws) {
     const all = tsRows(), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
-    if (!all.length) return `${askXBtn()}<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>`;
+    if (!all.length) return `${askXBtn()}<p class="empty">Excel has not read Tally's sales yet. It reads them every 30 minutes while Tally is open.</p>${plSalesBits()}`;
     const fy0 = (() => { const d = new Date(); return new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1); })(), ym = (d) => d.slice(0, 7);
     const T = all.filter((t) => tsDate(t) >= iso(fy0)).map((t) => { const ls = tsLines(t), goods = ls.reduce((a, x) => a + x.a, 0); return { t, d: tsDate(t), amt: Number(t.amount) || 0, goods, ls, party: t.party }; });
     const sum = (L, f) => L.reduce((a, x) => a + f(x), 0), nowM = iso(new Date()).slice(0, 7), prevM = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return iso(d).slice(0, 7); })();
@@ -1849,6 +1972,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return `${askXBtn()}<p class="note" style="margin:6px 2px">From Tally's sale vouchers since ${esc(fmtD(iso(fy0)))}${meta.sales_at ? ", as Excel read them " + esc(fmtST(meta.sales_at)) : ""}. Amounts include GST.</p>
       ${kv([["Billed this year", "₹" + fmtN(tot, 0) + " · " + T.length + " bills"], ["This month", "₹" + fmtN(sum(thisM, (x) => x.amt), 0) + " · " + thisM.length + " bills"], ["Last month", "₹" + fmtN(sum(lastM, (x) => x.amt), 0) + " · " + lastM.length + " bills"], ["Quantity billed", fmtN(qty, 0)], ["Delivered, not billed", pend.length ? `${pend.length} deliveries · ${fmtN(pSq, 0)} sqft${pVal ? " · about ₹" + fmtN(pVal, 0) : ""}` : "nothing"]])}
       ${pend.length ? `<div class="acts"><button class="btn alt" data-jump="orders" data-f="invpend">Open pending invoicing</button></div>` : ""}
+      ${plSalesBits()}
       <div class="group">By month</div><div class="bars">${mv.map((x) => bar(x, mx(mv), "₹" + fmtN(x.v, 0))).join("")}</div>
       <div class="group">Customers this year</div><div class="bars">${C.slice(0, 12).map((x) => bar(x, mx(C), "₹" + fmtN(x.v, 0) + " · " + Math.round(x.v / tot * 100) + "%")).join("")}</div>
       <div class="group">Items this year (value before GST)</div><div class="bars">${I.slice(0, 12).map((x) => bar(x, mx(I), fmtN(x.q, 0) + (x.u ? " " + esc(x.u) : "") + " · ₹" + fmtN(x.v, 0))).join("")}</div>
@@ -1954,7 +2078,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 180, at: "2026-11-22T18:33:41+05:30", notes: "Desktop: menu across the top with drop-downs and page tabs; no side panel; nothing cut off" };
+  const APP_BUILD = { v: 181, at: "2026-11-22T19:35:31+05:30", notes: "Customer and supplier ledgers from Tally (bills, payments, running balance, dates, PDF); purchase dashboard; receivables on the sales dashboard" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2957,7 +3081,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     q(x, "SELECT name, rate, tally_stock FROM chemicals").forEach((c) => { const cur = q(b, "SELECT name, rate, tally_stock FROM chemicals WHERE UPPER(name)=UPPER(?)", [c.name])[0];
       if (cur) { if (Number(cur.rate) !== Number(c.rate) || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [c.rate, c.tally_stock, c.tally_stock, stamp, cur.name]); }
       else { add++; b.run("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [c.name, c.rate, c.tally_stock, 0, Number(c.tally_stock) || 0, null, stamp]); } });
-    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally", "tally_sale_bills"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
+    ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally", "tally_sale_bills", "tally_ledgers", "tally_ledger_rows"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
       const cols = q(x, `PRAGMA table_info(${t})`).map((c) => c.name); b.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols.join(", ")})`); b.run(`DELETE FROM ${t}`);
       q(x, `SELECT * FROM ${t}`).forEach((r) => b.run(`INSERT INTO ${t}(${cols.join(", ")}) VALUES(${cols.map(() => "?").join(",")})`, cols.map((c) => r[c]))); });
     b.run("INSERT OR REPLACE INTO meta(key, value) VALUES('tally_merged_at', ?)", [stamp]);
@@ -2995,6 +3119,9 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
           db.run("INSERT INTO tally_sales VALUES (?,?,?,?,?)", [r.vno, r.vdate, r.party, r.ref, r.vtype]); });
         db.run("DELETE FROM tally_meta WHERE k='sales_at'"); db.run("INSERT INTO tally_meta VALUES ('sales_at', ?)", [String(o.at || "")]); db.run("COMMIT");
       } catch (e) { try { db.run("ROLLBACK"); } catch (e2) { /* none */ } return; }
+      if (!formOpen) { const y = window.scrollY; render(); if (sel[tab]) showDetailKeep(); window.scrollTo(0, y); } },
+    // Tally's party ledgers from Excel's small file app/tally-ledgers.json (22-Nov-2026)
+    tallyLedgers: (o) => { if (!db || !plApply(o)) return;
       if (!formOpen) { const y = window.scrollY; render(); if (sel[tab]) showDetailKeep(); window.scrollTo(0, y); } },
     excelDone: (o) => { excelLast = o; const el = document.getElementById("askx-said"); if (el) { el.textContent = "Excel finished " + fmtST(String(o.at || "")) + ": " + String(o.result || "") + (o.tally === false ? " (Tally was not answering)" : ""); el.className = o.tally === false ? "note bad" : "note"; } },
     builtAt: () => String(one("SELECT value FROM meta WHERE key='built_at'") || ""),
@@ -6193,6 +6320,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (tab === "orders" && String(k).startsWith("q:")) { const q = quotes.find((x) => "q:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(q ? "Quotation " + q.no : "Quotation")}</h2></div>${qDetail(k)}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("pay:")) { const p = payments.find((x) => "pay:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(p ? (p.dir === "in" ? "From " : "To ") + p.party : "Payment")}</h2></div>${payDetail(k)}`; d.classList.add("open"); return; }
     if ((tab === "chemicals" || tab === "purchases") && /^t?bill:/.test(String(k))) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${String(k).startsWith("tbill:") ? "Tally purchase" : "Purchase bill"}</h2></div>${billDetail(String(k))}`; d.classList.add("open"); return; }
+    if ((tab === "orders" || tab === "purchases") && String(k).startsWith("pled:")) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(String(k).slice(5))}</h2></div>${plDetail(String(k))}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("tsale:")) { d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>Tally sale</h2></div>${tsaleDetail(String(k))}`; d.classList.add("open"); return; }
     if (tab === "orders" && String(k).startsWith("inv:")) { const v = invoices.find((x) => "inv:" + x.id === k); d.innerHTML = `<div class="dhead"><button class="back" data-back>Back</button><h2>${esc(v ? invName(v) : "Invoice")}</h2></div>${invDetail(k)}`; d.classList.add("open"); return; }
     const isProc = tab === "lots" && String(k).startsWith("proc:"), isRec = tab === "lots" && String(k).startsWith("rec:");
@@ -6286,6 +6414,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   const navClick = (e) => { if (!e.target.closest("[data-side]")) return; try { document.activeElement && document.activeElement.blur(); } catch (er) {} sideClick(e); };
   $("#topnav").addEventListener("click", navClick); $("#subnav").addEventListener("click", navClick);
   $("#side").addEventListener("click", (e) => sideClick(e));
+  // party ledgers: which parties, which entries, which dates, PDF (22-Nov-2026)
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-plshow],[data-plkind],[data-plreset],[data-plpdf]"); if (!b) return;
+    if (b.dataset.plshow) { plF.show = b.dataset.plshow; render(); return; }
+    if (b.dataset.plkind) { plF.kind = b.dataset.plkind; showDetailKeep(); return; }
+    if (b.hasAttribute("data-plreset")) { plF.from = ""; plF.to = ""; showDetailKeep(); return; }
+    if (b.dataset.plpdf) { const w = $("#plmsg") || b; pdfLedger(b.dataset.plpdf, w).catch((er) => { w.textContent = "The PDF could not be made: " + (er.message || er); }); }
+  });
+  document.addEventListener("change", (e) => { const t = e.target; if (!t || !t.dataset || !t.dataset.plf) return; plF[t.dataset.plf] = t.value || ""; showDetailKeep(); });
   function sideClick(e) {
     const mg = e.target.closest("[data-mgrp]");
     if (mg) { const id = mg.dataset.mgrp, g0 = menuGroup(), was = menuOpenId === null ? g0 && g0.id : menuOpenId; menuOpenId = was === id ? "" : id; $("#side").innerHTML = sideHtml(); return; }

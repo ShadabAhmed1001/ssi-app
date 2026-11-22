@@ -305,12 +305,13 @@
 
   // ---------- small files from Excel (21-Nov-2026) ----------
   // app/tally-sales.json (Tally's sale vouchers) and app/excel-now-done.json (what Excel did when asked); tags kept in memory so a restart reads them again
-  let tsTag = "", doneTag = "", lightDone = true, askedAt = "";
+  let tsTag = "", doneTag = "", tlTag = "", lightDone = true, askedAt = "";
   async function lightCheck(tok) {
     const H = window.__ssiHooks; if (!H || !H.ready() || !H.tallySales) return;
     const app = cfg().entriesFolder + "/app", rd = async (it) => JSON.parse((await (await download(it, tok)).text()).replace(/^\uFEFF/, ""));
-    const [ts, dn] = await Promise.all([g("GET", itemUrl(app + "/tally-sales.json"), null, "", tok).catch(() => null), g("GET", itemUrl(app + "/excel-now-done.json"), null, "", tok).catch(() => null)]);
+    const [ts, dn, tl] = await Promise.all([g("GET", itemUrl(app + "/tally-sales.json"), null, "", tok).catch(() => null), g("GET", itemUrl(app + "/excel-now-done.json"), null, "", tok).catch(() => null), H.tallyLedgers ? g("GET", itemUrl(app + "/tally-ledgers.json"), null, "", tok).catch(() => null) : null]);
     if (ts && ts.eTag !== tsTag) { H.tallySales(await rd(ts)); tsTag = ts.eTag; }
+    if (tl && tl.eTag !== tlTag) { try { H.tallyLedgers(await rd(tl)); tlTag = tl.eTag; } catch (e) { /* next time */ } } // party ledgers (22-Nov-2026)
     if (dn && dn.eTag !== doneTag) { const o = await rd(dn); doneTag = dn.eTag; if (H.excelDone) H.excelDone(o); if (askedAt && new Date(String(o.at).replace(" ", "T")) >= new Date(new Date(askedAt).getTime() - 60000)) lightDone = true; }
   }
   // ---------- sync ----------
