@@ -34,6 +34,11 @@
   let n = 0;
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + (n++).toString(36);
   const dirty = () => meta.dirty || {};
+  // shared invoice settings from two phones: every party and item either phone knows, the newer value for each, the higher last number
+  function joinShared(a, b) {
+    const n = String(a._at || "") >= String(b._at || "") ? a : b, o = n === a ? b : a, mapJ = (x, y) => Object.assign({}, y || {}, x || {});
+    return Object.assign({}, o, n, { parties: mapJ(n.parties, o.parties), items: mapJ(n.items, o.items), lastNo: Math.max(Number(a.lastNo) || 0, Number(b.lastNo) || 0) });
+  }
   async function write(c, id, v, fromRemote) {
     if (v === undefined) delete col(c)[id]; else col(c)[id] = v;
     await put(ST, c + "\u0001" + id, v);
@@ -328,13 +333,22 @@
     try {
       const tok = await token(); if (!tok) { syncing = false; return sync(why); }
       const c = cfg(), app = c.entriesFolder + "/app";
-      // 1. send this phone's changes
+      // 1. send this phone's changes; a file another phone changed since this phone last saw it is read first, and the newer one wins
+      //    (shared settings such as invset are joined, not replaced) — four phones at once (23-Nov-2026)
+      const tags0 = meta.etags || {};
       for (const k of Object.keys(dirty())) {
-        const [cn, id] = k.split("/"), v = col(cn)[id];
-        if (v === undefined) await g("DELETE", itemUrl(app + "/" + cn + "/" + id + ".json"), null, "", tok);
-        else await g("PUT", itemUrl(app + "/" + cn + "/" + id + ".json") + ":/content", JSON.stringify(v), "application/json", tok);
+        const [cn, id] = k.split("/"); let v = col(cn)[id], skip = false;
+        const path = app + "/" + cn + "/" + id + ".json";
+        if (v !== undefined && tags0[k]) { try { const it = await g("GET", itemUrl(path), null, "", tok);
+          if (it && it.eTag && it.eTag !== tags0[k]) { const rv = await (await download(it, tok)).json();
+            if (cn === "invset") { v = joinShared(rv, v); col(cn)[id] = v; await put(ST, cn + "\u0001" + id, v); }
+            else if (String(rv._at || "") > String(v._at || "")) { await write(cn, id, rv, true); skip = true; } } } catch (e) { /* send ours */ } }
+        if (skip) { /* the other phone's newer copy stays */ }
+        else if (v === undefined) await g("DELETE", itemUrl(path), null, "", tok);
+        else { const r = await g("PUT", itemUrl(path) + ":/content", JSON.stringify(v), "application/json", tok); if (r && r.eTag) { tags0[k] = r.eTag; } }
         const d = Object.assign({}, dirty()); delete d[k]; await setMeta("dirty", d);
       }
+      await setMeta("etags", tags0);
       if (me.id !== "local" && (col("people")[me.id] || {}).name !== me.name) await write("people", me.id, { name: me.name, _at: new Date().toISOString() });
       // 2. get other phones' changes
       const tags = meta.etags || {};
@@ -346,7 +360,8 @@
           if (tags[key] === it.eTag || dirty()[key]) continue;
           const v = await (await download(it, tok)).json();
           const cur = col(cn)[id];
-          if (!cur || String(v._at || "") >= String(cur._at || "")) await write(cn, id, v, true);
+          if (cn === "invset" && cur) { const j = joinShared(v, cur); if (JSON.stringify(j) !== JSON.stringify(v)) await write(cn, id, Object.assign(j, { _at: new Date().toISOString(), _by: me.id })); else await write(cn, id, v, true); }
+          else if (!cur || String(v._at || "") >= String(cur._at || "")) await write(cn, id, v, true);
           tags[key] = it.eTag;
         }
       }

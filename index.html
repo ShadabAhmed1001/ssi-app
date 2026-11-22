@@ -349,6 +349,7 @@ main.solo .detail { display: none; }
 .fm h3 { margin: 0; padding: 0; border: 0; }
 .fm .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .fm label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
+.fm label.chk { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); } /* tick boxes: the words next to the box, not under it (23-Nov-2026) */
 .fm input, .fm select { font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; min-width: 0; }
 .fmsg { margin: 0; font-size: 13px; font-weight: 600; color: var(--bad); }
 .fmsg:empty { display: none; }
@@ -654,7 +655,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv() };
+    window.__ssi = { costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -688,9 +689,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       entries = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       entriesSeen = true;
       if (had || entries.length) refresh(); else if (tab === "today" || tab === "entries") render(); else showDetailKeep();
+      setTimeout(xToast, 400);
     }, () => { clearTimeout(timer); store = null; srcLine(); showDetailKeep(); render(); });
     s.collection("audits").onSnapshot((snap) => { audits = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "chemicals") render(); }, () => {});
-    s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); setTimeout(invSyncTally, 500); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
+    s.collection("invoices").onSnapshot((snap) => { invoices = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); setTimeout(invSyncTally, 500); setTimeout(invFixDupes, 700); if (tab === "orders" && filter.orders === "inv") render(); if (!formOpen && (tab === "orders" || tab === "lots")) showDetailKeep(); }, () => {});
     s.collection("quotes").onSnapshot((snap) => { quotes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "quotes") render(); if (!formOpen && tab === "orders" && String(sel.orders || "").startsWith("q:")) showDetailKeep(); }, () => {});
     s.collection("payments").onSnapshot((snap) => { payments = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); if (tab === "orders" && filter.orders === "pay") render(); if (!formOpen && tab === "orders" && String(sel.orders || "").startsWith("pay:")) showDetailKeep(); }, () => {});
     s.collection("pdflog").onSnapshot((snap) => { pdfLog = {}; snap.docs.forEach((d) => { pdfLog[d.id] = d.data(); }); }, () => {});
@@ -2078,9 +2080,56 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 182, at: "2026-11-22T19:56:01+05:30", notes: "Ledgers no longer disappear on phones where the app keeps the records" };
+  const APP_BUILD = { v: 183, at: "2026-11-23T00:13:07+05:30", notes: "Four phones at once: tells you when another phone's work changed yours (new lot number, over-delivery, stage moved twice), renumbers clashing invoices, joins shared invoice settings; tick-box labels beside the box" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
+  // ---- work of two phones that met after a sync (23-Nov-2026): told to the phone whose work was changed
+  const xSeenGet = () => { try { return JSON.parse(localStorage.getItem("ssi-xseen") || "[]"); } catch (e) { return []; } };
+  function xNotes() {
+    const mine = new Set(mineGet()), out = [], live = entries.filter((e) => e.status !== "deleted" && e.status !== "void"), who = (e) => (e.entered_by && e.entered_by !== uid ? "another person" : "another phone");
+    // a new lot that got another number than the one this phone promised
+    live.filter((e) => e.type === "new_lot" && mine.has(e.id) && e.data && e.data.lot_no).forEach((e) => { const now = data.nlNo[e.id], was = UP(e.data.lot_no);
+      if (now && now !== was) out.push({ k: "nl|" + e.id + "|" + now, lot: now, t: `Your new lot for ${esc(e.data.customer || "")} ${esc(e.data.product || "")} is <b>${esc(now)}</b>, not ${esc(was)}: another phone used ${esc(was)} first. Change the number written on the lot.` }); });
+    // deliveries from two phones that together go over the lot
+    const myDel = new Set(live.filter((e) => e.type === "delivery" && mine.has(e.id)).map((e) => e.lot_no));
+    myDel.forEach((k) => { const l = data.lotBy[k]; if (!l || !(Number(l.lot_pcs) > 0)) return; const dp = deliveredPcs(k);
+      if (dp > Number(l.lot_pcs) + 0.0001) out.push({ k: "dl|" + k + "|" + dp, lot: k, t: `<b>${esc(k)}</b>: ${fmtN(dp, 1)} pcs are now recorded as delivered, but the lot has ${fmtN(l.lot_pcs, 0)}. Deliveries were probably recorded on two phones. Open the lot, check the deliveries and void the extra one.` }); });
+    // the same lot moved on two phones within an hour: this phone's move was not the last
+    const stg = live.filter((e) => e.type === "stage").sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    stg.filter((e) => mine.has(e.id)).forEach((e) => { const t0 = Date.parse(e.created_at) || 0, later = stg.filter((x) => x.lot_no === e.lot_no && x.id !== e.id && !mine.has(x.id) && Math.abs((Date.parse(x.created_at) || 0) - t0) < 3600e3 && String(x.created_at) > String(e.created_at));
+      if (later.length && UP(later[later.length - 1].to_stage) !== UP(e.to_stage)) { const x = later[later.length - 1];
+        out.push({ k: "st|" + e.id, lot: e.lot_no, t: `<b>${esc(e.lot_no)}</b>: you moved it to ${esc(e.to_stage)}, but ${who(x)} moved it to <b>${esc(x.to_stage)}</b> at the same time${x.entered_by ? "" : ""}, so it is at ${esc(x.to_stage)} now. If yours is right, move it again.` }); } });
+    // invoice numbers used on two phones
+    invDupes().filter((d) => d.sent || mine.has(d.id)).forEach((d) => out.push({ k: "iv|" + d.id + "|" + d.no, inv: d.id, t: d.t }));
+    const seen = new Set(xSeenGet()); return out.filter((x) => !seen.has(x.k));
+  }
+  function xNotesHtml() {
+    const L = xNotes(); if (!L.length) return "";
+    return `<div class="group">Changed by another phone</div>${L.map((x) => `<div class="alert" style="display:block"><span>${x.t}</span><div class="acts" style="margin-top:6px">${x.lot ? `<button class="btn alt" data-go="lots" data-k="${esc(x.lot)}">Open ${esc(x.lot)}</button>` : ""}${x.inv ? `<button class="btn alt" data-go="orders" data-k="inv:${esc(x.inv)}">Open the invoice</button>` : ""}<button class="btn alt" data-xseen="${esc(x.k)}">Got it</button></div></div>`).join("")}`;
+  }
+  // after a sync: a toast for anything new (once per item)
+  let xToasted = new Set();
+  function xToast() { try { const L = xNotes().filter((x) => !xToasted.has(x.k)); L.forEach((x) => xToasted.add(x.k)); if (L.length) showToast(L.length === 1 ? L[0].t.replace(/<[^>]+>/g, "") : L.length + " things you entered were changed by another phone. See Today."); } catch (e) { /* never in the way */ } }
+  // two invoices with the same app number or Tally number: the later one, made on this phone and not yet sent, takes the next free number
+  function invDupes() {
+    const out = [], live = invoices.filter((v) => v.status !== "deleted").sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id).localeCompare(String(b.id)));
+    const seenT = {}, seenV = {};
+    live.forEach((v) => { const t = String(v.temp || ""), n = String(v.tally_no || v.vno || "");
+      const clashT = t && seenT[t], clashV = n && seenV[n] && !(v.tally_no && seenV[n].tally_no === v.tally_no && seenV[n].id === v.id);
+      if (clashT || clashV) { const sent = !!(v.tally_no || v.exported_at || v.status === "tally" || v.status === "exported");
+        out.push({ id: v.id, no: t + "/" + n, sent, fix: !sent && mineGet().includes(v.id), t: `Invoice <b>${esc(t)}</b> has the same ${clashV ? "Tally number " + esc(n) : "app number"} as ${esc((clashT || clashV).temp || "")}, made on another phone at the same time.${sent ? " It has already gone towards Tally: Tally will refuse the second one. Change its number and send it again." : " This phone gives it the next free number."}` }); }
+      if (t && !seenT[t]) seenT[t] = v; if (n && !seenV[n]) seenV[n] = v; });
+    return out;
+  }
+  let invFixing = false;
+  async function invFixDupes() {
+    if (invFixing || !store || !canWrite) return; invFixing = true;
+    try { for (const d of invDupes().filter((x) => x.fix)) { const v = invoices.find((x) => x.id === d.id); if (!v) continue;
+        const n = invoices.reduce((m, x) => Math.max(m, Number(String(x.temp || "").replace(/\D/g, "")) || 0), 0) + 1, temp = "APP-" + String(n).padStart(4, "0"), vno = nextVno(v.id);
+        await store.doc("invoices/" + v.id).update({ temp, vno, renumbered: { from: v.temp + " / " + v.vno, at: new Date().toISOString() } });
+        Object.assign(v, { temp, vno }); showToast("Invoice " + d.no.split("/")[0] + " made on two phones at once: this one is now " + temp + ", Tally no " + vno + ".");
+        (v.lines || []).forEach(() => {}); } } catch (e) { /* next sync */ } finally { invFixing = false; }
+  }
   function todayView() {
     const open = data.lots.filter((l) => l.grp === 1), bad = open.filter((l) => l.flag === "bad" && !isMuted(l.lot_no)), warn = open.filter((l) => l.flag === "warn" && !isMuted(l.lot_no));
     const toStart = data.orders.filter((o) => o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION");
@@ -2121,6 +2170,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="acts">${canAdmin ? `<button class="btn" data-new="update">Load the Excel files</button>` : `<span class="note">Ask the owner to share the data with you.</span>`}</div></div>`;
     return `<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
       <div class="group">Lots by status</div><div class="bars">${statusRows().map((s) => bar("status", s, Math.max(1, ...statusRows().map((x) => x.n)))).join("")}</div>
+      ${xNotesHtml()}
       ${top.length ? `<div class="group">Check first</div><div data-sec="lots">${top.map(lotCard).join("")}</div>` : ""}
       ${checks.length ? `<div class="group">To do</div>${checks.map(([a, t]) => `<button class="alert" ${a}><span>${t}</span></button>`).join("")}` : ""}
       <div class="group">Time in stage</div><div class="tbl"><table style="background:var(--surface)"><thead><tr><th>Stage</th><th class="r">Max</th><th class="r">Lots</th><th class="r">Over</th><th class="r">Longest</th></tr></thead><tbody>${stageTable(open).map((s) =>
@@ -4405,7 +4455,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <button type="button" class="btn alt" data-backall>Return all of this entry</button>
       ${(() => { const r0 = l[0] || {}, lt = /^L/.test(r0.from_key || "") && data.lotBy[r0.from_key]; return `<label id="fb-rsl"${lt ? "" : ' style="display:none"'}>Stage of ${esc(lt ? r0.from_key : "")} <select id="fb-rs">${lt ? recvStageOpts(r0.from_key) : ""}</select></label>${emptyStageHtml("fb-empty", r0.to_key || "this lot")}`; })()}${txtF("fb-note", "Reason")}
       <p class="note" style="margin:0">Skins added on the phone and not imported yet aren't listed. Cancel those under Phone entries.</p>${formEnd}</form>`; } },
-    new_lot: { title: "New lot", html: (a) => `<form class="fm" id="fm-new_lot"><p class="note" style="margin:0">This lot will be ${esc(nextKey("L"))}. You can use it straight away; Excel keeps the number when it imports it, unless the PC used it meanwhile.</p>
+    new_lot: { title: "New lot", html: (a) => `<form class="fm" id="fm-new_lot"><p class="note" style="margin:0">This lot will be ${esc(nextKey("L"))}. You can use it straight away. ${recMode() ? "If another phone makes a lot at the same moment and takes this number, yours gets the next free one and Today tells you which." : "Excel keeps the number when it imports it, unless the PC used it meanwhile."}</p>
       <label>From purchase<select id="fn-from" data-pinfo="fn-info">${purchOpts(a)}</select></label><p class="note" id="fn-info" style="margin:0">${esc(purchInfo(a))}</p>
       <div class="two">${numF("fn-pcs", "Pcs")}${numF("fn-sqft", "Sqft")}${dateF("fn-date", "Date", today0())}</div>
       <label>Customer order (PO)<select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
@@ -4860,7 +4910,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         // compared with what Tally holds: the invoice as it was before the first change after Tally
         if (old && old.tally_no) { const fx0 = old.tally_fix || null, base = fx0 && fx0.base ? fx0.base : JSON.parse(JSON.stringify({ lines: old.lines || [], freight: old.freight, packing: old.packing, sampling: old.sampling, discount: old.discount, date: old.date, party: old.party, state: old.state })), before = fx0 ? fx0.before : invCalc(old).total, notes = invTallyDiff(base, v);
           body.tally_fix = notes.length || Math.abs(before - body.total) > 0.5 ? { at: now, before, base, notes } : null; } }
-      await ref.set(body);
+      await ref.set(body); mineAdd(ref.id);
       // remember party details and item names for next time
       const parties = Object.assign({}, S.parties, { [UP(v.customer)]: { party: v.party.trim(), gstin: (v.gstin || "").trim().toUpperCase(), state: v.state, addr: v.addr || "", dest: v.dest || "" } }), its = Object.assign({}, S.items);
       v.lines.forEach((ln) => { if (ln.poitem && ln.item) its[UP(ln.poitem)] = ln.item.trim(); });
@@ -5959,8 +6009,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (m.size) body.nl_map = [...m].map(([k, id]) => k + ">" + id).join(","); } catch (e) { /* keep the entry as it is */ }
     return body;
   }
+  // entries and invoices made on this phone, so it can tell its user when another phone's work changed them (23-Nov-2026)
+  const mineGet = () => { try { return JSON.parse(localStorage.getItem("ssi-mine") || "[]"); } catch (e) { return []; } };
+  const mineAdd = (id) => { try { const m = mineGet().filter((x) => x !== id).concat([id]).slice(-800); localStorage.setItem("ssi-mine", JSON.stringify(m)); } catch (e) { /* private window */ } };
   async function writeEntry(ref, body) {
-    body = nlTag(body);
+    body = nlTag(body); mineAdd(ref.id);
     try { await ref.set(body); } catch (e) { if (e && e.code === "unavailable") { await new Promise((r) => setTimeout(r, 800 + Math.random() * 800)); await ref.set(body); } else throw e; }
   }
   function warnOnce(f, text) {
@@ -6036,7 +6089,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     btn.disabled = true; msg.textContent = "";
     try {
       await writeEntry(store.collection("entries").doc(), Object.assign(body, { status: "pending", entered_by: uid, created_at: new Date().toISOString() }));
-      formOpen = null; flash = stage ? "Saved. " + l.lot_no + " shows " + body.to_stage + " here until Excel is updated." : "Delivery saved. It is waiting for Excel.";
+      formOpen = null; flash = stage ? (recMode() ? "Saved. " + l.lot_no + " is at " + body.to_stage + " now." : "Saved. " + l.lot_no + " shows " + body.to_stage + " here until Excel is updated.") : "Delivery saved. It is waiting for Excel.";
       refresh(); showDetail();
       setTimeout(() => { flash = ""; showDetailKeep(); }, 6000);
     } catch (e) {
@@ -6264,6 +6317,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const DANGER = /^(Delete|Cancel|Undo all|Remove|Dump)/i;
   let lastToast = "", lastToastAt = 0;
   function showToast(msg) {
+    msg = recWord(msg);
     if (!msg || (msg === lastToast && Date.now() - lastToastAt < 9000)) return;
     lastToast = msg; lastToastAt = Date.now();
     let t = $("#toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
@@ -6414,6 +6468,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const navClick = (e) => { if (!e.target.closest("[data-side]")) return; try { document.activeElement && document.activeElement.blur(); } catch (er) {} sideClick(e); };
   $("#topnav").addEventListener("click", navClick); $("#subnav").addEventListener("click", navClick);
   $("#side").addEventListener("click", (e) => sideClick(e));
+  document.addEventListener("click", (e) => { const b = e.target.closest("[data-xseen]"); if (!b) return; try { localStorage.setItem("ssi-xseen", JSON.stringify(xSeenGet().concat([b.dataset.xseen]).slice(-400))); } catch (er) { /* private */ } render(); });
   // party ledgers: which parties, which entries, which dates, PDF (22-Nov-2026)
   document.addEventListener("click", (e) => {
     const b = e.target.closest("[data-plshow],[data-plkind],[data-plreset],[data-plpdf]"); if (!b) return;
