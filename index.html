@@ -660,7 +660,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function open(SQL, bytes, label) {
     const prevBytes = label === "new" ? baseBytes : null;
     db = new SQL.Database(bytes); baseBytes = bytes;
-    if (plObj && String(plObj.at || "") > String(trows("SELECT v FROM tally_meta WHERE k='ledgers_at'").map((r) => r.v)[0] || "")) plApply(plObj); // the ledgers from the small file stay after a rebuild (22-Nov-2026)
+    if (plObj && (!trows("SELECT COUNT(*) n FROM tally_ledgers").map((r) => r.n)[0] || String(plObj.at || "") > String(trows("SELECT v FROM tally_meta WHERE k='ledgers_at'").map((r) => r.v)[0] || ""))) plApply(plObj); // the ledgers from the small file stay after a rebuild: Tally's small file (tally-data.json) has no ledger tables (22-Nov-2026)
     const asof = one("SELECT value FROM meta WHERE key='data_as_of'") || one("SELECT value FROM meta WHERE key='built_at'");
     data.asOf = asof ? fmtD(asof) : label;
     data.empty = !one("SELECT COUNT(*) FROM lots") && !one("SELECT COUNT(*) FROM chemicals");
@@ -2078,7 +2078,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 181, at: "2026-11-22T19:35:31+05:30", notes: "Customer and supplier ledgers from Tally (bills, payments, running balance, dates, PDF); purchase dashboard; receivables on the sales dashboard" };
+  const APP_BUILD = { v: 182, at: "2026-11-22T19:56:01+05:30", notes: "Ledgers no longer disappear on phones where the app keeps the records" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
