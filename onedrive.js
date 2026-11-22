@@ -354,6 +354,13 @@
           recLocal(true); await H.useBase(new Uint8Array(await (await download(bi, tok)).arrayBuffer()));
           await setMeta("baseName", rec.base); await setMeta("dataTag", undefined);
         } else if (!appMode && recIsOn()) { recLocal(false); await setMeta("baseName", undefined); await setMeta("dataTag", undefined); }
+        // app keeps the records: Tally's figures come from Excel's small file app/tally-data.json; the workbook is never downloaded (22-Nov-2026)
+        let tj = null; if (appMode) { try { tj = await g("GET", itemUrl(app + "/tally-data.json"), null, "", tok); } catch (e) { tj = null; } }
+        if (tj) {
+          if (tj.eTag !== meta.tjTag) { setStatus("Reading Tally stock and prices…", "");
+            const o = JSON.parse((await (await download(tj, tok)).text()).replace(/^\uFEFF/, ""));
+            const summary = await H.tallyJson(o); await setMeta("tjTag", tj.eTag); await setMeta("dataAt", new Date().toISOString()); await setMeta("dataSummary", summary); }
+        } else {
         const [xi, di] = await Promise.all([g("GET", itemUrl(c.dataFolder + "/" + c.xlsm), null, "", tok), g("GET", itemUrl(c.dataFolder + "/" + c.db), null, "", tok)]);
         if (!xi || !di) setStatus("Excel files not found in OneDrive/" + c.dataFolder, "bad");
         else if (xi.eTag + "|" + di.eTag !== meta.dataTag) {
@@ -363,6 +370,7 @@
           await setMeta("dataTag", xi.eTag + "|" + di.eTag);
           await setMeta("dataAt", new Date().toISOString());
           await setMeta("dataSummary", summary);
+        }
         }
         // 3b. app mode: once a day, close entries older than 3 days into a new base so phones replay less (at least 50)
         if (appMode && H.compact && Date.now() - Date.parse(rec.compacted_at || rec.since || 0) > 864e5) {
@@ -383,9 +391,17 @@
         // 4. pending entries as a file for Excel's Import from phone
         // records kept by the app: nothing goes to Excel any more
         let recApp = false; try { recApp = localStorage.getItem("ssi-records") === "app"; } catch (e) { /* default */ }
-        const nP = H.pending(), name = c.entriesFolder + "/phone-entries-" + device + ".csv";
+        // app mode: Excel is the backup copy, so every entry since the switch that Excel hasn't taken goes in the file (app/excel-mirror.json lists what it took)
+        let mirror = null;
+        if (appMode && H.mirrorBehind) {
+          try { const mi = await g("GET", itemUrl(app + "/excel-mirror.json"), null, "", tok);
+            if (mi && mi.eTag !== meta.mirTag) { const o = JSON.parse((await (await download(mi, tok)).text()).replace(/^\uFEFF/, "")); await setMeta("mirDone", o.done || []); await setMeta("mirAt", o.at || ""); await setMeta("mirTag", mi.eTag); } } catch (e) { /* Excel hasn't written it yet */ }
+          mirror = { since: rec.since || "", done: new Set(meta.mirDone || []) };
+          await setMeta("mirBehind", H.mirrorBehind(mirror));
+        }
+        const nP = mirror ? H.mirrorBehind(mirror).n : H.pending(), name = c.entriesFolder + "/phone-entries-" + device + ".csv";
         if (nP > 0) {
-          const text = await H.exportCsv();
+          const text = await H.exportCsv(mirror || undefined);
           // put it back if Excel's Import from phone moved it to Done but some entries are still waiting
           const there = text === meta.lastCsv ? await g("GET", itemUrl(name), null, "", tok) : null;
           if (text !== meta.lastCsv || !there) { await g("PUT", itemUrl(name) + ":/content", text, "text/csv", tok); await setMeta("lastCsv", text); }
@@ -408,7 +424,7 @@
       }
       await setMeta("syncAt", new Date().toISOString());
       lastErr = "";
-      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + (recIsOn() ? "records kept by the app · Tally stock " + (meta.dataAt ? hhmm(meta.dataAt) : "not read yet") : "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText()), "ok");
+      setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + (recIsOn() ? "records kept by the app · Tally stock " + (meta.dataAt ? hhmm(meta.dataAt) : "not read yet") + (meta.mirBehind ? " · Excel backup " + (meta.mirBehind.old ? meta.mirBehind.old + " entr" + (meta.mirBehind.old === 1 ? "y" : "ies") + " behind" : "up to date") : "") : "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText()), "ok");
     } catch (e) {
       lastErr = e && e.message ? e.message : String(e);
       setStatus("Sync problem: " + lastErr + " · entries are safe on this phone", "bad", needLogin ? "signin" : "retry");

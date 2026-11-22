@@ -1901,7 +1901,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 175, at: "2026-11-22T15:08:40+05:30", notes: "Deliveries can't exceed the lot's pieces (form and invoice); a lot can't go past FAT until its process is saved; Today names the health items" };
+  const APP_BUILD = { v: 176, at: "2026-11-22T15:22:03+05:30", notes: "App keeps the records: Excel mirror file and Tally figures from a small file (no workbook download)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2888,6 +2888,15 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   }
   // records kept by the app: from a snapshot of Excel's files take only what comes from Tally (chemical stock and prices, Tally's
   // masters and sales) and the PDF list; the app's own ledger stays. New chemicals on A. CHEMICALS are added with no ledger.
+  function tallyJsonInto(o) {
+    if (!o || !o.tables) return null;
+    const SQL = window.__SQL, x = new SQL.Database();
+    x.run("CREATE TABLE chemicals(name TEXT, rate REAL, tally_stock REAL)");
+    (o.chemicals || []).forEach((c) => x.run("INSERT INTO chemicals VALUES(?,?,?)", [String(c[0]), Number(c[1]) || 0, c[2] === null || c[2] === "" ? null : Number(c[2]) || 0]));
+    Object.entries(o.tables).forEach(([t, v]) => { if (!/^[a-z_]+$/.test(t) || !v || !Array.isArray(v.cols)) return; const cols = v.cols.filter((c) => /^[a-z_]+$/.test(c)); if (!cols.length) return;
+      x.run(`CREATE TABLE ${t}(${cols.join(", ")})`); (v.rows || []).forEach((r) => x.run(`INSERT INTO ${t} VALUES(${cols.map(() => "?").join(",")})`, cols.map((c, i) => r[i] === undefined ? null : r[i]))); });
+    const xb = x.export(); x.close(); return xb;
+  }
   function tallyInto(baseB, xlB) {
     const SQL = window.__SQL, b = new SQL.Database(baseB), x = new SQL.Database(xlB), q = (d, sql, p) => { const st = d.prepare(sql); if (p) st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
     let upd = 0, add = 0; const stamp = new Date().toISOString().slice(0, 19);
@@ -2908,7 +2917,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     ready: () => !!db && !!store,
     pending: () => (recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).length,
     chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
-    exportCsv: () => exportCsv(),
+    exportCsv: (mirror) => exportCsv(mirror),
+    // app keeps the records: how many entries Excel's backup copy hasn't taken, and how many of those are over an hour old
+    mirrorBehind: (m) => { const L = mirrorList(m), old = Date.now() - 36e5; return { n: L.length, old: L.filter((e) => Date.parse(e.created_at) < old).length }; },
+    // Tally's figures from Excel's small file app/tally-data.json instead of the whole workbook (22-Nov-2026)
+    tallyJson: async (o) => { const xb = tallyJsonInto(o); if (!xb) return "";
+      const merged = tallyInto(baseBytes, xb); await publishSnapshot(merged.bytes, () => {}); open(window.__SQL, merged.bytes, "base"); return merged.summary; },
     backupBody: () => bkBody(),
     // Tally's sales from Excel's small file app/tally-sales.json: shown at once, before Excel's whole data comes (21-Nov-2026)
     tallySales: (o) => { if (!db || !o || !Array.isArray(o.rows)) return;
@@ -5899,13 +5913,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
         <span class="tx">${!rec && e.status === "pending" && APP_ONLY.includes(e.type) ? `<span class="pill idle">kept in the app, Excel doesn't need it</span> ` : ""}${rec && e.status === "pending" ? (engineErr[e.id] && enFolded.has(e.id) ? `<span class="pill bad">${esc(engineErr[e.id])}</span> ` : enApplied.has(e.id) ? (enFolded.has(e.id) ? "" : `<span class="pill ok">recorded</span> `) : engineErr[e.id] ? `<span class="pill bad">not recorded: ${esc(engineErr[e.id])}</span> ` : "") : ""}${esc(entryLine(e))}${e.note ? " · " + esc(e.note) : ""}</span>
         <span class="by">${fmtD(e.entry_date || (e.data && e.data.date) || e.created_at)} · <span${e.entered_by ? ` data-uid="${esc(e.entered_by)}"` : ""}>Someone</span></span></div>`).join("") : `<p class="empty">${f === "pending" && rec ? "No entries yet." : f === "pending" ? "Nothing is waiting for Excel. Open a lot and use Move stage or Record delivery." : "No entries here."}</p>`);
   }
-  async function exportCsv() {
-    const ids = [...new Set(data.pending.map((e) => e.entered_by).filter(Boolean))], ps = people && ids.length ? await people.profiles(ids) : {};
+  // entries for Excel's backup copy while the app keeps the records (22-Nov-2026): every live entry since the switch that Excel hasn't taken yet
+  const mirrorList = (m) => entries.filter((e) => e.status === "pending" && !APP_ONLY.includes(e.type) && String(e.created_at || "") >= String(m.since || "") && !(m.done && m.done.has(e.id)));
+  async function exportCsv(mirror) {
+    const src0 = mirror ? mirrorList(mirror) : data.pending;
+    const ids = [...new Set(src0.map((e) => e.entered_by).filter(Boolean))], ps = people && ids.length ? await people.profiles(ids) : {};
     const q = (v) => { const t = String(v ?? "").replace(/[\r\n]+/g, " "); return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
     const head = ["entry_id", "type", "lot_no", "entry_date", "from_stage", "to_stage", "pcs", "sqft", "doc_no", "note", "entered_by", "created_at", "payload", "before", "process", "base_version", "base_lot", "details"];
     const enc = (t) => String(t ?? "").replace(/\r?\n/g, "{nl}").replace(/\|~\|/g, "|");
     const pack = (o) => Object.entries(o || {}).map(([k, x]) => k + "=" + enc(x)).join("|~|");
-    const list = (recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const list = (mirror ? src0 : recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     return [head.join(",")].concat(list.map((e) => [e.id, e.type, e.lot_no, e.entry_date || "", e.from_stage, e.to_stage, e.pcs, e.sqft, e.doc_no, e.note, (ps[e.entered_by] || {}).name || "", e.created_at, pack(Object.assign({}, e.type === "lot_edit" ? e.changes : e.type === "recipe" && e.load_cur !== undefined ? Object.assign(fullCells(e.after), { C1: e.lot_no }) : e.cells || e.data, e.nl_map ? { nl_map: e.nl_map } : {})), pack(e.before), e.process, e.base_version, e.load_cur !== undefined ? [e.base_lot, e.base_process, e.base_version, e.load_cur].join("|") : e.base_process ? e.base_lot + "|" + e.base_process : e.base_lot, enc(e.details)].map(q).join(","))).join("\r\n") + "\r\n";
   }
   function showCsv(text) { $("#csvout").innerHTML = `<textarea class="copybox" id="csvbox" readonly aria-label="Entries for Excel">${esc(text)}</textarea>`; $("#csvbox").select(); }
