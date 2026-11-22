@@ -254,7 +254,7 @@
       if (lastErr) stop.push("The last sync had a problem: " + lastErr);
       if (!xs || !xs.at) stop.push("Excel hasn't reported its automatic import yet. Open the production workbook on the PC.");
       else { const at = new Date(String(xs.at).replace(" ", "T")), age = (Date.now() - at.getTime()) / 60000, lim = (Number(xs.every) || 5) * 3 + 35;
-        if (!(age < lim)) stop.push("Excel last looked for phone entries at " + at.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + ". Open the production workbook on the PC and wait for it to look again.");
+        if (!(age < lim)) stop.push("Excel last looked for phone entries at " + at.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + ". If the workbook is already open on the PC, its automatic import has stopped: close the workbook and open it again (that restarts it), then wait 5 minutes and try again.");
         const m = /Not imported:\s*(\d+)/.exec(String(xs.report || "")); if (m && Number(m[1]) > 0) stop.push("Excel couldn't import " + m[1] + " entr" + (m[1] === "1" ? "y" : "ies") + " last time. Sort " + (m[1] === "1" ? "it" : "them") + " out first (Phone entries waiting)."); }
       if (stop.length) throw new Error("Not switched yet. Excel must be up to date first:\n• " + stop.join("\n• "));
       // entries still waiting for Excel are simply written by the app from now on (Excel never marks them imported in app mode)
