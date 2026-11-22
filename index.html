@@ -1901,7 +1901,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 176, at: "2026-11-22T15:22:03+05:30", notes: "App keeps the records: Excel mirror file and Tally figures from a small file (no workbook download)" };
+  const APP_BUILD = { v: 177, at: "2026-11-22T16:00:01+05:30", notes: "Invoice: bill part of a delivery; adding a lot with delivered-not-billed skins asks: from the delivered quantity or a new delivery" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -4377,9 +4377,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
   function vnoNum(t) { const S = iset(), re = new RegExp("^" + String(S.vnoFmt).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{n\\}", "(\\d+)") + "$"), m = String(t || "").trim().match(re); return m ? Number(m[1]) : 0; }
   function nextVno(exceptId) { const S = iset(); let n = Math.max(Number(S.lastNo) || 0, Number(tMeta("last_sale_no")) || 0); trows("SELECT vno FROM tally_sales").forEach((r) => { n = Math.max(n, vnoNum(r.vno)); }); invLive().forEach((v) => { if (v.id !== exceptId) n = Math.max(n, vnoNum(v.vno), vnoNum(v.tally_no)); }); return String(S.vnoFmt).replace("{n}", n + 1); }
   const descOf = (ln) => ln.lot + " - " + [Number(ln.hides) || !Number(ln.sides) ? fmtN(Number(ln.hides) || 0, 1) + " hides" : "", Number(ln.sides) ? fmtN(ln.sides, 0) + " sides" : ""].filter(Boolean).join(" + ");
+  let invAsk = null; // lot waiting for "from delivered quantity or new delivery?" on the invoice form
   function invLine(lot, cand) {
     const S = iset(), l = data.lotBy[lot] || {}, p = invPoLine(lot), item0 = p ? p.item : l.product || "";
-    const ln = { lot, dkey: cand ? cand.dkey : "", newdel: !cand, hides: cand ? cand.hides : "", sides: cand ? cand.sides : "", sqft: cand ? cand.sqft : "", rate: p && p.rate ? p.rate : "", disc: "", hsn: (p && p.hsn) || S.hsn, gst: S.gst, poitem: item0, item: S.items[UP(item0)] || item0, po: p ? p.po_no : "", ddate: iso(today), ddoc: "" };
+    const ln = { lot, dkey: cand ? cand.dkey : "", newdel: !cand, maxSqft: cand ? Number(cand.sqft) || 0 : undefined, hides: cand ? cand.hides : "", sides: cand ? cand.sides : "", sqft: cand ? cand.sqft : "", rate: p && p.rate ? p.rate : "", disc: "", hsn: (p && p.hsn) || S.hsn, gst: S.gst, poitem: item0, item: S.items[UP(item0)] || item0, po: p ? p.po_no : "", ddate: iso(today), ddoc: "" };
     ln.desc = descOf(ln); ln.autodesc = true; return ln;
   }
   function invPartyFill(v) {
@@ -4387,6 +4388,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     v.party = p.party || v.customer; v.gstin = p.gstin || ""; v.state = p.state || (GST_CODE[String(p.gstin || "").slice(0, 2)] || S.state); v.addr = p.addr || ""; v.dest = v.dest || p.dest || "";
   }
   function invNew(cust, lot) {
+    invAsk = null;
     const n = invoices.reduce((m, v) => Math.max(m, Number(String(v.temp || "").replace(/\D/g, "")) || 0), 0) + 1;
     const v = { temp: "APP-" + String(n).padStart(4, "0"), vno: nextVno(), date: iso(today), customer: cust || "", lines: [], freight: "", packing: "", sampling: "", discount: "", transporter: "", vehicle: "", lr: "", lrdate: "", eway: "", ewaydate: "", dest: "", narration: "", status: "draft" };
     if (cust) invPartyFill(v);
@@ -4524,8 +4526,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       ${v.lines.length ? v.lines.map((ln, i) => invLineHtml(ln, i)).join("") : `<p class="note" style="margin:0">No lots yet. Add a delivery below.</p>`}
       <div class="invadd"><p style="margin:0"><b>Add a delivery</b> <button type="button" class="lnk" data-inv="showall">${invShowAll ? "Only " + esc(v.customer) : "Show all customers"}</button></p>
       ${cands.length ? cands.slice(0, 40).map((c) => `<div class="invcand"><span><b>${esc(c.lot)}</b> · ${fmtD(c.date)} · ${fmtN(c.hides, 1)} hides${c.sides ? " + " + fmtN(c.sides, 0) + " sides" : ""} · ${fmtN(c.sqft, 2)} sqft${c.doc ? " · " + esc(c.doc) : ""}${c.wait ? " · waiting for Excel" : ""}</span><button type="button" class="mini" data-inv="add:${esc(c.dkey)}">Add</button></div>`).join("") : `<p class="note" style="margin:0">No delivery waiting to be invoiced${invShowAll ? "" : " for " + esc(v.customer)}.</p>`}
-      <p style="margin:6px 0 0"><b>Delivery not recorded yet?</b> Pick the lot and type the delivery on its line. Saving the invoice records the delivery too.</p>
-      <div class="two"><label>Lot<select id="iv-newlot"><option value="">Pick a lot</option>${lotsOf.map((l) => `<option value="${esc(l.lot_no)}">${esc(l.lot_no)} · ${esc(l.product || "")} · ${esc(l.state === "OPEN" ? l.stage || "" : l.state)}</option>`).join("")}</select></label><label>&nbsp;<button type="button" class="btn alt" data-inv="addlot">Add lot</button></label></div></div>
+      <p class="note" style="margin:4px 0 0">To bill only part of a delivery, add it and type fewer hides and sqft on its line; the rest stays in Pending invoicing.</p>
+      <p style="margin:6px 0 0"><b>Delivery not recorded yet?</b> Pick the lot and type the delivery on its line. Saving the invoice records the delivery too. If the lot already has delivered skins not billed, you'll be asked which it is.</p>
+      <div class="two"><label>Lot<select id="iv-newlot"><option value="">Pick a lot</option>${lotsOf.map((l) => `<option value="${esc(l.lot_no)}">${esc(l.lot_no)} · ${esc(l.product || "")} · ${esc(l.state === "OPEN" ? l.stage || "" : l.state)}</option>`).join("")}</select></label><label>&nbsp;<button type="button" class="btn alt" data-inv="addlot">Add lot</button></label></div>${invAsk ? (() => { const cs = invCands("", inv.id, true).filter((c) => c.lot === invAsk && !inv.lines.some((ln) => dkeyAlias(ln.dkey).includes(c.dkey))), h = cs.reduce((t, c) => t + (Number(c.hides) || 0) + (Number(c.sides) || 0) / 2, 0), q = cs.reduce((t, c) => t + (Number(c.sqft) || 0), 0);
+        return `<div class="warnbox" style="margin-top:8px"><b>${esc(invAsk)} already has ${fmtN(h, 1)} hides, ${fmtN(q, 2)} sqft delivered and not billed yet.</b><br>Is this bill for skins from that delivered quantity, or for skins being sent now (a new delivery)?
+          <div class="acts" style="margin:8px 0 0"><button type="button" class="btn" data-inv="addfrom:${esc(invAsk)}">From the delivered quantity</button><button type="button" class="btn alt" data-inv="addnew:${esc(invAsk)}">New delivery</button><button type="button" class="btn alt" data-inv="addcancel">Cancel</button></div>
+          <p class="note" style="margin:6px 0 0">From the delivered quantity: type how many hides and sqft this bill is for; the rest stays in Pending invoicing. New delivery: the skins are added to the lot's delivered count when you save (they can't be more than the lot has).</p></div>`; })() : ""}</div>
       <h3 style="margin:10px 0 0">Freight, packing, sampling, discount</h3>
       <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-sampling", "Sampling ₹", v.sampling, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
       <h3 style="margin:10px 0 0">Transport and e-way bill</h3>
@@ -4565,14 +4571,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n > 1 ? ` · <b>goes on the invoice as one item with the other ${esc(ln.lot)} ${n === 2 ? "line" : "lines"}</b> (same item, rate, discount and GST)` : "";
   }
   function invLineHtml(ln, i) {
-    const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = !ln.newdel;
+    const d = invDelInfo(ln.dkey), amt = r2((Number(ln.sqft) || 0) * (Number(ln.rate) || 0) * (1 - (Number(ln.disc) || 0) / 100)), lock = false; // part of a delivery can be billed (22-Nov-2026)
     const n = (f, lb, more) => `<label>${lb}<input data-ivl="${i}" data-f="${f}" value="${esc(ln[f] ?? "")}" type="number" step="any" inputmode="decimal"${lock && ["hides", "sides", "sqft"].includes(f) ? " readonly" : ""}${more || ""}></label>`;
     return `<div class="invline"><p style="margin:0;display:flex;justify-content:space-between;gap:8px"><span><b>${esc(ln.lot)}</b> ${ln.newdel ? "· new delivery, recorded when you save" : d ? "· delivered " + fmtD(d.date) + (d.doc ? " · " + esc(d.doc) : "") + (d.wait ? " · waiting for Excel" : "") : ""}${ln.po ? " · PO " + esc(ln.po) : ""}</span><button type="button" class="mini" data-inv="del:${i}">Remove</button></p>
       <div class="pickw"><label>Stock item (Tally)<input data-ivl="${i}" data-f="item" value="${esc(ln.item)}" autocomplete="off" placeholder="Type to search Tally items"></label><div class="sugg" id="sg-item-${i}"></div></div>
       ${invItemNote(ln, i)}
       <label>Description<input data-ivl="${i}" data-f="desc" value="${esc(ln.desc)}" autocomplete="off"></label>
       <div class="two">${n("hides", "Hides")}${n("sides", "Sides", ' step="1"')}${n("sqft", "Sqft")}${ln.newdel ? `<label>Delivery date<input data-ivl="${i}" data-f="ddate" type="date" value="${esc(ln.ddate || "")}"></label>` : ""}${n("rate", "Rate / sqft")}${n("disc", "Discount %")}<label>HSN<input data-ivl="${i}" data-f="hsn" value="${esc(ln.hsn)}" inputmode="numeric"></label>${n("gst", "GST %")}</div>
-      <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${lock ? " · counts come from the delivery" : ""}<span class="ivmerge" id="ivm-${i}">${invMergeNote(i)}</span></p></div>`;
+      <p class="note" style="margin:0">Line total <b id="ivl-amt-${i}">${rs(amt)}</b>${!ln.newdel && ln.dkey ? ` · from the delivery: bill all of it or type less (up to ${fmtN(ln.maxSqft ?? ln.sqft, 2)} sqft); what you leave stays in Pending invoicing` : ""}<span class="ivmerge" id="ivm-${i}">${invMergeNote(i)}</span></p></div>`;
   }
   function invRedraw() { const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
   function invInput(t) {
@@ -4600,7 +4606,16 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (a.startsWith("pi:")) { const [i, name] = [a.slice(3, a.indexOf("|")), a.slice(a.indexOf("|") + 1)], ln = inv.lines[Number(i)], ti = tItem(name); if (ln && ti) { ln.item = ti.name; ln.newitem = false; if (ti.hsn) ln.hsn = ti.hsn; } invRedraw(); return; }
     if (a === "showall") { invShowAll = !invShowAll; invRedraw(); return; }
     if (a.startsWith("add:")) { const c = invCands("", inv.id, true).find((x) => x.dkey === a.slice(4)); if (c) inv.lines.push(invLine(c.lot, c)); invRedraw(); return; }
-    if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; } inv.lines.push(invLine(lot, null)); invRedraw(); return; }
+    if (a === "addlot") { const lot = $("#iv-newlot").value; if (!lot) { $("#fm-msg").textContent = "Pick a lot first."; return; }
+      // the lot already has delivered quantity not billed yet: ask whether this bill takes from it or is a new delivery (22-Nov-2026)
+      const cs = invCands("", inv.id, true).filter((c) => c.lot === lot && !inv.lines.some((ln) => dkeyAlias(ln.dkey).includes(c.dkey)));
+      if (cs.length) { invAsk = lot; invRedraw(); return; }
+      inv.lines.push(invLine(lot, null)); invRedraw(); return; }
+    if (a.startsWith("addfrom:") || a.startsWith("addnew:")) { const lot = a.split(":")[1]; invAsk = null;
+      if (a.startsWith("addnew:")) inv.lines.push(invLine(lot, null));
+      else invCands("", inv.id, true).filter((c) => c.lot === lot && !inv.lines.some((ln) => dkeyAlias(ln.dkey).includes(c.dkey))).forEach((c) => inv.lines.push(invLine(lot, c)));
+      invRedraw(); return; }
+    if (a === "addcancel") { invAsk = null; invRedraw(); return; }
     if (a.startsWith("del:")) { inv.lines.splice(Number(a.slice(4)), 1); invRedraw(); return; }
     if (!v) return;
     if (a === "pdf") { pdfInvoice(v, b); return; }
@@ -4631,6 +4646,12 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (!(Number(ln.rate) > 0)) return bad(ln.lot + ": type the rate.");
       if (ln.newdel) { if (!(Number(ln.hides) > 0 || Number(ln.sides) > 0)) return bad(ln.lot + ": type the hides and / or sides delivered."); const dd = checkDate(ln.ddate || v.date); if (dd) return bad(ln.lot + ": " + dd); }
     }
+    // a line taken from a delivery can be less than the delivery, never more than what is left of it to bill (22-Nov-2026)
+    { const left = {}; invCands("", v.id, true).forEach((c) => { left[c.dkey] = Number(c.sqft) || 0; }); const use = {};
+      v.lines.filter((ln) => !ln.newdel && ln.dkey).forEach((ln) => { const k = ln.dkey; use[k] = (use[k] || 0) + (Number(ln.sqft) || 0); });
+      for (const k of Object.keys(use)) { const ln = v.lines.find((x) => x.dkey === k), lf = left[k] ?? dkeyAlias(k).map((a) => left[a]).find((x) => x !== undefined);
+        if (lf === undefined) return bad(ln.lot + ": that delivery is already billed in full on another invoice.");
+        if (use[k] > lf + 0.5) return bad(ln.lot + ": only " + fmtN(lf, 2) + " sqft of that delivery is left to bill. Type less, or add the rest as a new delivery if more skins were sent."); } }
     // a delivery typed on the invoice can't take a lot past its pieces either (22-Nov-2026: L521B got 153 of 149 this way)
     { const add = {}; v.lines.filter((ln) => ln.newdel).forEach((ln) => { add[ln.lot] = (add[ln.lot] || 0) + (Number(ln.hides) || 0) + (Number(ln.sides) || 0) / 2; });
       for (const k of Object.keys(add)) { const l = data.lotBy[k]; if (!l || !(Number(l.lot_pcs) > 0)) continue; const dp = deliveredPcs(k);
