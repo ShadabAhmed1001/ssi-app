@@ -349,6 +349,36 @@ main.solo .detail { display: none; }
 .fm h3 { margin: 0; padding: 0; border: 0; }
 .fm .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .fm label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
+#fab { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 30; border: 0; border-radius: 28px; padding: 14px 20px; background: var(--accent); color: #fff; font: inherit; font-size: 16px; font-weight: 700; box-shadow: 0 6px 18px rgb(0 0 0 / .25); }
+#fab span { font-size: 20px; margin-right: 2px; }
+body.sideopen #fab, body:has(#xsheet:not([hidden])) #fab { display: none; }
+@media (max-width: 879px) { body:has(#detail.open) #fab { display: none; } }
+@media (min-width: 1100px) { #fab { bottom: 24px; right: 24px; } }
+.scanbtn { flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 12px; width: 46px; min-height: 44px; display: grid; place-items: center; margin-left: 6px; padding: 0; }
+.scanbtn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+#xsheet { position: fixed; inset: 0; z-index: 80; }
+#xsheet[hidden] { display: none; }
+#xsheet .xs-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .45); }
+#xsheet .xs-box { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; overflow: auto; background: var(--surface); color: var(--ink); border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: grid; gap: 10px; }
+@media (min-width: 700px) { #xsheet .xs-box { left: 50%; right: auto; bottom: auto; top: 8vh; transform: translateX(-50%); width: 520px; border-radius: 18px; } }
+#xsheet h3 { margin: 0; font-size: 18px; }
+.xs-list { display: grid; gap: 8px; }
+.xs-item { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); color: var(--ink); font: inherit; }
+.xs-item b { font-size: 16px; } .xs-item small { color: var(--muted); font-size: 13px; }
+.xs-item:hover { border-color: var(--accent); }
+.xs-find { display: flex; gap: 8px; } .xs-find input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; background: var(--surface); color: var(--ink); }
+.xs-cam { position: relative; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 1 / 1; max-height: 52vh; }
+.xs-cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.xs-cam i { position: absolute; inset: 18%; border: 3px solid rgb(255 255 255 / .85); border-radius: 14px; }
+.todo .alert b { font-size: 17px; }
+body.simple nav.tabs .tab[data-tab="orders"], body.simple nav.tabs .tab[data-tab="purchases"], body.simple nav.tabs .tab[data-tab="chemicals"] { display: none; }
+body.simple #detail [data-invlot], body.simple #detail [data-act="lot"], body.simple #detail [data-form^="skinsio:"], body.simple #detail [data-form^="po_link:"], body.simple #detail [data-form^="lot_move:"], body.simple #detail [data-form^="rework:"], body.simple #detail [data-form^="lot_return:"], body.simple #detail [data-form^="lot_delete:"], body.simple #detail [data-form^="part_ahead:"], body.simple #detail [data-form^="page:"], body.simple #detail [data-form^="skins_edit:"], body.simple #detail [data-form^="no_finish:"], body.simple #detail [data-form^="process:"], body.simple #detail [data-go="orders"], body.simple #detail [data-go="purchases"] { display: none !important; }
+body.simple #detail .lotacts .btn { min-height: 52px; font-size: 16px; }
+details.more { border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: var(--surface); }
+details.more > summary { cursor: pointer; padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--accent); list-style: none; }
+details.more > summary::before { content: "+ "; } details.more[open] > summary::before { content: "− "; }
+details.more[open] { padding-bottom: 10px; display: grid; gap: 10px; }
+.btn.bigbtn { width: 100%; min-height: 56px; font-size: 18px; }
 .fm label.chk { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); } /* tick boxes: the words next to the box, not under it (23-Nov-2026) */
 .fm input, .fm select { font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; min-width: 0; }
 .fmsg { margin: 0; font-size: 13px; font-weight: 600; color: var(--bad); }
@@ -582,7 +612,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
 <div class="app">
   <header class="top">
     <div class="brand"><h1><img id="brandlogo" src="data:image/png;base64,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" alt=""><span id="brandname">SSI Production</span></h1><div class="src" id="src">Preview · read only</div></div>
-    <div class="search"><button class="menubtn" id="menubtn" type="button" aria-label="Menu" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span id="viewname"></span></button><input id="q" type="search" placeholder="Search lot, customer, product, process, PO, chemical…" autocomplete="off" aria-label="Search"></div>
+    <div class="search"><button class="menubtn" id="menubtn" type="button" aria-label="Menu" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span id="viewname"></span></button><input id="q" type="search" placeholder="Search lot, customer, product, process, PO, chemical…" autocomplete="off" aria-label="Search"><button class="scanbtn" id="scanbtn" type="button" aria-label="Scan a lot card" title="Scan a lot card"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg></button></div>
     <nav class="topnav" id="topnav" aria-label="Main menu"></nav>
     <nav class="subnav" id="subnav" aria-label="Pages"></nav>
     <div class="chips" id="chips" role="group" aria-label="Show"></div>
@@ -596,6 +626,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   </main>
   <div class="scrim" id="scrim"></div>
   <aside class="side" id="side" aria-label="Menu" aria-hidden="true" tabindex="-1"></aside>
+  <button id="fab" type="button" aria-label="Add something new"><span aria-hidden="true">+</span> Add</button>
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="today"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></i><b>Today</b><span id="n-today">summary</span></button>
     <button class="tab" role="tab" data-tab="lots"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg></i><b>Production</b><span id="n-lots">lots</span></button>
@@ -699,7 +730,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     s.collection("invset").onSnapshot((snap) => { const d = snap.docs.find((x) => x.id === "main"); invSet = d ? d.data() : {}; }, () => {});
   }
   function showDetailKeep() { if (formOpen) return; const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; }
-  function refresh() { load(); render(); showDetailKeep(); }
+  function refresh() { load(); render(); showDetailKeep(); if (pendLot && data.lotBy[pendLot]) { const k = pendLot; pendLot = ""; openLot(k); } }
   const rows = (sql, p = []) => { const st = db.prepare(sql); st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
   const one = (sql, p = []) => { const r = rows(sql, p); return r.length ? Object.values(r[0])[0] : null; };
 
@@ -1404,11 +1435,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function menuGroup() {
     const k = menuKey(), has = (g) => g.tab === tab || (g.items || []).some(([x]) => x === k);
     if (menuLast && has(menuLast)) return menuLast;
-    return MENU.find(has) || MENU.find((g) => (g.items || []).some(([x]) => x.split("|")[0] === tab)) || null;
+    return menuList().find(has) || menuList().find((g) => (g.items || []).some(([x]) => x.split("|")[0] === tab)) || null;
   }
   function sideHtml() {
     const g0 = menuGroup(), k = menuKey(), open = menuOpenId === null ? g0 && g0.id : menuOpenId;
-    return `<div class="shd"><b><img src="${esc(brandLogo())}" alt=""> ${esc(brandName())}</b><span>v${esc(APP_BUILD.v)}</span></div>` + MENU.map((g) => {
+    return `<div class="shd"><b><img src="${esc(brandLogo())}" alt=""> ${esc(brandName())}</b><span>v${esc(APP_BUILD.v)}</span></div>` + menuList().map((g) => {
       const ic = g.icon || SIDE_ICON[g.id] || (document.querySelector(`.tab[data-tab="${g.tab || g.id}"] i`) || {}).innerHTML || "";
       const cur = g === g0, isOpen = !!g.items && open === g.id;
       return `<div class="sgrp"><button class="shead" ${g.items ? `data-mgrp="${g.id}" aria-expanded="${isOpen}"` : `data-side="${g.tab}|"`} aria-current="${cur && !g.items}"><i aria-hidden="true">${ic}</i>${g.label}${g.items ? `<span class="chev" aria-hidden="true">${isOpen ? "▾" : "▸"}</span>` : ""}</button>`
@@ -1418,8 +1449,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // desktop: the menu across the top, each group a drop-down; the group's pages as tabs under it (v180)
   function navItems(g) { const its = (g.items || []).filter(([x]) => x !== "@onedrive" || (window.__ssiOD && window.__ssiOD.settings)); return g.id === "settings" ? its.concat([["about|", "About"]]) : its; }
   function topNav() {
-    let g0 = menuGroup(); const k = menuKey(); if (g0 && g0.id === "about") g0 = MENU.find((g) => g.id === "settings");
-    $("#topnav").innerHTML = MENU.filter((g) => g.id !== "about").map((g) => {
+    let g0 = menuGroup(); const k = menuKey(); if (g0 && g0.id === "about") g0 = menuList().find((g) => g.id === "settings");
+    $("#topnav").innerHTML = menuList().filter((g) => g.id !== "about").map((g) => {
       const ic = g.icon || SIDE_ICON[g.id] || (document.querySelector(`.tab[data-tab="${g.tab || g.id}"] i`) || {}).innerHTML || "", its = navItems(g), cur = g === g0;
       return `<div class="tn-g${cur ? " cur" : ""}"><button class="tn-h" type="button" data-side="${its.length ? its[0][0] : g.tab + "|"}" data-mg="${g.id}" aria-current="${cur}"${its.length ? ' aria-haspopup="true"' : ""}><i aria-hidden="true">${ic}</i><span>${esc(g.label)}</span>${its.length ? '<b class="tn-c" aria-hidden="true">▾</b>' : ""}</button>`
         + (its.length ? `<div class="tn-dd">${its.map(([x, l]) => `<button class="tn-i" type="button" data-side="${x}" data-mg="${g.id}" aria-current="${cur && x === k}">${esc(l)}</button>`).join("")}</div>` : "") + `</div>`;
@@ -1467,7 +1498,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   // a bottom tab is lit only for pages of its own menu group: Sales, Processes or Settings pages light none (22-Nov-2026)
   function tabLight() { const g = menuGroup(), gid = g ? g.id : tab; document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === tab && (gid === tab || (!!g && g.tab === tab)))); }
-  function render() { render0(); try { tabLight(); pageHits(); } catch (e) { /* never stops the page */ } }
+  function render() { render0(); if (pendLot && data.lotBy && data.lotBy[pendLot]) { const k0 = pendLot; pendLot = ""; try { sessionStorage.removeItem("ssi-pendlot"); } catch (e) { /* none */ } setTimeout(() => openLot(k0), 0); } try { tabLight(); pageHits(); } catch (e) { /* never stops the page */ } }
   function render0() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
@@ -2080,9 +2111,135 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 183, at: "2026-11-23T00:13:07+05:30", notes: "Four phones at once: tells you when another phone's work changed yours (new lot number, over-delivery, stage moved twice), renumbers clashing invoices, joins shared invoice settings; tick-box labels beside the box" };
+  const APP_BUILD = { v: 184, at: "2026-11-23T00:59:11+05:30", notes: "Easier app: + Add with plain tasks, one-tap next stage, short forms, simple mode for the floor, To do now on Today, plain words, QR lot cards (ID-card PDF, A4 sheet) and a QR scanner" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
+  // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
+  const simple = () => { try { return localStorage.getItem("ssi-simple") === "1"; } catch (e) { return false; } };
+  function setSimple(on) { try { localStorage.setItem("ssi-simple", on ? "1" : "0"); } catch (e) { /* private */ } document.body.classList.toggle("simple", on); if (on && !["today", "lots", "settings"].includes(tab)) { go("today"); return; } render(); showDetailKeep(); if (WIDE.matches) topNav(); }
+  const SIMPLE_MENU = [{ id: "today", label: "Today", tab: "today" }, { id: "lots", label: "Lots", items: [["lots|open", "Open lots"], ["lots|ready", "Ready to dispatch"]] }, { id: "settings", label: "Settings", icon: MI.set, items: [["settings|", "Simple or full app"]] }];
+  const menuList = () => simple() ? SIMPLE_MENU : MENU;
+  const lotUrl = (k) => { const base = (window.__ssiOD ? location.origin + location.pathname : "https://shadabahmed1001.github.io/ssi-app/"); return base + "#lot=" + encodeURIComponent(k); };
+  const lotFromText = (t) => { t = String(t || "").trim(); let m = /[#?&]lot=([A-Za-z0-9-]+)/.exec(t); if (m) return UP(decodeURIComponent(m[1])); m = /^(L\d+[A-Z0-9]*)$/i.exec(t); return m ? UP(m[1]) : ""; };
+  var pendLot = pendLot || (() => { try { return sessionStorage.getItem("ssi-pendlot") || ""; } catch (e) { return ""; } })(); // kept over a reload: a QR link can open the app while it is still starting
+  function openLot(k, then) {
+    k = UP(k); if (!data.lotBy[k]) { if (!data.lots.length) { pendLot = k; return; } showToast("No lot " + k + " in the app's data."); return; }
+    formOpen = null; ed = null; flash = ""; stack = []; pick = null; $("#q").value = ""; filter.lots = data.lotBy[k].grp === 1 ? "open" : "all"; sel.lots = k;
+    if (tab !== "lots") go("lots"); else { render(); showDetail(); }
+    if (then) setTimeout(() => then(k), 350);
+  }
+  const clickIn = (q) => { const b = document.querySelector("#detail " + q); if (b) { b.click(); return true; } return false; };
+  // ---- the sheet (+ Add, lot picker, scanner)
+  function sheet(html) { let s = $("#xsheet"); if (!s) { s = document.createElement("div"); s.id = "xsheet"; s.setAttribute("role", "dialog"); s.setAttribute("aria-modal", "true"); document.body.appendChild(s); } s.innerHTML = `<div class="xs-scrim" data-xsclose></div><div class="xs-box">${html}</div>`; s.hidden = false; return s; }
+  function sheetClose() { scanStop(); const s = $("#xsheet"); if (s) { s.hidden = true; s.innerHTML = ""; } }
+  const ADD = [
+    ["stage", "Lot moved to the next stage", "Pick the lot, then one tap", true],
+    ["delivery", "Delivered to a customer", "Pieces and sqft that left", true],
+    ["chem", "Chemicals used for a lot", "Take the recipe's chemicals out of stock", true],
+    ["card", "Print a lot card", "ID-card size, with a QR code", true],
+    ["scan", "Scan a lot card", "Opens the lot", true],
+    ["newlot", "Start a new lot", "From skins already received", false],
+    ["purchase", "Skins received", "A new purchase from a supplier", false],
+    ["chembuy", "Chemicals bought", "A purchase bill for chemicals", false],
+    ["invoice", "Make a bill (invoice)", "For a customer, goes to Tally", false]];
+  function addSheet() {
+    const L = ADD.filter((x) => !simple() || x[3]);
+    sheet(`<h3>What do you want to add?</h3><div class="xs-list">${L.map(([k, t, s]) => `<button class="xs-item" data-addk="${k}"><b>${t}</b><small>${s}</small></button>`).join("")}</div><button class="btn alt" data-xsclose style="width:100%">Close</button>`);
+  }
+  function addGo(k) {
+    if (k === "scan") return scanOpen();
+    if (["stage", "delivery", "chem", "card"].includes(k)) return lotPick(k);
+    sheetClose();
+    if (k === "newlot") { sel.lots = null; stack = []; if (tab !== "lots") go("lots"); openForm("new_lot"); return; }
+    if (k === "purchase") { sel.purchases = null; stack = []; if (tab !== "purchases") go("purchases"); openForm("purchase"); return; }
+    if (k === "chembuy") { sel.chemicals = null; stack = []; if (tab !== "chemicals") go("chemicals"); openForm("chem_purchase"); return; }
+    if (k === "invoice") { menuAct("invnew"); return; }
+  }
+  const PICK_T = { stage: "Which lot moved?", delivery: "Which lot was delivered?", chem: "Chemicals for which lot?", card: "Card for which lot?" };
+  function lotPick(why) {
+    const L = data.lots.filter((l) => l.grp === 1 || (why === "card" && l.grp !== 3)).sort((a, b) => (b.num || 0) - (a.num || 0));
+    const row = (l) => `<button class="xs-item" data-pickl="${esc(l.lot_no)}" data-why="${why}"><b>${esc(l.lot_no)}</b><small>${esc([l.customer, l.product].filter(Boolean).join(" · "))} · ${esc(l.stage || "")} · ${fmtN(l.lot_pcs, 0)} pcs</small></button>`;
+    sheet(`<h3>${PICK_T[why]}</h3><div class="xs-find"><input id="xs-q" type="search" placeholder="Type lot no., customer or product" autocomplete="off" aria-label="Find a lot"><button class="btn" data-scanfor="${why}">Scan card</button></div>
+      <div class="xs-list" id="xs-lots">${L.slice(0, 60).map(row).join("")}</div>${why === "card" ? `<button class="btn alt" data-lotcards="open" style="width:100%">Cards for all ${data.lots.filter((l) => l.grp === 1).length} open lots (A4 sheet)</button>` : ""}<button class="btn alt" data-xsclose style="width:100%">Close</button>`);
+    const q = $("#xs-q"); q.addEventListener("input", () => { const w = q.value.trim().toLowerCase(); $("#xs-lots").innerHTML = L.filter((l) => !w || [l.lot_no, l.customer, l.product, l.stage].join(" ").toLowerCase().includes(w)).slice(0, 60).map(row).join("") || `<p class="empty">No open lot matches.</p>`; });
+  }
+  function lotDo(k, why) {
+    sheetClose();
+    if (why === "card") { lotCards([k]); return; }
+    openLot(k, () => { if (why === "stage") clickIn('[data-act="stage"]'); else if (why === "delivery") clickIn('[data-act="delivery"]'); else if (why === "chem") chemUsed(k); });
+  }
+  function chemUsed(k) { if (clickIn('[data-form^="chem_adjust:' + k + '|BOTH"]') || clickIn('[data-form^="chem_adjust:' + k + '|"]')) return;
+    const l = data.lotBy[k]; showToast(!l || !l.recKey ? k + " has no saved recipe yet, so there is nothing to take out. Save its process first." : "The chemicals of " + k + " are already taken out."); }
+  // ---- lot cards: ID-card size (85.6 x 54 mm) with a QR code that opens the lot
+  async function qrLib() { if (!window.qrcode) await loadJs("qrcode.min.js"); return window.qrcode; }
+  async function lotCards(keys, where) {
+    keys = keys.filter((k) => data.lotBy[k]); if (!keys.length) { showToast("No lot to print."); return; }
+    const JS = await pdfLib(), QR = await qrLib(), W = 85.6, H = 54, one = keys.length === 1;
+    const doc = one ? new JS({ unit: "mm", format: [W, H], orientation: "landscape" }) : new JS({ unit: "mm", format: "a4" });
+    const card = (k, x0, y0) => { const l = data.lotBy[k], q = QR(0, "M"); q.addData(lotUrl(k)); q.make(); const n = q.getModuleCount(), side = 40, s = side / n, qx = x0 + W - side - 4, qy = y0 + 7;
+      doc.setDrawColor(150); doc.setLineWidth(0.2); doc.roundedRect(x0 + 0.5, y0 + 0.5, W - 1, H - 1, 3, 3);
+      doc.setFillColor(0, 0, 0); for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) doc.rect(qx + c * s, qy + r * s, s + 0.02, s + 0.02, "F");
+      doc.setTextColor(90); doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.text(plain(brandName()).toUpperCase() + "  LOT CARD", x0 + 4, y0 + 5.5);
+      doc.setTextColor(0); doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.text(plain(k), x0 + 4, y0 + 16);
+      const tw = W - side - 12; let y = y0 + 22; doc.setFontSize(8.5);
+      const put = (t, bold, sz) => { if (!t) return; doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(sz || 8.5); doc.splitTextToSize(plain(t), tw).slice(0, 2).forEach((ln) => { doc.text(ln, x0 + 4, y); y += (sz || 8.5) * 0.42; }); y += 0.6; };
+      put(l.customer, true, 9.5); put(l.product); put(fmtN(l.lot_pcs, 0) + " pieces" + (l.lot_sqft ? "  |  " + fmtN(l.lot_sqft, 0) + " sqft" : ""), true, 10);
+      put([l.created_at || l.order_date ? "Started " + fmtD(String(l.created_at || l.order_date).slice(0, 10)) : "", l.due_date ? "Due " + fmtD(l.due_date) : ""].filter(Boolean).join("  |  "), false, 7.5);
+      put(l.process_page ? "Recipe: " + l.process_page : "", false, 7);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(90); doc.text("Scan to open this lot in the app", qx + side / 2, qy + side + 3.2, { align: "center" }); doc.setTextColor(0); };
+    if (one) card(keys[0], 0, 0);
+    else { const mx = (210 - 2 * W) / 3, my = (297 - 5 * H) / 6; keys.forEach((k, i) => { const j = i % 10; if (i && !j) doc.addPage(); card(k, mx + (j % 2) * (W + mx), my + Math.floor(j / 2) * (H + my)); }); }
+    await savePdf(doc, (one ? "lot card " + keys[0] : "lot cards " + keys.length) + " " + iso(today) + ".pdf", where || document.body);
+  }
+  // ---- QR scanner: the phone camera; BarcodeDetector where the phone has it, else jsQR
+  let scanSt = null;
+  function scanStop() { if (!scanSt) return; scanSt.stop = true; try { scanSt.stream && scanSt.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* gone */ } scanSt = null; }
+  async function scanOpen(why) {
+    sheet(`<h3>Scan a lot card</h3><div class="xs-cam"><video id="xs-vid" playsinline muted></video><i></i></div><p class="note" id="xs-say">Point the camera at the QR code on the lot card.</p>
+      <div class="xs-find"><input id="xs-type" placeholder="Or type the lot number, e.g. L547" autocomplete="off" aria-label="Lot number"><button class="btn" data-typego="${esc(why || "")}">Open</button></div><button class="btn alt" data-xsclose style="width:100%">Close</button>`);
+    const say = (t) => { const e = $("#xs-say"); if (e) e.textContent = t; };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say("This phone or browser can't use the camera here. Type the lot number instead, or scan the card with the phone's own camera app: it opens the lot in the app."); return; }
+    scanSt = { stop: false };
+    try { const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false }); if (!scanSt) { st.getTracks().forEach((t) => t.stop()); return; } scanSt.stream = st;
+      const v = $("#xs-vid"); v.srcObject = st; await v.play();
+      let det = null; try { if ("BarcodeDetector" in window && (await window.BarcodeDetector.getSupportedFormats()).includes("qr_code")) det = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch (e) { det = null; }
+      if (!det && !window.jsQR) await loadJs("jsqr.min.js");
+      const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+      const tick = async () => { if (!scanSt || scanSt.stop) return; let txt = "";
+        try { if (v.readyState >= 2) { if (det) { const r = await det.detect(v); txt = r[0] ? r[0].rawValue : ""; }
+          else { const w = v.videoWidth, h = v.videoHeight, sc = Math.min(1, 640 / Math.max(w, h)); cv.width = w * sc; cv.height = h * sc; cx.drawImage(v, 0, 0, cv.width, cv.height); const im = cx.getImageData(0, 0, cv.width, cv.height), r = window.jsQR(im.data, im.width, im.height, { inversionAttempts: "dontInvert" }); txt = r ? r.data : ""; } } } catch (e) { /* next frame */ }
+        if (txt) { const k = lotFromText(txt); if (k) { try { navigator.vibrate && navigator.vibrate(60); } catch (e) { /* none */ } sheetClose(); if (why && why !== "scan") lotDo(k, why); else openLot(k); return; } say("That code isn't an SSI lot card."); }
+        setTimeout(tick, det ? 150 : 250); };
+      tick();
+    } catch (e) { say(e && e.name === "NotAllowedError" ? "The camera was not allowed. Allow it in the browser's site settings, or type the lot number." : "The camera could not start (" + (e.message || e) + "). Type the lot number instead."); }
+  }
+  // ---- clicks for all of the above
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t.closest("[data-xsclose]")) { sheetClose(); return; }
+    const a = t.closest("[data-addk]"); if (a) { addGo(a.dataset.addk); return; }
+    const p = t.closest("[data-pickl]"); if (p) { lotDo(p.dataset.pickl, p.dataset.why); return; }
+    const sf = t.closest("[data-scanfor]"); if (sf) { scanOpen(sf.dataset.scanfor); return; }
+    const tg = t.closest("[data-typego]"); if (tg) { const k = lotFromText(($("#xs-type") || {}).value || ""); if (!k) { const s0 = $("#xs-say"); if (s0) s0.textContent = "Type a lot number like L547."; return; } const w = tg.dataset.typego; sheetClose(); if (w && w !== "scan") lotDo(k, w); else openLot(k); return; }
+    if (t.closest("#fab")) { addSheet(); return; }
+    if (t.closest("#scanbtn")) { scanOpen(); return; }
+    const lc = t.closest("[data-lotcard]"); if (lc) { lotCards([lc.dataset.lotcard], $("#detail")).catch((er) => showToast("The card could not be made: " + (er.message || er))); return; }
+    const lcs = t.closest("[data-lotcards]"); if (lcs) { sheetClose(); lotCards(data.lots.filter((l) => l.grp === 1).sort((x, y) => (x.num || 0) - (y.num || 0)).map((l) => l.lot_no)).catch((er) => showToast("The cards could not be made: " + (er.message || er))); return; }
+    const cu = t.closest("[data-chemused]"); if (cu) { chemUsed(cu.dataset.chemused); return; }
+    const sm = t.closest("[data-simple]"); if (sm) { setSimple(sm.dataset.simple === "1"); return; }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#xsheet") && !$("#xsheet").hidden) sheetClose(); });
+  // ---- Today: what to do now
+  function todoHtml() {
+    const open = data.lots.filter((l) => l.grp === 1), over = open.filter((l) => l.maxDays > 0 && l.inStage > l.maxDays && !/ON HOLD/i.test(l.stage || ""));
+    const ready = data.lots.filter((l) => /QC|READY/i.test(l.stage || "") && l.grp === 1), noRec = open.filter((l) => !String(l.process_page || "").trim() && !/PENDING|WET BLUE|SUN DRY/i.test(l.stage || ""));
+    const items = [];
+    if (over.length) items.push([`data-jump="lots" data-f="late"`, `<b>${over.length}</b> lot${over.length === 1 ? " has" : "s have"} been in a stage longer than usual: move ${over.length === 1 ? "it" : "them"} on or note why`]);
+    if (ready.length) items.push([`data-jump="lots" data-f="ready"`, `<b>${ready.length}</b> lot${ready.length === 1 ? " is" : "s are"} ready to deliver`]);
+    if (noRec.length) items.push([`data-jump="lots" data-f="noproc"`, `<b>${noRec.length}</b> lot${noRec.length === 1 ? " has" : "s have"} no recipe yet`]);
+    if (!simple()) { let pend = 0; try { pend = invCands("", null, false).length; } catch (e) { pend = 0; } if (pend) items.push([`data-jump="orders" data-f="invpend"`, `<b>${pend}</b> deliver${pend === 1 ? "y" : "ies"} not billed yet`]); }
+    return `<div class="group">To do now</div><div class="todo">${items.map(([a, t]) => `<button class="alert" ${a}><span>${t}</span><span aria-hidden="true">›</span></button>`).join("") || `<p class="note" style="margin:4px 2px">Nothing waiting. Use <b>+ Add</b> for anything new.</p>`}</div>`;
+  }
   // ---- work of two phones that met after a sync (23-Nov-2026): told to the phone whose work was changed
   const xSeenGet = () => { try { return JSON.parse(localStorage.getItem("ssi-xseen") || "[]"); } catch (e) { return []; } };
   function xNotes() {
@@ -2166,9 +2323,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const maxS = Math.max(1, ...stages.map((s) => s.n)), maxC = Math.max(1, ...cs.map((c) => c.n));
     const bar = (field, x, max) => `<button class="bar" data-pick="${field}" data-v="${esc(x.name)}"><span class="lb">${esc(x.name)}</span><span class="tr"><i class="${x.late ? "bad" : ""}" style="width:${Math.round(x.n / max * 100)}%"></i></span><span class="ct">${x.n}</span></button>`;
     // a new phone with nothing loaded yet: say how to get the data instead of showing empty boards
+    if (data.empty && window.__ssiOD && /clientId/.test(lsGet("ssi-od-settings"))) return `<div class="alert" style="display:block"><b>Getting the data from OneDrive…</b> The first time takes about a minute; the line at the top says how far it has got. If nothing comes, open Menu › Settings › OneDrive.</div>`;
     if (data.empty) return `<div class="alert" style="display:block"><b>No data yet.</b> ${window.__ssiOD ? "Sign in to OneDrive (Menu › Settings › OneDrive) and the app reads the Excel files by itself, or load" : "Load"} the two Excel files (the .xlsm and the .db) from this phone.
       <div class="acts">${canAdmin ? `<button class="btn" data-new="update">Load the Excel files</button>` : `<span class="note">Ask the owner to share the data with you.</span>`}</div></div>`;
-    return `<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
+    return `${todoHtml()}<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
       <div class="group">Lots by status</div><div class="bars">${statusRows().map((s) => bar("status", s, Math.max(1, ...statusRows().map((x) => x.n)))).join("")}</div>
       ${xNotesHtml()}
       ${top.length ? `<div class="group">Check first</div><div data-sec="lots">${top.map(lotCard).join("")}</div>` : ""}
@@ -2394,8 +2552,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // ---------------------------------------------------------------- settings and about
   function settingsView() {
     const row = (attrs, t, sub) => `<button class="alert" ${attrs}><span>${t}${sub ? `<br><small class="note">${sub}</small>` : ""}</span><span aria-hidden="true">›</span></button>`;
-    return `<div class="group">General</div>
+    const out0 = `<div class="group">General</div>
       <div class="setlist">
+      <div class="alert" style="display:block"><b>Simple or full app</b><br><span class="lookpick" role="group" aria-label="Simple or full app"><button data-simple="1" aria-pressed="${simple()}">Simple (for the floor)</button><button data-simple="0" aria-pressed="${!simple()}">Full</button></span><br><small class="note">Simple shows only Today and the lots, with big buttons to move a lot on, record a delivery, take out chemicals, print or scan a lot card. Money, Tally, purchases and settings are hidden. Kept on this phone; switch back here any time.</small></div>${simple() ? "</div>" : ""}`; if (simple()) return out0; return out0 + `
       <div class="alert" style="display:block"><b>Look</b><br><span class="lookpick" role="group" aria-label="Look"><button data-look="classic" aria-pressed="${document.documentElement.dataset.look === "cards" ? "false" : "true"}">Classic</button><button data-look="cards" aria-pressed="${document.documentElement.dataset.look === "cards" ? "true" : "false"}">Compact cards</button></span></div>
       <div class="alert" style="display:block"><b>Theme</b><br><span class="lookpick" role="group" aria-label="Theme">${[["", "Auto"], ["light", "Light"], ["dark", "Dark"], ["leather", "Leather"], ["night", "Night"]].map(([v, t]) => `<button data-theme-set="${v}" aria-pressed="${lsGet("ssi-theme") === v}">${t}</button>`).join("")}</span><br><small class="note">Auto follows the phone's light or dark mode.</small></div>
       <div class="alert" style="display:block"><b>Logo and name</b>
@@ -3708,7 +3867,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const muteTxt = needsAttn(l) ? (isMuted(k) ? `<p class="note">Muted in Needs attention until ${esc(muteUntilText(k))}. <button class="lnk" data-dunmute="${esc(k)}">Unmute</button></p>` : `<p class="note">Shown in Needs attention. <button class="lnk" data-dmute="${esc(k)}">Mute for a day</button></p>`) : "";
     return `<p class="sub">${esc(l.customer)} · ${esc(l.product)}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${muteTxt}
-      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">Move stage</button><button class="btn alt" data-act="delivery">Record delivery</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Process</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="rework:${esc(l.lot_no)}">Rework</button>` : ""}${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
+      ${canAct && !formOpen ? `<div class="acts lotacts">${l.state !== "DUMPED" ? `<button class="btn" data-act="stage">${(() => { const nx = nextStage(l.stage, l); return nx && UP(nx) !== UP(l.stage) && l.state === "OPEN" ? "Move to " + esc(nx) : "Move stage"; })()}</button><button class="btn alt" data-act="delivery">Delivered</button><button class="btn alt" data-chemused="${esc(l.lot_no)}">Chemicals used</button><button class="btn alt" data-lotcard="${esc(l.lot_no)}">Print lot card</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="part_ahead:${esc(l.lot_no)}|">Part sent ahead</button>` : ""}` : ""}${l.delivered > 0 || pd.length || l.state === "OPEN" ? `<button class="btn alt" data-invlot="${esc(l.lot_no)}">Make invoice</button>` : ""}<button class="btn alt" data-act="lot">Edit lot</button><button class="btn alt" data-form="process:${esc(l.lot_no)}">Recipe (process)</button><button class="btn alt" data-form="skinsio:${esc(l.lot_no)}">Add / remove skins</button><button class="btn alt" data-form="po_link:${esc(l.lot_no)}">${l.po ? "Change PO" : "Link to PO"}</button><button class="btn alt" data-form="lot_move:${esc(l.lot_no)}">Split or merge</button>${l.state === "OPEN" ? `<button class="btn alt" data-form="rework:${esc(l.lot_no)}">Rework</button>` : ""}${l.delivered > 0 ? `<button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button>` : ""}${!lotInUse(l.lot_no) ? `<button class="btn alt" data-form="lot_delete:${esc(l.lot_no)}">Delete lot</button>` : ""}</div>` : ""}
       ${canAct && !formOpen && l.state === "OPEN" && l.lot_pcs > 0 && deliveredPcs(k) >= l.lot_pcs - 0.0001 ? `<p class="missing">All ${fmtN(l.lot_pcs, 0)} pcs are delivered. <button class="link" data-markdisp>Mark as Dispatched</button></p>` : ""}
       ${(() => { const pa = entries.filter((e) => e.type === "part_ahead" && isWait(e) && e.lot_no === l.lot_no); return pa.length ? `<p class="note"><span class="wait">Part sent ahead, waiting for Excel:</span> ${pa.map((e) => esc(`${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft to ${e.data.stage} for ${e.data.purpose.toLowerCase()}`)).join("; ")}.</p>` : ""; })()}
       ${store && canWrite && !formOpen && l.state === "ARCHIVED" && returnable(l).s > 0 ? `<div class="acts"><button class="btn alt" data-form="lot_return:${esc(l.lot_no)}">Customer return</button></div>` : ""}
@@ -4297,14 +4456,14 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const has = l.recKey && getRecipe(l.recKey);
       return `<form class="fm" id="fm-process" data-lot="${esc(a)}"><h3>${esc(a)}</h3><p class="note" style="margin:0">${esc([l.customer, l.product].filter(Boolean).join(" · "))}. Now on ${esc(cur || "no process page")}.</p>
       <label>Process page<select id="fo-page">${cur ? "" : opt("", "Pick a page", true)}${pages.map((p) => opt(p, p, normPage(p) === normPage(cur))).join("")}</select></label>
-      <label>Load from<select id="fo-src">${procSrcOpts(cur, a, pick)}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Bring</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
+      <label>Copy the recipe from<select id="fo-src">${procSrcOpts(cur, a, pick)}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Copy these parts</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
       <p class="note" id="fo-hint" style="margin:0">${procHint(l, cur)}</p>
       <p class="note" style="margin:0">The process opens in the editor with this lot's weight and details. Nothing is saved until you press Save recipe${has ? "; saving makes a new version of this lot" : ""}. If you picked another page, the lot moves to it when you save.</p>
       <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Load</button>${has ? `<button class="btn alt" type="button" data-cmpsrc="${esc(l.recKey)}">Compare first</button>` : ""}<button class="btn alt" type="button" data-pageonly>Change page only</button><button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     load: { title: "Load process", html: (a) => { const l = data.lotBy[a], list = pageRecipes(l.process_page);
       if (!list.length) return `<p class="empty">No other saved process on ${esc(l.process_page)}. Use Process to pick another page.</p>`;
       const has = l.recKey && getRecipe(l.recKey);
-      return `<form class="fm" id="fm-load" data-lot="${esc(a)}"><h3>${esc(a)} · ${esc(l.process_page)}</h3><label>Load from<select id="fo-src">${ownFirst(list, a).map((x, i) => recOpt(x, i === 0 ? x.key : "", a)).join("")}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Bring</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
+      return `<form class="fm" id="fm-load" data-lot="${esc(a)}"><h3>${esc(a)} · ${esc(l.process_page)}</h3><label>Copy the recipe from<select id="fo-src">${ownFirst(list, a).map((x, i) => recOpt(x, i === 0 ? x.key : "", a)).join("")}</select></label><div class="lp-parts"><span class="note" style="display:block;margin:0 0 2px">Copy these parts</span><label class="chk"><input type="checkbox" id="lp-c" checked> Crusting</label><label class="chk"><input type="checkbox" id="lp-m" checked> Machinery</label><label class="chk"><input type="checkbox" id="lp-f" checked> Finishing</label><p class="note" style="margin:2px 0 0">Untick a part to keep this lot's own. Taking only some parts keeps the lot on its own process page.</p></div>
       <p class="note" style="margin:0">The process opens in the editor with this lot's weight and details, as in Excel. Nothing is saved until you press Save.${has ? " Saving makes a new version of this lot." : ""}</p>
       <p class="fmsg" id="fm-msg"></p><div class="acts" style="margin:0"><button class="btn" type="submit">Load</button>${has ? `<button class="btn alt" type="button" data-cmpsrc="${esc(l.recKey)}">Compare first</button>` : ""}<button class="btn alt" type="button" data-back>Cancel</button></div></form>`; } },
     compare: { title: "Compare processes", html: (a) => { const [ka, kb0] = a.split("~"), ra = getRecipe(ka); if (!ra) return `<p class="empty">This process could not be found.</p>`;
@@ -4457,13 +4616,14 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <p class="note" style="margin:0">Skins added on the phone and not imported yet aren't listed. Cancel those under Phone entries.</p>${formEnd}</form>`; } },
     new_lot: { title: "New lot", html: (a) => `<form class="fm" id="fm-new_lot"><p class="note" style="margin:0">This lot will be ${esc(nextKey("L"))}. You can use it straight away. ${recMode() ? "If another phone makes a lot at the same moment and takes this number, yours gets the next free one and Today tells you which." : "Excel keeps the number when it imports it, unless the PC used it meanwhile."}</p>
       <label>From purchase<select id="fn-from" data-pinfo="fn-info">${purchOpts(a)}</select></label><p class="note" id="fn-info" style="margin:0">${esc(purchInfo(a))}</p>
-      <div class="two">${numF("fn-pcs", "Pcs")}${numF("fn-sqft", "Sqft")}${dateF("fn-date", "Date", today0())}</div>
+      <div class="two">${numF("fn-pcs", "Pieces")}${numF("fn-sqft", "Sqft")}</div>
       <label>Customer order (PO)<select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
       ${txtF("fn-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer))}${txtF("fn-prod", "Product")}
-      <div class="two">${numF("fn-qty", "Order qty (sqft)")}${txtF("fn-shav", "Shaving")}${txtF("fn-wt", "Weight")}${dateF("fn-odt", "Order date", "")}${dateF("fn-ddt", "Due date", "")}</div>
+      <details class="more"><summary>More details: date, order, due date, stage, recipe, remarks</summary>
+      <div class="two">${dateF("fn-date", "Date", today0())}${numF("fn-qty", "Order qty (sqft)")}${txtF("fn-shav", "Shaving (thickness)")}${txtF("fn-wt", "Weight")}${dateF("fn-odt", "Order date", "")}${dateF("fn-ddt", "Due date", "")}</div>
       <label>Stage<select id="fn-stage">${stageNames().filter((n) => !["DISPATCHED", "DUMPED", "PURCHASE"].includes(n.toUpperCase())).map((n) => opt(n, n, n === "Pending - Not Started")).join("")}</select></label>
-      <label>Process page<select id="fn-page"><option value="">None</option>${data.pages.map((p) => opt(p, p)).join("")}</select></label>
-      ${txtF("fn-rem", "Remarks")}${txtF("fn-note", "Note on the skins")}${formEnd}</form>` },
+      <label>Recipe (process page)<select id="fn-page"><option value="">None</option>${data.pages.map((p) => opt(p, p)).join("")}</select></label>
+      ${txtF("fn-rem", "Remarks")}${txtF("fn-note", "Note on the skins")}</details>${formEnd}</form>` },
     purchase: { title: "New purchase", html: () => `<form class="fm" id="fm-purchase"><p class="note" style="margin:0">Excel gives the purchase number when this is imported.</p>
       ${txtF("fp-sup", "Supplier", "suplist")}${dl("suplist", data.purchases.map((p) => p.supplier))}
       <div class="two">${txtF("fp-ani", "Animal", "anilist")}${dl("anilist", data.purchases.map((p) => p.animal))}${txtF("fp-gra", "Grade")}${numF("fp-pcs", "Pcs")}${numF("fp-sqft", "Sqft")}${numF("fp-rate", "Rate")}
@@ -5978,11 +6138,14 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function stageForm(l) {
     const nx = nextStage(l.stage, l), R = lotRoute(l), own = pageRoute(l.process_page), inR = new Set(R.map(UP)), others = stageNames().filter((n) => !inR.has(UP(n)));
     const o = (n) => `<option value="${esc(n)}"${n === (presetStage || nx) ? " selected" : ""}>${esc(n)}${phaseOf(n) ? " · " + phaseOf(n).toLowerCase() : ""}</option>`;
+    const one = !presetStage && nx && UP(nx) !== UP(l.stage);
     return `<form class="fm" id="fm-stage" data-lot="${esc(l.lot_no)}"><h3>Move ${esc(l.lot_no)} from ${esc(l.stage || "no stage")}</h3>
+      ${one ? `<button class="btn bigbtn" type="button" data-nextgo="${esc(nx)}">Move to ${esc(nx)}</button><p class="note" style="margin:0">One tap moves it today. For another stage, a date or a note, open the part below.</p>` : ""}
+      <details class="more"${one ? "" : " open"}><summary>${one ? "Another stage, date or note" : "Stage, date and note"}</summary>
       <div class="two"><label>New stage<select id="fs-stage"><optgroup label="${own ? "Stages of " + esc(own.page) : "Standard order"}">${R.map(o).join("")}</optgroup><optgroup label="Other stages">${others.map(o).join("")}</optgroup></select></label>
       <label>Date<input id="fs-date" type="date" value="${iso(today)}"></label></div>
-      <label>Note<input id="fs-note" autocomplete="off"></label><p class="fmsg" id="fm-msg"></p>
-      <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
+      <label>Note<input id="fs-note" autocomplete="off"></label></details><p class="fmsg" id="fm-msg"></p>
+      <div class="acts" style="margin:0"><button class="btn${one ? " alt" : ""}" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
   function deliveryForm(l) {
     const o = delEdit ? delOld(delEdit) : null, v = (x) => o ? ` value="${esc(x ?? "")}"` : "";
@@ -5992,9 +6155,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       ${o ? `<p class="note" style="margin:0">Was ${hs(o.hides, o.sides)} hides, ${fmtN(o.sqft, 2)} sqft${o.doc ? ", bill " + esc(o.doc) : ""}. ${o.k.startsWith("d:") ? "Excel cancels the old delivery and records this one, so the history keeps both." : "This replaces the entry still waiting for Excel."}${iv.length ? " On " + iv.map((x) => esc(invName(x))).join(", ") + (iv.some((x) => x.tally_no) ? "; an invoice already in Tally must be corrected in Tally too." : "; the invoice is updated.") : ""}</p>` : ""}
       ${(() => { const dp = deliveredPcs(l.lot_no) - (o ? Number(o.hides || 0) + Number(o.sides || 0) / 2 : 0), ds = deliveredSqft(l.lot_no) - (o ? Number(o.sqft) || 0 : 0), lp = Number(l.lot_pcs) || 0, left = +(lp - dp).toFixed(1);
         return `<p class="calc" style="margin:0">Pending delivery: <b class="${left < 0 ? "late" : ""}">${fmtN(left, 1)} pcs</b> of ${fmtN(lp, 0)}${dp ? ` · ${fmtN(dp, 1)} pcs, ${fmtN(ds, 2)} sqft delivered${o ? " (not counting this one)" : ""}` : " · nothing delivered yet"}</p>`; })()}
-      <div class="two"><label>Hides (whole)<input id="fd-pcs" type="number" min="0" step="any" inputmode="decimal"${v(o && o.hides)}></label><label>Sides<input id="fd-sides" type="number" min="0" step="1" inputmode="numeric"${v(o && o.sides)}></label><label>Sqft<input id="fd-sqft" type="number" min="0" step="any" inputmode="decimal"${v(o && o.sqft)}></label>
+      <div class="two"><label>Hides (whole pieces)<input id="fd-pcs" type="number" min="0" step="any" inputmode="decimal"${v(o && o.hides)}></label><label>Sqft<input id="fd-sqft" type="number" min="0" step="any" inputmode="decimal"${v(o && o.sqft)}></label></div>
+      <details class="more"${o && (o.sides || o.doc || o.note) ? " open" : ""}><summary>Sides, date, bill no. or note</summary>
+      <div class="two"><label>Sides (half pieces)<input id="fd-sides" type="number" min="0" step="1" inputmode="numeric"${v(o && o.sides)}></label>
       <label>Date<input id="fd-date" type="date" value="${o ? esc(o.date) : iso(today)}"></label><label>Bill / challan no<input id="fd-doc" autocomplete="off"${v(o && o.doc)}></label></div>
-      <label>Note<input id="fd-note" autocomplete="off"${v(o && o.note)}></label>${o ? `<label>What was wrong${o.k.startsWith("d:") ? "" : " (optional)"}<input id="fd-why" autocomplete="off" placeholder="for example wrong sqft typed"></label>` : ""}<p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
+      <label>Note<input id="fd-note" autocomplete="off"${v(o && o.note)}></label></details>${o ? `<label>What was wrong${o.k.startsWith("d:") ? "" : " (optional)"}<input id="fd-why" autocomplete="off" placeholder="for example wrong sqft typed"></label>` : ""}<p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
   function checkDate(v) {
@@ -6249,8 +6414,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const can = store && canWrite && !p.isNew, canUse = store && canWrite && p.isNew && p.leftP > 0;
     return `<p class="sub">${esc(p.supplier)} · ${esc([p.animal, p.grade].filter(Boolean).join(" - "))}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}
-      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button>${(Number(p.inS) || 0) - purBilled(k) > 0.5 ? `<button class="btn alt" data-form="pur_bill:${esc(k)}">Link Tally bill</button>` : ""}${pbWbOf(k).length || purBillsOf(k).length ? "" : `<button class="btn alt" data-form="chem_purchase:${esc(k)}">Make Tally bill</button>`}<button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
-      ${canUse ? `<div class="acts"><button class="btn" data-form="skins:${esc(k)}">Give skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">New lot from this</button></div>` : ""}
+      ${can ? `<div class="acts"><button class="btn alt" data-form="purchase_edit:${esc(k)}">Edit purchase</button><button class="btn" data-form="skins:${esc(k)}">Add these skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">Start a new lot with them</button><button class="btn alt" data-form="purchase_split:${esc(k)}">Split</button>${(Number(p.inS) || 0) - purBilled(k) > 0.5 ? `<button class="btn alt" data-form="pur_bill:${esc(k)}">Link Tally bill</button>` : ""}${pbWbOf(k).length || purBillsOf(k).length ? "" : `<button class="btn alt" data-form="chem_purchase:${esc(k)}">Make Tally bill</button>`}<button class="btn alt" data-form="purchase_merge:${esc(k)}">Merge into another</button><button class="btn alt" data-form="purchase_close:${esc(k)}">${p.closed_on ? "Re-open" : "Close"}</button>${p.outP <= 0.0001 && p.outS <= 0.005 ? `<button class="btn alt" data-form="purchase_delete:${esc(k)}">Delete</button>` : ""}${backRows(k).length ? `<button class="btn alt" data-form="skins_back:${esc(k)}">Take skins back</button>` : ""}${/^RETURNED /i.test(p.supplier || "") && !p.isNew && p.leftP > 0 ? `<button class="btn" data-form="return_sale:${esc(k)}">Sell rejected skins</button>` : ""}</div>` : ""}
+      ${canUse ? `<div class="acts"><button class="btn" data-form="skins:${esc(k)}">Add these skins to a lot</button><button class="btn alt" data-form="new_lot:${esc(k)}">Start a new lot with them</button></div>` : ""}
       ${p.isNew ? `<p class="note"><span class="wait">New purchase, waiting for Excel.</span> You can already give its skins to lots. To change the purchase itself, cancel its entry in Entries and make it again. The number was given on the phone. Excel keeps it unless that number was used on the PC in the meantime; then it takes the next free one.</p>` : p.phone ? `<p class="note"><span class="wait">Includes phone entries not in Excel yet.</span></p>` : ""}
       ${kv([["Received", fmtD(p.received_date)], ["Rate", p.rate ? "₹" + fmtN(p.rate, 2) + (String(p.rate_basis).toUpperCase() === "PC" ? " / pc" : " / sqft") : ""],
         ["Pcs in", fmtN(p.inP, 0)], ["Sqft in", fmtN(p.inS, 2)], ["Pcs left", `<span class="${p.over ? "late" : ""}">${fmtN(p.leftP, 0)}</span>`], ["Sqft left", fmtN(p.leftS, 2)],
@@ -6401,11 +6566,13 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   function route(force) {
     const h = typeof force === "string" ? force : (location.hash || "").replace("#", "");
+    if (/^lot=/i.test(h)) { const k = lotFromText("#" + h); try { history.replaceState(history.state, "", "#lots"); } catch (e) { /* none */ } tab = "lots"; if (k) { if (data.lotBy && data.lotBy[k]) { sel.lots = k; filter.lots = data.lotBy[k].grp === 1 ? "open" : "all"; } else { pendLot = k; try { sessionStorage.setItem("ssi-pendlot", k); } catch (e) { /* none */ } } } render(); showDetail(); return; }
     tab = TABS.includes(h) ? h : "today";
 
     render(); showDetail();
   }
   window.addEventListener("hashchange", route);
+  document.body.classList.toggle("simple", simple());
   // phone back button: each open page or form gets a history entry, so Back closes it like the in-app Back button
   // every history entry the app adds is remembered with its page depth and tab, so Back and in-app closes stay in step
   let hist = [{ d: 0, h: location.hash || "#today" }], hIdx = 0, histSkip = 0;
@@ -6469,6 +6636,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   $("#topnav").addEventListener("click", navClick); $("#subnav").addEventListener("click", navClick);
   $("#side").addEventListener("click", (e) => sideClick(e));
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-xseen]"); if (!b) return; try { localStorage.setItem("ssi-xseen", JSON.stringify(xSeenGet().concat([b.dataset.xseen]).slice(-400))); } catch (er) { /* private */ } render(); });
+  // one tap: the next stage, today (23-Nov-2026)
+  document.addEventListener("click", (e) => { const b = e.target.closest("[data-nextgo]"); if (!b) return; const f = b.closest("form"), sel0 = f && f.querySelector("#fs-stage"); if (!sel0) return;
+    sel0.value = b.dataset.nextgo; const d = f.querySelector("#fs-date"); if (d) d.value = iso(today); b.disabled = true; setTimeout(() => { b.disabled = false; }, 2500);
+    if (f.requestSubmit) f.requestSubmit(); else f.querySelector("[type=submit]").click(); });
   // party ledgers: which parties, which entries, which dates, PDF (22-Nov-2026)
   document.addEventListener("click", (e) => {
     const b = e.target.closest("[data-plshow],[data-plkind],[data-plreset],[data-plpdf]"); if (!b) return;
@@ -6482,7 +6653,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const mg = e.target.closest("[data-mgrp]");
     if (mg) { const id = mg.dataset.mgrp, g0 = menuGroup(), was = menuOpenId === null ? g0 && g0.id : menuOpenId; menuOpenId = was === id ? "" : id; $("#side").innerHTML = sideHtml(); return; }
     const b = e.target.closest("[data-side]"); if (!b) return;
-    menuLast = MENU.find((g) => g.id === b.dataset.mg) || MENU.find((g) => g.tab && b.dataset.side === g.tab + "|") || null; menuOpenId = null;
+    menuLast = menuList().find((g) => g.id === b.dataset.mg) || menuList().find((g) => g.tab && b.dataset.side === g.tab + "|") || null; menuOpenId = null;
     if (b.dataset.side.charAt(0) === "@") { menuAct(b.dataset.side.slice(1)); return; }
     const [t, k] = b.dataset.side.split("|");
     if (k) filter[t] = k;
