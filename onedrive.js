@@ -249,6 +249,14 @@
     const app = cfg().entriesFolder + "/app", by = me.name || me.id, since = new Date().toISOString();
     if (to === "app") {
       await sync("records"); while (syncing) await new Promise((r) => setTimeout(r, 300));
+      // only when Excel is up to date: nothing waiting, Excel's import running and clean, its data the latest one (22-Nov-2026)
+      const stop = H.switchCheck ? H.switchCheck() : [], xs = meta.excelStatus || null;
+      if (lastErr) stop.push("The last sync had a problem: " + lastErr);
+      if (!xs || !xs.at) stop.push("Excel hasn't reported its automatic import yet. Open the production workbook on the PC.");
+      else { const at = new Date(String(xs.at).replace(" ", "T")), age = (Date.now() - at.getTime()) / 60000, lim = (Number(xs.every) || 5) * 3 + 35;
+        if (!(age < lim)) stop.push("Excel last looked for phone entries at " + at.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + ". Open the production workbook on the PC and wait for it to look again.");
+        const m = /Not imported:\s*(\d+)/.exec(String(xs.report || "")); if (m && Number(m[1]) > 0) stop.push("Excel couldn't import " + m[1] + " entr" + (m[1] === "1" ? "y" : "ies") + " last time. Sort " + (m[1] === "1" ? "it" : "them") + " out first (Phone entries waiting)."); }
+      if (stop.length) throw new Error("Not switched yet. Excel must be up to date first:\n• " + stop.join("\n• "));
       // entries still waiting for Excel are simply written by the app from now on (Excel never marks them imported in app mode)
       const bytes = H.baseBytes(); if (!bytes) throw new Error("Excel's data is not loaded yet.");
       const name = "base-" + since.replace(/[-:]/g, "").slice(0, 15) + ".sqlite";

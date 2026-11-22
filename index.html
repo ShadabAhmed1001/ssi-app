@@ -217,6 +217,7 @@ label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .ipr.iplot { background: var(--bg2, rgba(127,127,127,.06)); }
 .ipr.iplot .note { display: block; }
 .ipr.sub { padding-left: 34px; }
+#recmsg { white-space: pre-line; }
 .pvw { position: fixed; inset: 0; z-index: 10000; background: #3a3d42; display: flex; flex-direction: column; }
 .pvw-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); background: var(--surface); color: var(--ink); }
 .pvw-top b { flex: 1 1 100%; font-size: 14px; word-break: break-all; }
@@ -1901,7 +1902,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 177, at: "2026-11-22T16:00:01+05:30", notes: "Invoice: bill part of a delivery; adding a lot with delivered-not-billed skins asks: from the delivered quantity or a new delivery" };
+  const APP_BUILD = { v: 178, at: "2026-11-22T16:10:21+05:30", notes: "Switch to app-kept records only when Excel is up to date" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2195,7 +2196,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       <br>Side by side, last 30 days: ${d30.length ? `${n} entries written by the app as Excel imported them, ${bad ? `<span class="late">${bad} difference${bad === 1 ? "" : "s"}</span>` : `<span class="ok">all the same as Excel</span>`}` : "no check yet"}.
       ${wait ? `<br>${wait} entr${wait === 1 ? "y is" : "ies are"} still waiting for Excel. The app writes ${wait === 1 ? "it" : "them"} into its own records when it takes over.` : ""}
       <br>After the switch every entry shows on every phone straight away. Excel only sends Tally's chemical stock and prices, and posts Tally bills and invoices.
-      <div class="acts"><button class="btn alt" data-recmode="app">Let the app keep the records</button></div><small class="note">For every phone. The app's records are saved in OneDrive › Phone entries › app. Give them back to Excel any time.</small><p class="note" id="recmsg"></p></div>`;
+      <div class="acts"><button class="btn alt" data-recmode="app">Let the app keep the records</button></div><small class="note">For every phone. The app's records are saved in OneDrive › Phone entries › app. Give them back to Excel any time. The switch happens only when Excel is up to date: no phone entry waiting, Excel's automatic import running with nothing refused, its workbook saved, and no lot delivered beyond its size. Excel then locks itself and stays a backup copy that takes every entry.</small><p class="note" id="recmsg"></p></div>`;
   }
   function aboutView() {
     return `<div class="group">About</div><div class="appver" style="text-align:left"><b>${esc(appVer())}</b>${APP_BUILD.notes ? `<br>What's new: ${esc(APP_BUILD.notes)}` : ""}<br>Data: ${esc(data.asOf || "not loaded")}<br>S S International · production, dispatch, invoices and chemicals<br>${window.__ssiCheckUpdate ? `<button class="btn alt" data-chkupd style="margin-top:8px">Check for updates</button> <span id="updmsg"></span>` : "This Claude version always opens the latest release."}</div>`;
@@ -2918,6 +2919,14 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     pending: () => (recMode() ? data.pending.filter((e) => TALLY_TYPES.includes(e.type)) : data.pending).length,
     chemDiffs: () => data.lots.map((l) => [l.lot_no, l.state, l.stage, chemChanges(l, chemState(l)).length]).filter((x) => x[3]),
     exportCsv: (mirror) => exportCsv(mirror),
+    // before the app takes the records over, Excel must be up to date (22-Nov-2026): what still stands in the way
+    switchCheck: () => { const out = [], n = data.pending.filter((e) => !APP_ONLY.includes(e.type)).length;
+      if (n) out.push(n + (n === 1 ? " phone entry is" : " phone entries are") + " still waiting for Excel. Let Excel import " + (n === 1 ? "it" : "them") + " first (Sales › Sync with Excel and Tally now, or wait a few minutes).");
+      let u = null; try { u = JSON.parse(one("SELECT value FROM meta WHERE key='unsaved_imports'") || "null"); } catch (e) { u = null; }
+      if (u && u.n) out.push("Excel imported " + u.n + " entr" + (u.n === 1 ? "y" : "ies") + " but its workbook wasn't saved afterwards. Save the workbook on the PC first.");
+      const bad = data.lots.length ? healthItems().filter((x) => x.area === "Delivery").length : 0;
+      if (bad) out.push(bad + (bad === 1 ? " lot has" : " lots have") + " more delivered than the lot (Health check). Correct " + (bad === 1 ? "it" : "them") + " first, so the app starts from clean records.");
+      return out; },
     // app keeps the records: how many entries Excel's backup copy hasn't taken, and how many of those are over an hour old
     mirrorBehind: (m) => { const L = mirrorList(m), old = Date.now() - 36e5; return { n: L.length, old: L.filter((e) => Date.parse(e.created_at) < old).length }; },
     // Tally's figures from Excel's small file app/tally-data.json instead of the whole workbook (22-Nov-2026)
