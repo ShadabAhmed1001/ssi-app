@@ -424,12 +424,17 @@
   // ---------- small status bar + settings ----------
   let bar = null;
   let lastSt = { text: "Starting…", tone: "" };
+  // the last finished sync (good or not) stays visible under "Syncing…" and the other in-progress lines (22-Nov-2026)
+  let lastDone = (() => { try { return JSON.parse(localStorage.getItem("ssi-od-lastdone") || "null"); } catch (e) { return null; } })();
+  const lastLine = () => (lastSt.tone === "" && lastDone ? "Last sync: " + lastDone.text : "");
   function setStatus(text, tone, action) {
     lastSt = { text, tone: tone || "" };
-    const ss = document.querySelector(".odset .odst"); if (ss) { ss.className = "odst odbar " + (tone || ""); ss.querySelector(".odt").textContent = text; }
+    if (tone === "ok" || tone === "bad") { lastDone = { text, tone, at: new Date().toISOString() }; try { localStorage.setItem("ssi-od-lastdone", JSON.stringify(lastDone)); } catch (e) {} }
+    const ss = document.querySelector(".odset .odst"); if (ss) { ss.className = "odst odbar " + (tone || ""); ss.querySelector(".odt").textContent = text; const l = ss.querySelector(".odl"); if (l) l.textContent = lastLine(); }
     if (!bar) return;
     bar.className = "odbar " + (tone || "");
     bar.querySelector(".odt").textContent = text;
+    { const l = bar.querySelector(".odl"); if (l) l.textContent = lastLine(); }
     const b = bar.querySelector(".oda");
     b.hidden = (syncing && !action) || (!configured() && !action);
     b.textContent = action === "signin" ? "Sign in" : action === "retry" ? "Try again" : configured() ? (account ? "Sync now" : "Sign in") : "Set up";
@@ -441,14 +446,14 @@
     const css = document.createElement("style");
     css.textContent = `.odbar{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;line-height:1.3;padding:6px 0 0;margin-top:6px;border-top:1px solid var(--line,#d5dde2);color:var(--muted,#5b6b74)}
 .odbar.ok .odt::before{content:"● ";color:#2e9d4a}.odbar.warn .odt::before{content:"● ";color:#b26a00}.odbar.bad .odt::before{content:"● ";color:#c62828}
-.odbar .odb{display:flex;gap:6px;flex:none}
+.odbar .odb{display:flex;gap:6px;flex:none}.odl{display:block;font-size:11px;opacity:.8;margin-top:2px}.odl:empty{display:none}
 .odbar button{font:inherit;font-weight:600;border:1px solid var(--line,#c9d3d9);background:var(--surface,#fff);color:var(--ink,#15232b);border-radius:8px;padding:4px 10px}
 .odset{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;z-index:9999}.odset form{background:var(--surface,#fff);color:var(--ink,#15232b);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:10px;font-size:14px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box}.pdfbox{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box}
 .odset label{display:grid;gap:4px}.odset input{font:inherit;padding:8px;background:var(--bg,#fff);color:var(--ink,#15232b);border:1px solid var(--line,#c9d3d9);border-radius:8px}.odset .row2{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;position:sticky;bottom:-16px;margin:0 -16px -16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface,#fff);border-top:1px solid var(--line,#c9d3d9)}
 .odup{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:9998;display:flex;gap:10px;align-items:center;justify-content:space-between;background:#0f3b4c;color:#fff;border-radius:12px;padding:10px 14px;font-size:14px}.odup button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:6px 12px}`;
     document.head.appendChild(css);
     bar = document.createElement("div"); bar.className = "odbar"; bar.setAttribute("role", "status");
-    bar.innerHTML = `<span class="odt">Starting…</span><span class="odb"><button class="oda" type="button"></button><button class="ods" type="button" aria-label="OneDrive settings">⚙</button></span>`;
+    bar.innerHTML = `<span><span class="odt">Starting…</span><span class="odl"></span></span><span class="odb"><button class="oda" type="button"></button><button class="ods" type="button" aria-label="OneDrive settings">⚙</button></span>`;
     const head = document.querySelector("header") || document.body.firstElementChild;
     head ? head.appendChild(bar) : document.body.prepend(bar);
     bar.querySelector(".oda").onclick = (e) => { const a = e.target.dataset.act; if (a === "signin") signIn(); else if (a === "settings") settings(); else sync("button"); };
@@ -459,7 +464,7 @@
     const f = (k, label, hint) => `<label>${label}<input name="${k}" value="${String(c[k] || "").replace(/"/g, "&quot;")}"${hint ? ` placeholder="${hint}"` : ""}></label>`;
     const act = bar ? bar.querySelector(".oda").dataset.act : "";
     w.innerHTML = `<form><span style="font-size:12px;color:var(--muted,#567)">${window.__ssiVersion ? window.__ssiVersion().replace(/</g, "&lt;") : ""}</span><strong>OneDrive</strong>
-      <div class="odst odbar ${lastSt.tone}" style="margin:0;padding:0;border:0"><span class="odt">${String(lastSt.text).replace(/</g, "&lt;")}</span>${configured() ? `<button type="button" data-x="act">${act === "signin" ? "Sign in" : account ? "Sync now" : "Sign in"}</button>` : ""}</div>
+      <div class="odst odbar ${lastSt.tone}" style="margin:0;padding:0;border:0"><span><span class="odt">${String(lastSt.text).replace(/</g, "&lt;")}</span><span class="odl">${lastLine().replace(/</g, "&lt;")}</span></span>${configured() ? `<button type="button" data-x="act">${act === "signin" ? "Sign in" : account ? "Sync now" : "Sign in"}</button>` : ""}</div>
       ${account ? `<span>Signed in as ${(me.name || "").replace(/</g, "&lt;")}</span>` : ""}
       ${f("userName", "Your name (shown on entries)")}
       ${f("dataFolder", "Folder with the Excel workbook and database", "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
@@ -468,7 +473,8 @@
       ${f("pdfFolder", "PDF folder (every PDF made in the app is saved here)", c.dataFolder || "SSI/PRODUCTION/Leather/PROCESSES/2025-26")}
       ${f("invoiceFolder", "Invoice PDF folder (empty = the PDF folder above)", "")}
       ${f("tallyFolder", "Tally files folder (Excel's XML DATA; Excel sends files from here to Tally)", TALLY_DIR0)}
-      <label style="display:flex;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> For PDFs, show the box to name them and save to OneDrive or share (off: share straight away)</label>
+      <label style="display:flex;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" name="pdfAutoOn" ${c.pdfAuto === "off" ? "" : "checked"} style="width:auto"> For PDFs, show the PDF box</label>
+      <span style="font-size:12px;color:var(--muted,#567);margin-top:-6px">Ticked: every PDF button opens a box where you can <b>Preview</b> the PDF without saving, change its name, save it to OneDrive, share or download it. Unticked: the PDF goes straight to Share, with no box and no preview.</span>
       ${f("syncMinutes", "Check OneDrive every (minutes, while the app is open)", "2")}
       ${(() => { const x = meta.excelStatus; if (!x || !x.at) return `<span style="font-size:12px;color:var(--muted,#567)">Excel's automatic import has not reported yet.</span>`;
         const e = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
