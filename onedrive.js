@@ -109,13 +109,14 @@
     box.innerHTML = '<div class="pdfbox" style="background:var(--surface,#fff);color:var(--ink,#111);border-radius:14px;padding:16px;max-width:440px;width:100%;font:15px system-ui"><b style="display:block;margin-bottom:8px">PDF ready</b>' +
       '<label style="display:block;font-size:13px;color:var(--muted,#666)">File name<input id="pdfname" value="' + e(base) + '" autocomplete="off" style="display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:10px;font-size:16px;border:1px solid var(--line,#ccc);border-radius:8px;background:var(--bg,#fff);color:inherit"></label>' +
       '<span id="pdfsaid" style="display:block;font-size:13px;margin:8px 0 2px;color:var(--muted,#666);word-break:break-all">' + (folder ? "OneDrive folder: " + e(folder.replace(/\//g, " › ")) : "No OneDrive PDF folder is set (OneDrive settings).") + "</span>" +
-      btn("od", "Save to OneDrive", true) + btn("share", "Share PDF…") + btn("dl", "Download") + '<button data-a="x" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:inherit">Close</button></div>';
+      btn("pv", "Preview") + btn("od", "Save to OneDrive", true) + btn("share", "Share PDF…") + btn("dl", "Download") + '<button data-a="x" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:inherit">Close</button></div>';
     document.body.appendChild(box);
     const said = box.querySelector("#pdfsaid"), nameIn = box.querySelector("#pdfname");
     const file = () => { const n = (nameIn.value.trim() || base).replace(/[\\/:*?"<>|#%]+/g, "-").replace(/\.pdf$/i, ""); return new File([data], n + ".pdf", { type: "application/pdf" }); };
     box.addEventListener("click", async (ev) => { const b = ev.target.closest("button"), a = b && b.dataset.a; if (!a) return;
       if (a === "x") { box.remove(); res(saved); return; }
       if (a === "dl") { dlFile(file()); return; }
+      if (a === "pv") { if (window.__ssiPreview) window.__ssiPreview(data, file().name, []); return; } // look at it without saving (22-Nov-2026)
       if (a === "share") { const r = await tryShare(file()); if (r !== "ok" && r !== "abort") dlFile(file()); return; }
       if (a === "od") { b.disabled = true; said.style.color = "var(--muted,#666)"; said.textContent = "Saving…"; const r = await pdfToOneDrive(file(), kind); b.disabled = false;
         said.textContent = r.ok ? "Saved: " + r.said : r.said; said.style.color = r.ok ? "var(--ok,#1d7a46)" : "#b45309"; if (r.ok) { saved = true; b.textContent = "Saved ✓ (save again)"; } } });

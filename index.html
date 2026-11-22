@@ -217,6 +217,13 @@ label.chk { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .ipr.iplot { background: var(--bg2, rgba(127,127,127,.06)); }
 .ipr.iplot .note { display: block; }
 .ipr.sub { padding-left: 34px; }
+.pvw { position: fixed; inset: 0; z-index: 10000; background: #3a3d42; display: flex; flex-direction: column; }
+.pvw-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); background: var(--surface); color: var(--ink); }
+.pvw-top b { flex: 1 1 100%; font-size: 14px; word-break: break-all; }
+.pvw-top .btn { flex: 1 1 0; min-width: 90px; margin: 0; }
+.pvw-pages { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; -webkit-overflow-scrolling: touch; }
+.pvw-pages canvas { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); max-width: 100%; }
+.pvw-pages .note { color: #eee; }
 .ipr input { width: 20px; height: 20px; flex: none; margin-top: 2px; }
 .rwsteps { margin-top: 8px; border-left: 3px solid var(--line); padding-left: 10px; }
 .rws { margin: 0 0 10px; }
@@ -1894,7 +1901,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 173, at: "2026-11-22T01:55:20+05:30", notes: "Skins purchases: Link Tally bill with sqft per link (purchase and bill keep what's left open); supplier to Tally party list" };
+  const APP_BUILD = { v: 174, at: "2026-11-22T14:10:08+05:30", notes: "PDF preview without saving: Preview button in the PDF box; in Claude a PDF opens as a preview with Save" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -2545,7 +2552,27 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return window.jspdf.jsPDF;
   }
   const plain = (t) => String(t ?? "").replace(/[^\x20-\x7E\n]/g, " ");
+  // PDF preview without saving (22-Nov-2026): the pages are drawn on this screen with pdf.js; nothing is saved or shared
+  async function pdfPreview(data, name, acts) {
+    const box = document.createElement("div"); box.className = "pvw";
+    box.innerHTML = `<div class="pvw-top"><b>${esc(name)}</b>${(acts || []).map((a, i) => `<button class="btn" data-pv="${i}">${esc(a.t)}</button>`).join("")}<button class="btn alt" data-pv="x">Close</button></div><div class="pvw-pages"><p class="note">Opening the preview…</p></div>`;
+    document.body.appendChild(box);
+    const close = () => box.remove();
+    box.addEventListener("click", (ev) => { const b = ev.target.closest("[data-pv]"); if (!b) return; if (b.dataset.pv === "x") return close(); const a = acts[Number(b.dataset.pv)]; close(); a.fn(); });
+    const pages = box.querySelector(".pvw-pages");
+    try {
+      if (!window.pdfjsLib) { await loadJs("pdf.min.js"); window.pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdf.worker.min.js", document.baseURI).href; }
+      const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(data.slice ? data.slice(0) : data) }).promise; pages.innerHTML = "";
+      const w = Math.min(pages.clientWidth - 16, 900), dpr = Math.min(window.devicePixelRatio || 1, 2);
+      for (let n = 1; n <= pdf.numPages; n++) { if (!box.isConnected) return;
+        const pg = await pdf.getPage(n), v0 = pg.getViewport({ scale: 1 }), v = pg.getViewport({ scale: (w / v0.width) * dpr }), c = document.createElement("canvas");
+        c.width = v.width; c.height = v.height; c.style.width = w + "px"; pages.appendChild(c); await pg.render({ canvasContext: c.getContext("2d"), viewport: v }).promise; }
+    } catch (e) { pages.innerHTML = `<p class="note">The preview could not be shown here (${esc(e.message || e)}).</p>`; }
+  }
+  window.__ssiPreview = pdfPreview;
   async function savePdf(doc, name, where, kind) {
+    // in Claude (no OneDrive box) the PDF opens as a preview first, with Save on it; the app's own PDF box has its own Preview button
+    if (!window.__ssiOD && !savePdf.direct) { const buf = doc.output("arraybuffer"); return pdfPreview(buf, name, [{ t: "Save", fn: () => { savePdf.direct = true; savePdf(doc, name, where, kind).finally(() => { savePdf.direct = false; }); } }]); }
     const dlp = window.claude ? await window.claude.use("downloads") : null;
     if (!dlp) { where.textContent = "Saving files isn't available in this view."; return; }
     try { await dlp.save(Object.assign({ filename: name, data: doc.output("arraybuffer") }, kind && window.__ssiOD ? { kind } : {})); lastPdfOk = Date.now(); } catch (e) { if (e.code !== "declined") where.textContent = "The PDF could not be saved."; }
