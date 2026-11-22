@@ -1901,7 +1901,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 174, at: "2026-11-22T14:10:08+05:30", notes: "PDF preview without saving: Preview button in the PDF box; in Claude a PDF opens as a preview with Save" };
+  const APP_BUILD = { v: 175, at: "2026-11-22T15:08:40+05:30", notes: "Deliveries can't exceed the lot's pieces (form and invoice); a lot can't go past FAT until its process is saved; Today names the health items" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   function todayView() {
@@ -1927,7 +1927,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     if (arch.length && !data.pending.some((e) => e.type === "archive")) checks.push(["data-new=\"archive\"", arch.length + (arch.length === 1 ? " dispatched lot can" : " dispatched lots can") + " be archived"]);
     if (bkOverdue()) checks.push(["data-jump=\"settings\" data-f=\"\"", lastBackup() ? "This phone's last backup was " + bkAgo(lastBackup()) + ". Back it up in Settings" : "This phone has never been backed up. Back it up in Settings"]);
     const hc = healthItems().length;
-    if (hc) checks.push(["data-jump=\"health\" data-f=\"\"", "Health check: " + hc + (hc === 1 ? " item" : " items") + " to look at"]);
+    if (hc) { const hi = healthItems(); checks.push(["data-jump=\"health\" data-f=\"\"", "Health check: " + hi.slice(0, 3).map((x) => (x.lot ? x.lot + " " : "") + x.text.charAt(0).toLowerCase() + x.text.slice(1)).join("; ") + (hc > 3 ? " and " + (hc - 3) + " more" : "")]); }
     if (data.pending.length) checks.push(["data-jump=\"entries\" data-f=\"pending\"", data.pending.length + (data.pending.length === 1 ? " phone entry is" : " phone entries are") + " waiting for Excel"]);
     if (overGiven) checks.push(["data-jump=\"purchases\" data-f=\"over\"", overGiven + (overGiven === 1 ? " purchase has" : " purchases have") + " more skins given out than received"]);
     if (neg) checks.push(["data-jump=\"chemicals\" data-f=\"neg\"", neg + (neg === 1 ? " chemical shows" : " chemicals show") + " negative stock"]);
@@ -2959,6 +2959,7 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     data.lots.filter((l) => l.state !== "ARCHIVED" && !l.isNew).forEach((l) => {
       [["ORDER DATE", l.order_date], ["DUE DATE", l.due_date], ["STAGE UPDATED", l.stage_since]].forEach(([n, v]) => { const w = badDate(v); if (w) out.push({ lot: l.lot_no, area: "Tracker", text: n + " " + w, todo: "Correct the date with Edit lot" }); });
       const stU = (l.stage || "").toUpperCase(), wait = stU === "PURCHASE" || stU.startsWith("ON HOLD");
+      if (l.state === "OPEN" && String(l.process_page || "").trim() && !l.recKey && pastFat(l, l.stage)) out.push({ lot: l.lot_no, area: "Chemicals", text: `At ${l.stage} but its process (${l.process_page}) isn't saved`, todo: "Open the lot › Process and save it" });
       const dp = deliveredPcs(l.lot_no); if (l.lot_pcs > 0 && dp > l.lot_pcs + 0.0001) out.push({ lot: l.lot_no, area: "Delivery", text: `Delivered ${fmtN(dp, 0)} pcs but the lot has ${fmtN(l.lot_pcs, 0)}`, todo: "Check the deliveries" });
       if (l.state !== "OPEN") return;
       if (!l.stage) out.push({ lot: l.lot_no, area: "Tracker", text: "No stage", todo: "Use Move stage" });
@@ -4616,6 +4617,10 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (!(Number(ln.rate) > 0)) return bad(ln.lot + ": type the rate.");
       if (ln.newdel) { if (!(Number(ln.hides) > 0 || Number(ln.sides) > 0)) return bad(ln.lot + ": type the hides and / or sides delivered."); const dd = checkDate(ln.ddate || v.date); if (dd) return bad(ln.lot + ": " + dd); }
     }
+    // a delivery typed on the invoice can't take a lot past its pieces either (22-Nov-2026: L521B got 153 of 149 this way)
+    { const add = {}; v.lines.filter((ln) => ln.newdel).forEach((ln) => { add[ln.lot] = (add[ln.lot] || 0) + (Number(ln.hides) || 0) + (Number(ln.sides) || 0) / 2; });
+      for (const k of Object.keys(add)) { const l = data.lotBy[k]; if (!l || !(Number(l.lot_pcs) > 0)) continue; const dp = deliveredPcs(k);
+        if (dp + add[k] > Number(l.lot_pcs) + 0.0001) return bad(k + ": only " + fmtN(Math.max(0, l.lot_pcs - dp), 1) + " pcs are left to deliver (lot " + fmtN(l.lot_pcs, 0) + " pcs, " + fmtN(dp, 1) + " delivered). If the lot really has more pieces, correct its size first with Edit lot."); } }
     btn.disabled = true; msg.textContent = "";
     try {
       const temp = v.temp, now = new Date().toISOString(), ref = v.id ? store.doc("invoices/" + v.id) : store.collection("invoices").doc();
@@ -5694,6 +5699,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
     return { sec, text: l0.lot_no + " can't move to " + to + " until " + sec.map((x) => x.toLowerCase()).join(" and ") + " chemicals are adjusted. If only part of the lot is going ahead (approval sample, finish setup), record it instead; the lot stays where it is." };
   }
   // has a lot with an open rework gone past the stage where the fault was found? (product's order when both are on it)
+  // is this stage after FAT for the lot? the product's own order when both are on it (NAILING shares FAT's gate number), else the guide's numbers
+  function pastFat(l, st) { const a = routeIdx(l, "FAT"), b = routeIdx(l, st); if (a >= 0 && b >= 0) return b > a; const f = gateNo("FAT"), x = gateNo(st), U = UP(st); return !!f && (x > f || (x === f && U !== "FAT" && !/^(PENDING|WET BLUE|SUN DRY|SPLIT|SHAV)/.test(U))); }
   function rwPast(l, at, to) { const a = routeIdx(l, at), b = routeIdx(l, to); if (a >= 0 && b >= 0) return b > a; const x = gateNo(at), y = gateNo(to); return !!x && y > x; }
   function stageForm(l) {
     const nx = nextStage(l.stage, l), R = lotRoute(l), own = pageRoute(l.process_page), inR = new Set(R.map(UP)), others = stageNames().filter((n) => !inR.has(UP(n)));
@@ -5758,6 +5765,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       { const why = stageGate(l, to);
         if (why && why.rw) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="rework_done:${esc(why.rw.key)}">Rework done</button></span>`; return; }
         if (why) { msg.innerHTML = esc(why.text) + `<span class="acts" style="margin:6px 0 0;display:flex">${why.sec.includes("FINISHING") ? `<button class="btn alt" type="button" data-form="no_finish:${esc(rwSrc(l).lot_no)}">No finishing</button>` : ""}${why.sec.map((x) => `<button class="btn" type="button" data-form="chem_adjust:${esc(l.lot_no)}|${x}">Adjust ${x.toLowerCase()}</button>`).join("")}<button class="btn alt" type="button" data-form="part_ahead:${esc(l.lot_no)}|${esc(to)}">Record part sent ahead</button></span>`; return; } }
+      // past FAT the lot's process must be saved, not only its page linked (22-Nov-2026: L553 went to NAILING with none)
+      if (trackedLot(l.lot_no) && String(l.process_page || "").trim() && !l.recKey && pastFat(l, to) && !["ON HOLD", "DUMPED"].includes(up)) { msg.innerHTML = esc(l.lot_no + "'s process (" + l.process_page + ") hasn't been saved yet. Save it before the lot moves past FAT, so its chemicals can be recorded.") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Process</button></span>`; return; }
       if (NEED_PROC.includes(up) && trackedLot(l.lot_no) && !String(l.process_page || "").trim()) { msg.innerHTML = esc(l.lot_no + " has no process page yet. Link a process before it moves to " + to + ".") + `<span class="acts" style="margin:6px 0 0;display:flex"><button class="btn" type="button" data-form="process:${esc(l.lot_no)}">Process</button></span>`; return; }
       if (up === "DISPATCHED") {
         const { dp, sh } = notDelivered(l);
@@ -5785,7 +5794,8 @@ details.sec.sub > summary { font-size: 13px; padding: 10px 2px; }
       if (old && old.k.startsWith("d:") && !why) { msg.textContent = "Say what was wrong, so the correction is clear in Excel."; $("#fd-why").focus(); return; }
       if (old && Math.abs(old.pcs - pcs) < 0.001 && Math.abs(old.sqft - sqft) < 0.001 && old.date === date && old.doc === $("#fd-doc").value.trim() && old.note === $("#fd-note").value.trim()) { msg.textContent = "Nothing changed."; return; }
       const dp = deliveredPcs(l.lot_no) - (old ? Number(old.pcs) || 0 : 0);
-      if (l.lot_pcs > 0 && dp + pcs > l.lot_pcs + 0.0001 && warnOnce(f, "That makes " + fmtN(dp + pcs, 0) + " pcs delivered, more than the lot's " + fmtN(l.lot_pcs, 0) + ".")) return;
+      // more pieces than the lot has can't be delivered (22-Nov-2026, was only a warning): correct the lot size first if the lot really is bigger
+      if (l.lot_pcs > 0 && dp + pcs > l.lot_pcs + 0.0001) { msg.textContent = "Only " + fmtN(Math.max(0, l.lot_pcs - dp), 1) + " pcs of " + l.lot_no + " are left to deliver (lot " + fmtN(l.lot_pcs, 0) + " pcs, " + fmtN(dp, 1) + " delivered). If the lot really has more pieces, correct its size first with Edit lot."; return; }
       { const over = poLines(l.lot_no).filter((x) => Number(x.q) > 0 && x.del - (old ? Number(old.sqft) || 0 : 0) + sqft > Number(x.q) * 1.05);
         if (over.length && warnOnce(f, over.map((x) => "PO " + x.po_no + " " + x.item + ": " + fmtN(x.del + sqft, 0) + " sqft delivered against " + fmtN(x.q, 0) + " ordered").join("; ") + ". Save again if that's right.")) return; }
       body = { type: "delivery", lot_no: l.lot_no, entry_date: date, pcs, sqft, doc_no: $("#fd-doc").value.trim(), note: [sideNote, $("#fd-note").value.trim()].filter(Boolean).join(" ") };
