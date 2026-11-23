@@ -946,6 +946,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (b) { const same = (x, y, num) => num ? Math.abs((Number(x) || 0) - (Number(y) || 0)) < 0.005 : UP(String(x ?? "").trim()) === UP(String(y ?? "").trim());
         if (("item" in b && !same(cur.item, b.item)) || ("qty" in b && !same(cur.qty_sqft, b.qty, 1)) || ("rate" in b && !same(cur.rate, b.rate, 1)) || ("customer" in b && !same(cur.customer, b.customer))) throw new Error("the item was changed after this entry was made"); }
       enRun("UPDATE orders SET po_date=?, customer=? WHERE id=?", [String(d.po_date || "").slice(0, 10), d.customer ?? cur.customer, cur.order_id]);
+      if (String(d.po_no || "").trim()) { const nP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), now = enOne("SELECT po_no FROM orders WHERE id=?", [cur.order_id]);
+        if (now && nP(now.po_no) !== nP(d.po_no)) { if (rows("SELECT po_no FROM orders WHERE id<>?", [cur.order_id]).some((r) => nP(r.po_no) === nP(d.po_no))) throw new Error("PO " + d.po_no + " is already on the list");
+          enRun("UPDATE orders SET po_no=?, po_norm=? WHERE id=?", [String(d.po_no).trim(), nP(d.po_no), cur.order_id]); } }
       enRun("UPDATE order_lines SET item=?, hsn=?, qty_sqft=?, rate=?, amount=? WHERE id=?", [d.item, d.hsn, Number(d.qty) || 0, Number(d.rate) || 0, Number(d.amount) || 0, id]); },
     order_close(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
       if (d.close === "1") enRun("UPDATE order_lines SET closed_on=?, closed_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET closed_on=NULL WHERE id=?", [id]); },
@@ -1268,7 +1271,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       data.shares.filter((x) => x.line_id != null).forEach((x) => { const a = (links[x.line_id] = links[x.line_id] || []); if (!a.includes(x.lot_no)) a.push(x.lot_no); }); }
     const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
     data.orders = rows("SELECT l.*, o.po_no, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id").map((o) => {
-      orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }); });
+      orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }, d.po_no ? { po_no: d.po_no } : {}); });
       orderCl.forEach((e) => { if (Number(e.line_id) === o.id) { o.closed_on = e.data.close === "1" ? iso(today) : null; o.phone = true; } });
       orderSh.forEach((e) => { if (Number(e.line_id) === o.id) { o.short_on = e.data.close === "1" ? iso(today) : null; o.short_note = e.data.note || ""; o.phone = true; } });
       return o; }).concat(synthLines).map((o) => {
@@ -2115,7 +2118,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 187, at: "2026-11-23T22:24:55+05:30", notes: "crusting gate by the product's stage order (NAILING etc.); rework parts use parent's process" };
+  const APP_BUILD = { v: 188, at: "2026-11-24T00:13:45+05:30", notes: "Edit PO (number, date, customer, item, qty, rate; also a new PO waiting); no blank page after deleting a PO" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4531,9 +4534,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       return `<form class="fm" id="fm-purchase_edit" data-key="${esc(a)}"><h3>${esc(p.purchase_no)}</h3>${q0("fe-sup", "Supplier", p.supplier, ' list="suplist"')}${dl("suplist", data.purchases.map((x) => x.supplier))}
       <div class="two">${q0("fe-ani", "Animal", p.animal, ' list="anilist"')}${dl("anilist", data.purchases.map((x) => x.animal))}${q0("fe-gra", "Grade", p.grade)}${q0("fe-pcs", "Pcs received", p.inP, n)}${q0("fe-sqft", "Sqft received", p.inS, n)}${q0("fe-rate", "Rate", p.rate, n)}
       <label>Rate per<select id="fe-per">${["SQFT", "PC"].map((x) => opt(x, x, String(p.rate_basis || "SQFT").toUpperCase() === x)).join("")}</select></label>${dateF("fe-date", "Received", String(p.received_date || "").slice(0, 10))}</div>${formEnd}</form>`; } },
-    order_edit: { title: "Edit order item", html: (a) => { const o = data.orders.find((x) => String(x.id) === a), q0 = (id, lb, val, attrs) => `<label>${lb}<input id="${id}" value="${v(val)}" autocomplete="off"${attrs || ""}></label>`, n = ' type="number" step="any" min="0" inputmode="decimal"';
-      return `<form class="fm" id="fm-order_edit" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3>${q0("fx-item", "Item", o.item)}<div class="two">${q0("fx-qty", "Order qty (sqft)", o.qty_sqft, n)}${q0("fx-rate", "Rate", o.rate, n)}${q0("fx-amt", "Amount", o.amount, n)}${q0("fx-hsn", "HSN", o.hsn)}${dateF("fx-date", "PO date", String(o.po_date || "").slice(0, 10))}</div>${q0("fx-cust", "Customer", o.customer, ' list="custlist"')}${dl("custlist", data.orders.map((x) => x.customer))}
-      <p class="note" style="margin:0">PO date and customer apply to every item of this PO. Amount follows qty and rate unless you change it.</p>${formEnd}</form>`; } },
+    order_edit: { title: "Edit PO", html: (a) => { const o = data.orders.find((x) => String(x.id) === a), q0 = (id, lb, val, attrs) => `<label>${lb}<input id="${id}" value="${v(val)}" autocomplete="off"${attrs || ""}></label>`, n = ' type="number" step="any" min="0" inputmode="decimal"';
+      return `<form class="fm" id="fm-order_edit" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3>${q0("fx-po", "PO number", o.po_no)}${q0("fx-item", "Item", o.item)}<div class="two">${q0("fx-qty", "Order qty (sqft)", o.qty_sqft, n)}${q0("fx-rate", "Rate", o.rate, n)}${q0("fx-amt", "Amount", o.amount, n)}${q0("fx-hsn", "HSN", o.hsn)}${dateF("fx-date", "PO date", String(o.po_date || "").slice(0, 10))}</div>${q0("fx-cust", "Customer", o.customer, ' list="custlist"')}${dl("custlist", data.orders.map((x) => x.customer))}
+      <p class="note" style="margin:0">PO number, PO date and customer apply to every item of this PO. Amount follows qty and rate unless you change it.</p>${formEnd}</form>`; } },
     order_close: { title: "Archive order item", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
       return `<form class="fm" id="fm-order_close" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.closed_on ? "This opens the item again." : "The item leaves the open list. You can reopen it later."}</p>${o.closed_on ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
     order_short: { title: "Close short", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
@@ -5715,7 +5718,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
   }
   const recWord = (t) => !recMode() || typeof t !== "string" ? t : t.replace(/\s*(It is|They are) waiting for Excel\./g, "").replace(/,? ?waiting for Excel/gi, "");
-  function closeForm(done) { formOpen = null; ed = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; flash = recWord(done); refresh(); showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
+  function closeForm(done) { formOpen = null; ed = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; flash = recWord(done); refresh();
+    // the thing that was open is gone (PO deleted, lot deleted): back to the list, not a blank page (24-Nov-2026)
+    if (sel[tab] && ((tab === "orders" && !data.orders.some((x) => String(x.id) === String(sel[tab]))) || (tab === "lots" && !data.lotBy[sel[tab]]))) { sel[tab] = null; stack.length = 0; refresh(); } showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
   const nextUncounted = (name) => { const ws = words($("#q").value), l = openAudit().lines.filter((c) => match(c.n, ws) && c.n !== name && !countOf(c.n)).sort((a, b) => a.n.localeCompare(b.n)); return (l.find((c) => c.n.localeCompare(name) > 0) || l[0] || {}).n || ""; };
   function countCalc(f) {
     const full = $("#fq-full").value, loose = $("#fq-loose").value, recv = $("#fq-recv").value, out = $("#fq-calc");
@@ -5893,14 +5898,26 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("Purchase saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
     }
     if (f.id === "fm-order_edit") {
+      const normP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), po = need("#fx-po"), oo = data.orders.find((x) => String(x.id) === f.dataset.id);
+      if (!po) return bad("Enter the PO number.");
+      if (normP(po) !== normP(oo.po_no) && data.orders.some((x) => x !== oo && (x.order_id ?? x.id) !== (oo.order_id ?? oo.id) && normP(x.po_no) === normP(po))) return bad("PO " + po + " is already on the list.");
+      if (oo.isNew) { // a PO still waiting: change its own entry (24-Nov-2026)
+        const eid = String(oo.id).replace(/^n/, "").replace(/l\d+$/, ""), k = String(oo.id).match(/l\d+$/)[0], e0 = entries.find((e) => e.id === eid && e.type === "order" && isWait(e));
+        if (!e0) return bad("This PO has just been recorded. Open it again and edit.");
+        const date = need("#fx-date"), item = need("#fx-item"), qty = numOf("#fx-qty"), rate = numOf("#fx-rate"); let amount = numOf("#fx-amt");
+        if (!date) return bad("Enter the PO date."); if (!need("#fx-cust")) return bad("Enter the customer."); if (!item) return bad("Enter the item."); if (qty <= 0) return bad("Order qty must be above 0.");
+        if ((qty !== (oo.qty_sqft || 0) || rate !== (oo.rate || 0)) && amount === (oo.amount || 0)) amount = +(qty * rate).toFixed(2);
+        const d = Object.assign({}, e0.data, { po, date, customer: need("#fx-cust") }); d[k] = [item, qty, rate, need("#fx-hsn"), amount].join("~^~");
+        btn.disabled = true; writeEntry(store.doc("entries/" + e0.id), Object.assign({}, e0, { data: d, lot_no: "PO " + po })).then(() => { sel[tab] = "n" + e0.id + k; closeForm("PO changed."); }, (x) => { btn.disabled = false; msg.textContent = saveError(x); }); return;
+      }
       const id = Number(f.dataset.id), b0 = rows("SELECT l.*, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id WHERE l.id=?", [id])[0], date = need("#fx-date"), item = need("#fx-item");
       if (!date) return bad("Enter the PO date."); if (!need("#fx-cust")) return bad("Enter the customer."); if (!item) return bad("Enter the item.");
       const qty = numOf("#fx-qty"), rate = numOf("#fx-rate"); let amount = numOf("#fx-amt"); if (qty <= 0) return bad("Order qty must be above 0.");
       const o0 = data.orders.find((x) => x.id === id); if ((qty !== (o0.qty_sqft || 0) || rate !== (o0.rate || 0)) && amount === (o0.amount || 0)) amount = +(qty * rate).toFixed(2);
       const old = entries.find((e) => e.status === "pending" && e.type === "order_edit" && Number(e.data.line_id) === id);
-      const body = { type: "order_edit", lot_no: "PO " + b0.order_id, data: { line_id: id, order_id: b0.order_id, po_date: date, customer: need("#fx-cust"), item, hsn: need("#fx-hsn"), qty, rate, amount }, before: { item: b0.item ?? "", qty: b0.qty_sqft ?? 0, rate: b0.rate ?? 0, customer: b0.customer ?? "" }, status: "pending", entered_by: uid, created_at: old ? old.created_at : new Date().toISOString() };
-      body.lot_no = "PO " + data.orders.find((x) => x.id === id).po_no;
-      btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("Order item saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
+      const body = { type: "order_edit", lot_no: "PO " + b0.order_id, data: { line_id: id, order_id: b0.order_id, po_no: po, po_date: date, customer: need("#fx-cust"), item, hsn: need("#fx-hsn"), qty, rate, amount }, before: { item: b0.item ?? "", qty: b0.qty_sqft ?? 0, rate: b0.rate ?? 0, customer: b0.customer ?? "" }, status: "pending", entered_by: uid, created_at: old ? old.created_at : new Date().toISOString() };
+      body.lot_no = "PO " + po;
+      btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("PO saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
     }
     if (f.id === "fm-skins_edit") return saveSkinsEdit(f, msg, btn);
     if (f.id === "fm-skins_back") {
@@ -6332,7 +6349,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (e.type === "route_set") { const n = String(d.steps || "").split("~^~").filter(Boolean); return n.length ? "Stages of " + d.page + ": " + n.join(" → ") : d.page + ": standard stage order"; }
     if (e.type === "no_finish") return d.on === "0" ? "Finishing needed after all" + (d.reason ? ": " + d.reason : "") : "No finishing" + (d.reason ? ": " + d.reason : "");
     if (e.type === "purchase_edit") return `Edit purchase: ${d.supplier}, ${d.pcs} pcs, ${d.sqft} sqft`;
-    if (e.type === "order_edit") return `Edit item: ${d.item}, ${fmtN(d.qty, 0)} sqft`;
+    if (e.type === "order_edit") return `Edit PO${d.po_no ? " " + d.po_no : ""}: ${d.item}, ${fmtN(d.qty, 0)} sqft`;
     if (e.type === "order_close") return d.close === "1" ? "Archive order item" : "Reopen order item";
     if (e.type === "order_short") return d.close === "1" ? "Close order item short" : "Reopen order balance";
     if (e.type === "po_unlink") return "Unlink from PO";
@@ -6416,11 +6433,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       l.process_page ? `Process: ${l.process_page}` : "", `Data of ${fmtD(one("SELECT value FROM meta WHERE key='data_as_of'"))}`].filter(Boolean).join("\n");
   }
   function orderDetail(id) {
-    const o = data.orders.find((x) => String(x.id) === String(id)); if (!o) return "";
+    const o = data.orders.find((x) => String(x.id) === String(id)); if (!o) return `<p class="empty">This PO is not on the list any more (it was deleted). <button class="btn alt" data-back>Back to the list</button></p>`;
     return `<p class="sub">${esc(o.customer)} · ${esc(o.item)}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${o.isNew ? `<p class="note"><span class="wait">New PO, waiting for Excel.</span></p>` : ""}
       ${store && canWrite && o.grp === 1 && !o.closed_on && !o.short ? `<div class="acts"><button class="btn" data-polink="${esc(o.id)}">Link a lot</button><button class="btn alt" data-ponew="${esc(o.id)}">Start a new lot</button></div>` : ""}
-      ${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit item</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
+      ${store && canWrite && o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button></div>` : ""}${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
       ${o.phone ? `<p class="note"><span class="wait">Changes here are not in Excel yet.</span></p>` : ""}
       ${kv([["PO date", fmtD(o.po_date)], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
         ["Amount", o.amount ? "₹" + fmtN(o.amount, 0) : ""], ["HSN", esc(o.hsn)], ["In lots", fmtN(o.sqf, 2) + " sqft"], ["Delivered", fmtN(o.delv, 2) + " sqft"],
@@ -6551,6 +6568,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   function showDetail() { showDetail0(); try { polish(); } catch (e) { console.error(e); } }
   function showDetail0() {
+    // a PO that was open has gone (deleted here or on another phone): show the list (24-Nov-2026)
+    if (tab === "orders" && sel.orders && !formOpen && data.orders && !data.orders.some((x) => String(x.id) === String(sel.orders))) { sel.orders = null; stack.length = 0; }
     queueMicrotask(edRatesRefresh); queueMicrotask(syncHist);
     const k = sel[tab], d = $("#detail");
     if (!k) { d.classList.remove("open"); d.innerHTML = `<p class="empty">Pick an item to see everything about it.</p>`; return; }
