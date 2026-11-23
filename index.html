@@ -1259,6 +1259,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const links = {}; rows("SELECT * FROM lot_orders").filter((r) => !linksE.some((e) => e.lot_no === r.lot_no) && !unlinkE.some((e) => e.lot_no === r.lot_no && Number(e.line_id) === r.line_id && !linkedLater(e))).forEach((r) => (links[r.line_id] = links[r.line_id] || []).push(r.lot_no));
     linksE.forEach((e) => (links[e.line_id] = links[e.line_id] || []).push(e.lot_no));
     nlPo.forEach((r) => { const a = (links[r.line_id] = links[r.line_id] || []); if (!a.includes(r.lot_no)) a.push(r.lot_no); });
+    // a part split off for rework still belongs to its parent's PO until it is merged back
+    (data.reworks || []).forEach((r) => { if (r.whole || r.status === "MERGED") return; const c = lotBy[r.lot], p = lotBy[r.parent]; if (!c || !p || c.po || !p.po || unlinkE.some((e) => e.lot_no === r.lot)) return;
+      c.po = Object.assign({}, p.po, { lot_no: r.lot, viaRework: true }); const a = (links[c.po.line_id] = links[c.po.line_id] || []); if (!a.includes(r.lot)) a.push(r.lot); });
     { let t = []; try { t = rows("SELECT * FROM lot_po_shares"); } catch (x) { t = []; }
       data.shares = t.map((r) => ({ lot_no: UP(r.lot_no), line_id: r.line_id == null ? null : Number(r.line_id), from_line: Number(r.from_line), sqft: Number(r.sqft) || 0, reason: r.reason || "", at: r.created_at, by: r.made_by }))
         .concat(of("po_share").map((e) => { const d = e.data || {}; return { lot_no: UP(d.lot), line_id: d.to_line ? Number(d.to_line) : null, from_line: Number(d.line_id), sqft: Number(d.sqft) || 0, reason: d.reason || "", at: e.created_at, by: e.entered_by, eid: e.id }; }));
@@ -2112,7 +2115,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 185, at: "2026-11-23T14:24:37+05:30", notes: "+ Add per page; optional PO number; PO search; PO page: Link a lot, Start a new lot" };
+  const APP_BUILD = { v: 186, at: "2026-11-23T21:52:19+05:30", notes: "pending invoicing no double rows; bottom tabs open their main list; rework part counts under parent PO" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4743,7 +4746,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (entries.some((e) => e.type === "delivery_void" && e.status === "pending" && Number(e.data.id) === d.id)) return;
       push(Object.assign({ dkey: "d:" + d.id, lot: d.lot_no, date: d.del_date, pcs: d.pcs, sqft: d.sqft, doc: d.doc_no, wait: false, opening: d.entry_type === "OPENING" }, sidesOf(d.note, d.pcs)));
     });
-    entries.filter((e) => e.type === "delivery" && e.status === "pending").forEach((e) => {
+    entries.filter((e) => e.type === "delivery" && isWait(e)).forEach((e) => {
       dated[e.lot_no] = 1; const l = data.lotBy[e.lot_no] || {}; if (c && UP(l.customer) !== c) return;
       push(Object.assign({ dkey: "e:" + e.id, lot: e.lot_no, date: e.entry_date, pcs: e.pcs, sqft: e.sqft, doc: e.doc_no, wait: true }, sidesOf(e.note, e.pcs)));
     });
@@ -5500,7 +5503,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       dated[d.lot_no] = (dated[d.lot_no] || 0) + sg * Math.abs(d.sqft);
       add({ key: "d:" + d.id, src: ret ? "return" : "rec", date: d.del_date, lot: d.lot_no, pcs: sg * Math.abs(d.pcs), hides: sg * s.hides, sides: sg * s.sides, sqft: sg * Math.abs(d.sqft), doc: d.doc_no || "" });
     });
-    entries.filter((e) => e.type === "delivery" && e.status === "pending").forEach((e) => { const s = sidesOf(e.note, e.pcs);
+    entries.filter((e) => e.type === "delivery" && isWait(e)).forEach((e) => { const s = sidesOf(e.note, e.pcs);
       add({ key: "e:" + e.id, src: "wait", date: e.entry_date, lot: e.lot_no, pcs: Number(e.pcs) || 0, hides: s.hides, sides: s.sides, sqft: Number(e.sqft) || 0, doc: e.doc_no || "" }); });
     data.lots.forEach((l) => {
       const rem = r2((Number(l.delivered_est) || 0) - (dated[l.lot_no] || 0)); if (rem < 1) return;
@@ -6695,7 +6698,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     $("#list").scrollTop = 0;
   }
   document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; if (sideOpen) { e.stopPropagation(); closeSide(); return; } const m = $("#detail .msheet:not([hidden])"); if (m) { e.stopPropagation(); m.hidden = true; } }, true);
-  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => { stack = []; pick = null; formOpen = null; if (b.dataset.tab === "today") $("#q").value = ""; go(b.dataset.tab); }));
+  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => { stack = []; pick = null; formOpen = null; if (b.dataset.tab === "today") $("#q").value = ""; const c0 = (CHIPS[b.dataset.tab] || [])[0]; if (c0) { filter[b.dataset.tab] = c0[0]; sel[b.dataset.tab] = null; } go(b.dataset.tab); }));
   $("#chips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; if (b.dataset.clear) pick = null; else filter[tab] = b.dataset.f; render(); });
   $("#q").addEventListener("input", render);
   async function tableCsv() {
