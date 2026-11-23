@@ -374,6 +374,7 @@ body.sideopen #fab, body:has(#xsheet:not([hidden])) #fab { display: none; }
 body.simple nav.tabs .tab[data-tab="orders"], body.simple nav.tabs .tab[data-tab="purchases"], body.simple nav.tabs .tab[data-tab="chemicals"] { display: none; }
 body.simple #detail [data-invlot], body.simple #detail [data-act="lot"], body.simple #detail [data-form^="skinsio:"], body.simple #detail [data-form^="po_link:"], body.simple #detail [data-form^="lot_move:"], body.simple #detail [data-form^="rework:"], body.simple #detail [data-form^="lot_return:"], body.simple #detail [data-form^="lot_delete:"], body.simple #detail [data-form^="part_ahead:"], body.simple #detail [data-form^="page:"], body.simple #detail [data-form^="skins_edit:"], body.simple #detail [data-form^="no_finish:"], body.simple #detail [data-form^="process:"], body.simple #detail [data-go="orders"], body.simple #detail [data-go="purchases"] { display: none !important; }
 body.simple #detail .lotacts .btn { min-height: 52px; font-size: 16px; }
+.selfind { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); margin-bottom: 4px; }
 details.more { border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: var(--surface); }
 details.more > summary { cursor: pointer; padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--accent); list-style: none; }
 details.more > summary::before { content: "+ "; } details.more[open] > summary::before { content: "− "; }
@@ -2111,7 +2112,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 185, at: "2026-11-23T13:51:04+05:30", notes: "+ Add offers what belongs to the page you are on; page New buttons removed; 'Add a purchase invoice'; PO number optional (the app makes SSI-yymmdd-hhmm)" };
+  const APP_BUILD = { v: 185, at: "2026-11-23T13:58:18+05:30", notes: "+ Add offers what belongs to the page you are on; page New buttons removed; 'Add a purchase invoice'; PO number optional (the app makes SSI-yymmdd-hhmm); type to find a PO when linking a lot or making a new lot" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4627,7 +4628,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     new_lot: { title: "New lot", html: (a) => `<form class="fm" id="fm-new_lot"><p class="note" style="margin:0">This lot will be ${esc(nextKey("L"))}. You can use it straight away. ${recMode() ? "If another phone makes a lot at the same moment and takes this number, yours gets the next free one and Today tells you which." : "Excel keeps the number when it imports it, unless the PC used it meanwhile."}</p>
       <label>From purchase<select id="fn-from" data-pinfo="fn-info">${purchOpts(a)}</select></label><p class="note" id="fn-info" style="margin:0">${esc(purchInfo(a))}</p>
       <div class="two">${numF("fn-pcs", "Pieces")}${numF("fn-sqft", "Sqft")}</div>
-      <label>Customer order (PO)<select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
+      <label>Customer order (PO)<input class="selfind" data-for="fn-line" type="search" placeholder="Type to find a PO: number, customer or item" autocomplete="off" aria-label="Find a PO"><select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
       ${txtF("fn-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer))}${txtF("fn-prod", "Product")}
       <details class="more"><summary>More details: date, order, due date, stage, recipe, remarks</summary>
       <div class="two">${dateF("fn-date", "Date", today0())}${numF("fn-qty", "Order qty (sqft)")}${txtF("fn-shav", "Shaving (thickness)")}${txtF("fn-wt", "Weight")}${dateF("fn-odt", "Order date", "")}${dateF("fn-ddt", "Due date", "")}</div>
@@ -4649,7 +4650,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
           <label>Sqft<input id="ps-sqft" inputmode="decimal" value="${over > 0.5 ? +Math.min(over, has).toFixed(2) : ""}"></label>
           <label>Put them on PO<select id="ps-line"><option value="">- none, keep here and give the reason -</option>${opts}</select></label><p class="note" id="ps-line-info" style="margin:4px 0 0"></p>
           <label>Reason<input id="ps-why" placeholder="needed when no PO is picked"></label>${formEnd}</form>`; } },
-    po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
+    po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<input class="selfind" data-for="fl-line" type="search" placeholder="Type to find a PO: number, customer or item" autocomplete="off" aria-label="Find a PO"><select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
     chem: { title: "Record use", html: (a) => `<form class="fm" id="fm-chem" data-chem="${esc(a)}"><h3>${esc(a)}</h3>
       <div class="two"><label>Type<select id="fc-kind"><option value="SAMPLING">Sampling</option><option value="WASTAGE">Wastage</option><option value="ISSUED OTHER">Issued other</option><option value="CORRECTION">Correction</option></select></label>
       <label>Qty<input id="fc-qty" type="number" step="any" inputmode="decimal"></label>${dateF("fc-date", "Date", today0())}</div>
@@ -6649,6 +6650,16 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   $("#topnav").addEventListener("click", navClick); $("#subnav").addEventListener("click", navClick);
   $("#side").addEventListener("click", (e) => sideClick(e));
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-xseen]"); if (!b) return; try { localStorage.setItem("ssi-xseen", JSON.stringify(xSeenGet().concat([b.dataset.xseen]).slice(-400))); } catch (er) { /* private */ } render(); });
+  // type to find a PO in a long list (23-Nov-2026): the list keeps only the matching orders, the first one is picked
+  document.addEventListener("input", (e) => { const t = e.target; if (!t.classList || !t.classList.contains("selfind")) return; const sl = document.getElementById(t.dataset.for); if (!sl) return;
+    if (!sl.dataset.all) sl.dataset.all = sl.innerHTML; const w = t.value.trim().toLowerCase().split(/\s+/).filter(Boolean), keep = sl.value;
+    const box = document.createElement("select"); box.innerHTML = sl.dataset.all;
+    const opts = [...box.options].filter((o) => !o.value || w.every((x) => o.textContent.toLowerCase().includes(x)));
+    sl.innerHTML = ""; opts.forEach((o) => sl.appendChild(o));
+    const hits = opts.filter((o) => o.value); sl.value = hits.some((o) => o.value === keep) ? keep : (w.length && hits[0] ? hits[0].value : keep);
+    sl.dispatchEvent(new Event("change", { bubbles: true }));
+    let n = t.nextElementSibling && t.nextElementSibling.classList.contains("selcount") ? t.nextElementSibling : null; if (!n) { n = document.createElement("small"); n.className = "selcount note"; t.after(n); }
+    n.textContent = w.length ? (hits.length ? hits.length + " PO line" + (hits.length === 1 ? "" : "s") + " match" + (hits.length === 1 ? "es" : "") : "No open PO matches") : ""; });
   // one tap: the next stage, today (23-Nov-2026)
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-nextgo]"); if (!b) return; const f = b.closest("form"), sel0 = f && f.querySelector("#fs-stage"); if (!sel0) return;
     sel0.value = b.dataset.nextgo; const d = f.querySelector("#fs-date"); if (d) d.value = iso(today); b.disabled = true; setTimeout(() => { b.disabled = false; }, 2500);
