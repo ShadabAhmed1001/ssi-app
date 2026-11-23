@@ -1553,7 +1553,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (!(tab === "chemicals" && filter.chemicals === "reorder")) items.sort(sorters[tab]);
     const card = { lots: lotCard, orders: orderCard, purchases: purchaseCard, chemicals: chemCard }[tab];
     const NEWB = { lots: ["new_lot", "New lot"], purchases: ["purchase", "New purchase"], orders: ["order", "New PO"], chemicals: ["chem_add", "Add chemical"] }[tab];
-    let html = (NEWB && store && canWrite && !(tab === "lots" && ["ready", "noproc"].includes(filter.lots)) ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-new="${NEWB[0]}">${NEWB[1]}</button></div>` : "") + (tab === "chemicals" && filter.chemicals === "reorder" ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-pdf="reorder">Save PDF</button></div><div id="pdfmsg"></div>` : "") + `<div class="count"><span>${items.length} shown</span><span>${ws.length ? "matching “" + esc($("#q").value.trim()) + "”" : ""}</span></div>`;
+    let html = (NEWB && false ? "" : "") + (tab === "chemicals" && filter.chemicals === "reorder" ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-pdf="reorder">Save PDF</button></div><div id="pdfmsg"></div>` : "") + `<div class="count"><span>${items.length} shown</span><span>${ws.length ? "matching “" + esc($("#q").value.trim()) + "”" : ""}</span></div>`;
     if (!items.length) html += `<p class="empty">Nothing matches. Try fewer words, or another filter above.</p>`;
     let lastGrp = null;
     const gname = { lots: ["", "Open lots", "Dispatched / dumped", "Archived"], orders: ["", "Open", "Delivered / archived"], purchases: ["", "Skins left", "Closed"], chemicals: ["", "In stock", "Zero stock"] }[tab];
@@ -1720,7 +1720,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bills = pbBills().filter((b) => (mode !== "wb" || b.lines.some((x) => pbIsLeather(x.n))) && match([b.party, b.ref, b.label, b.lines.map((x) => x.n).join(" ")].join(" "), ws)), need = bills.filter((b) => b.dup || b.bad), rest = bills.filter((b) => !b.dup && !b.bad);
     const tl = pbTally().filter((t) => (mode !== "wb" || pbTLines(t).some((x) => pbIsLeather(x.n))) && match([t.party, t.ref, t.vno, t.lines].join(" "), ws)).slice(0, 40), meta = trows("SELECT * FROM tally_meta").reduce((o, r) => (o[r.k] = r.v, o), {});
     const row = (b) => `<button class="row" data-go="chemicals" data-k="bill:${esc(b.id)}"><span class="k">${esc(fmtD(b.date))}</span><span class="d"><b>${esc(b.party)}</b> · bill ${esc(b.ref)}<br><small><span class="pill ${pbStateCls(b)}">${esc(b.label)}</span></small></span><span class="r num">₹${fmtN(b.calc.total, 0)}</span></button>`;
-    return `<div class="acts" style="margin:4px 0 8px">${canWrite ? `<button class="btn" data-new="chem_purchase">New purchase bill</button>` : ""}</div>
+    return `<div class="acts" style="margin:4px 0 8px"></div>
       <p class="note" style="margin:0 2px 8px">${mode === "wb" ? "Wet blue and other leather bought in. Type the bill here, or open a skins purchase and tap <b>Make Tally bill</b>. Receiving the skins is still done with <b>New purchase</b>; the bill only goes to Tally." : "Chemicals and wet blue. A chemical bill counts in stock at once."} Excel then makes the Purchase voucher in Tally${meta.purch_at ? " (Excel last read Tally " + esc(fmtST(meta.purch_at)) + ")" : ""}. If the same bill is already in Tally, you are asked which to keep.</p>
       ${need.length ? `<div class="group">Needs you · ${need.length}</div>${need.map(row).join("")}` : ""}
       <div class="group">Typed on phones · ${rest.length}</div>${rest.length ? rest.map(row).join("") : `<p class="empty">No bills typed on a phone yet.</p>`}
@@ -2111,7 +2111,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 184, at: "2026-11-23T00:59:11+05:30", notes: "Easier app: + Add with plain tasks, one-tap next stage, short forms, simple mode for the floor, To do now on Today, plain words, QR lot cards (ID-card PDF, A4 sheet) and a QR scanner" };
+  const APP_BUILD = { v: 185, at: "2026-11-23T13:51:04+05:30", notes: "+ Add offers what belongs to the page you are on; page New buttons removed; 'Add a purchase invoice'; PO number optional (the app makes SSI-yymmdd-hhmm)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -2140,11 +2140,18 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     ["scan", "Scan a lot card", "Opens the lot", true],
     ["newlot", "Start a new lot", "From skins already received", false],
     ["purchase", "Skins received", "A new purchase from a supplier", false],
-    ["chembuy", "Chemicals bought", "A purchase bill for chemicals", false],
-    ["invoice", "Make a bill (invoice)", "For a customer, goes to Tally", false]];
-  function addSheet() {
-    const L = ADD.filter((x) => !simple() || x[3]);
-    sheet(`<h3>What do you want to add?</h3><div class="xs-list">${L.map(([k, t, s]) => `<button class="xs-item" data-addk="${k}"><b>${t}</b><small>${s}</small></button>`).join("")}</div><button class="btn alt" data-xsclose style="width:100%">Close</button>`);
+    ["chembuy", "Add a purchase invoice", "A supplier's bill for chemicals, goes to Tally", false],
+    ["order", "Add a new PO", "A customer's order", false],
+    ["invoice", "Make a bill (invoice)", "For a customer, goes to Tally", false],
+    ["chemadd", "Add a new chemical", "A chemical not on the list yet", false]];
+  // what + Add offers on each page (23-Nov-2026): only what belongs there; "Something else" shows the rest
+  const ADD_ON = { lots: ["stage", "delivery", "chem", "newlot", "card", "scan"], orders: ["order", "invoice", "delivery"], purchases: ["purchase", "newlot", "chembuy"],
+    chemicals: ["chembuy", "chem", "chemadd"], today: ["stage", "delivery", "chem", "newlot", "purchase", "chembuy", "order", "invoice", "card", "scan"] };
+  const ADD_T = { lots: "Add to the lots", orders: "Add to orders and sales", purchases: "Add to purchases", chemicals: "Add to chemicals" };
+  function addSheet(all) {
+    const on = !all && ADD_ON[tab], L0 = ADD.filter((x) => !simple() || x[3]), L = on ? on.map((k) => L0.find((x) => x[0] === k)).filter(Boolean) : L0, more = on && L.length < L0.length;
+    const item = ([k, t, s]) => `<button class="xs-item" data-addk="${k}"><b>${t}</b><small>${s}</small></button>`;
+    sheet(`<h3>${on && ADD_T[tab] ? ADD_T[tab] : "What do you want to add?"}</h3><div class="xs-list">${L.map(item).join("")}</div>${more ? `<button class="lnk" data-addall style="justify-self:start">Something else…</button>` : ""}<button class="btn alt" data-xsclose style="width:100%">Close</button>`);
   }
   function addGo(k) {
     if (k === "scan") return scanOpen();
@@ -2154,6 +2161,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (k === "purchase") { sel.purchases = null; stack = []; if (tab !== "purchases") go("purchases"); openForm("purchase"); return; }
     if (k === "chembuy") { sel.chemicals = null; stack = []; if (tab !== "chemicals") go("chemicals"); openForm("chem_purchase"); return; }
     if (k === "invoice") { menuAct("invnew"); return; }
+    if (k === "order") { sel.orders = null; stack = []; if (tab !== "orders") go("orders"); openForm("order"); return; }
+    if (k === "chemadd") { sel.chemicals = null; stack = []; if (tab !== "chemicals") go("chemicals"); openForm("chem_add"); return; }
   }
   const PICK_T = { stage: "Which lot moved?", delivery: "Which lot was delivered?", chem: "Chemicals for which lot?", card: "Card for which lot?" };
   function lotPick(why) {
@@ -2222,6 +2231,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const sf = t.closest("[data-scanfor]"); if (sf) { scanOpen(sf.dataset.scanfor); return; }
     const tg = t.closest("[data-typego]"); if (tg) { const k = lotFromText(($("#xs-type") || {}).value || ""); if (!k) { const s0 = $("#xs-say"); if (s0) s0.textContent = "Type a lot number like L547."; return; } const w = tg.dataset.typego; sheetClose(); if (w && w !== "scan") lotDo(k, w); else openLot(k); return; }
     if (t.closest("#fab")) { addSheet(); return; }
+    if (t.closest("[data-addall]")) { addSheet(true); return; }
     if (t.closest("#scanbtn")) { scanOpen(); return; }
     const lc = t.closest("[data-lotcard]"); if (lc) { lotCards([lc.dataset.lotcard], $("#detail")).catch((er) => showToast("The card could not be made: " + (er.message || er))); return; }
     const lcs = t.closest("[data-lotcards]"); if (lcs) { sheetClose(); lotCards(data.lots.filter((l) => l.grp === 1).sort((x, y) => (x.num || 0) - (y.num || 0)).map((l) => l.lot_no)).catch((er) => showToast("The cards could not be made: " + (er.message || er))); return; }
@@ -2344,7 +2354,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     { el: ["#q"], t: "Search", b: "<p>Type a lot number, customer, product, process, PO or chemical. The list below narrows as you type.</p>" },
     { tab: "today", el: ['.tab[data-tab="today"]', '#side [data-side="today|"]', "#list"], t: "Today", b: "<p>Start here each day. It shows lots that are late or need a check, things to do, and how long lots have been in each stage.</p>" },
     { tab: "lots", el: ['.tab[data-tab="lots"]', '#side [data-mgrp="lots"]', '.tn-h[data-mg="lots"]', "#list"], t: "Production", b: "<p>Every lot. Tap a lot to see its stage, process, deliveries and costing, and to make entries for it: move stage, deliver, adjust chemicals, edit the process.</p><p>Pick Open, Late or Dispatched lots from the menu.</p>" },
-    { tab: "lots", el: ['[data-new="new_lot"]'], t: "Adding something new", b: "<p>Buttons like <b>New lot</b>, <b>New PO</b> and <b>New purchase</b> start a new entry. They are at the top of the list on each page.</p>" },
+    { tab: "lots", el: ['#fab'], t: "Adding something new", b: "<p>The <b>+ Add</b> button, bottom right, starts anything new: on each page it offers what belongs there (a lot moved on, a new lot, a new PO, a purchase invoice…).</p>" },
     { tab: "orders", el: ['.tab[data-tab="orders"]', '#side [data-mgrp="orders"]', '.tn-h[data-mg="orders"]', "#list"], t: "Orders", b: "<p>PO items and what is left to make. Dispatches and invoices are in the menu.</p>" },
     { tab: "purchases", el: ['.tab[data-tab="purchases"]', '#side [data-mgrp="purchases"]', '.tn-h[data-mg="purchases"]', "#list"], t: "Purchases", b: "<p>Skins bought, and how many are still left to put into lots.</p>" },
     { tab: "chemicals", el: ['.tab[data-tab="chemicals"]', '#side [data-mgrp="chemicals"]', '.tn-h[data-mg="chemicals"]', "#list"], t: "Chemicals", b: "<p>Chemical stock, what to reorder, and stock audits.</p>" },
@@ -4629,7 +4639,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="two">${txtF("fp-ani", "Animal", "anilist")}${dl("anilist", data.purchases.map((p) => p.animal))}${txtF("fp-gra", "Grade")}${numF("fp-pcs", "Pcs")}${numF("fp-sqft", "Sqft")}${numF("fp-rate", "Rate")}
       <label>Rate per<select id="fp-per"><option>SQFT</option><option>PC</option></select></label>${dateF("fp-date", "Date", today0())}</div>${txtF("fp-note", "Note")}${formEnd}</form>` },
     order: { title: "New PO", html: () => { const lines = (x, i) => `<div class="er ln" data-sec="lines" data-i="${i}"><input id="el-${i}-d" data-f="d" value="${v(x.d)}" placeholder="Item" aria-label="Item" autocomplete="off"><button type="button" class="x" data-eddel aria-label="Remove this item">×</button><div class="nums"><input id="el-${i}-q" data-f="q" value="${v(x.q)}" placeholder="Qty sqft" aria-label="Qty sqft" inputmode="decimal"><input id="el-${i}-r" data-f="r" value="${v(x.r)}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="el-${i}-a" data-f="a" value="${v(x.a)}" placeholder="Amount (auto)" aria-label="Amount" inputmode="decimal"><input id="el-${i}-h" data-f="h" value="${v(x.h)}" placeholder="HSN" aria-label="HSN" inputmode="numeric" data-numonly="1"></div></div>`;
-      return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number")}${dateF("fo-date", "PO date", today0())}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
+      return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number (empty: the app makes one)")}${dateF("fo-date", "PO date", today0())}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
       <h3>Items</h3>${ed.lines.map(lines).join("")}<button type="button" class="btn alt" data-edadd="end" data-sec="lines">Add an item</button>${formEnd}</form>`; } },
     po_share: { title: "Move sqft to another PO", html: (a) => { const [k, id] = String(a).split("|"), l = data.lotBy[k], o = data.orders.find((x) => String(x.id) === String(id)); if (!l || !o) return "";
         const has = shareOn(l, o.id), over = o.qty_sqft ? Math.max(0, o.sqf - o.qty_sqft * PO_CAP) : 0;
@@ -4866,7 +4876,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function invListView(ws) {
     const all = invLive().filter((v) => !isMark(v)).filter((v) => match([v.temp, v.tally_no, v.customer, v.party, (v.lines || []).map((l) => l.lot + " " + l.item).join(" ")].join(" "), ws)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.temp).localeCompare(String(a.temp)));
     const waiting = all.filter((v) => !v.tally_no);
-    let h = store && canWrite ? `<div class="acts" style="margin-top:8px"><button class="btn alt" data-invnew>New invoice</button>${waiting.length ? `<button class="btn alt" data-invxmlall>Tally file for all not in Tally (${waiting.length})</button>` : ""}<button class="btn alt" data-invset>Tally names</button></div>` : "";
+    let h = store && canWrite ? `<div class="acts" style="margin-top:8px">${waiting.length ? `<button class="btn alt" data-invxmlall>Tally file for all not in Tally (${waiting.length})</button>` : ""}<button class="btn alt" data-invset>Tally names</button></div>` : "";
     h += `<p class="note" style="margin:6px 2px">Make the invoice here, tap Make Tally file and share it to OneDrive, folder SSI › Accountancy › tally data › SSI › XML DATA. On the PC press <b>Invoices &gt; Tally</b> in Excel: it enters every waiting file in Tally. The app marks them In Tally with the next data refresh.${tMeta("refreshed_at") ? ` Tally lists from ${esc(tMeta("refreshed_at"))}.` : ""}</p><div id="invout"></div>`;
     if (!all.length) return h + `<p class="empty">No invoices yet. Tap New invoice, or open a lot and tap Make invoice.</p>`;
     const grp = (t, list) => list.length ? `<div class="group">${t} · ${list.length}</div>` + list.map(invCard).join("") : "";
@@ -5928,8 +5938,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       return saveNew({ type: "purchase", lot_no: "NEW", data: { supplier: need("#fp-sup"), animal: need("#fp-ani"), grade: need("#fp-gra"), pcs, sqft: numOf("#fp-sqft"), rate: numOf("#fp-rate"), per: need("#fp-per"), date, note: need("#fp-note") } }, "Purchase " + nextKey("P") + " saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-order") {
-      const po = need("#fo-po"), date = need("#fo-date"), cust = need("#fo-cust"), norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, "");
-      if (!po) return bad("Type the PO number."); if (checkDate(date)) return bad(checkDate(date)); if (!cust) return bad("Choose or type the customer.");
+      let po = need("#fo-po"); const date = need("#fo-date"), cust = need("#fo-cust"), norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, "");
+      // no PO number from the customer: the app makes one, SSI-yymmdd-hhmm (23-Nov-2026)
+      let autoPo = false; if (!po) { const n = new Date(), z = (x) => String(x).padStart(2, "0"); po = "SSI-" + String(n.getFullYear()).slice(2) + z(n.getMonth() + 1) + z(n.getDate()) + "-" + z(n.getHours()) + z(n.getMinutes());
+        let i = 1, p0 = po; while (data.orders.some((o) => norm(o.po_no) === norm(po))) po = p0 + "-" + (++i); autoPo = true; }
+      if (checkDate(date)) return bad(checkDate(date)); if (!cust) return bad("Choose or type the customer.");
       const ls = ed.lines.filter((x) => String(x.d).trim() || String(x.q).trim()); if (!ls.length) return bad("Add at least one item.");
       if (ls.some((x) => !String(x.d).trim() || !(Number(x.q) > 0) || isNaN(x.r || 0) || isNaN(x.a || 0))) return bad("Each item needs a name, a qty above 0, and numbers for rate and amount.");
       const dup = data.orders.find((o) => !o.isNew && norm(o.po_no) === norm(po));
@@ -5937,7 +5950,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const d = { po, date, customer: cust, note: need("#fo-note") }; if (dup) d.add_to = "1";
       ls.forEach((x, i) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || q * r; d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), q, r, String(x.h || "").trim(), +a.toFixed(2)].join("~^~"); });
       if (qPoFrom) { const qid = qPoFrom; qPoFrom = null; store.doc("quotes/" + qid).update({ po, status: "Confirmed", updated_at: new Date().toISOString() }).catch(() => {}); }
-      return saveNew({ type: "order", lot_no: "PO " + po, data: d }, "PO saved. It is waiting for Excel.", msg, btn);
+      return saveNew({ type: "order", lot_no: "PO " + po, data: d }, (autoPo ? "PO saved as " + po + " (no number was typed)." : "PO saved.") + " It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-invmark") {
       const lines = [], cs = invCands("", null, true); for (const x of f.querySelectorAll(".imq")) { const c = cs.find((y) => y.dkey === x.dataset.k), q = parseFloat(x.value) || 0; if (!c) return bad("A delivery here is no longer pending. Go back and pick again."); if (q < 0 || q > c.sqft + 0.5) return bad(c.lot + ": type up to " + fmtN(c.sqft, 2) + " sqft."); if (q > 0) { const fr = c.sqft ? q / c.sqft : 1; lines.push({ lot: c.lot, dkey: c.dkey, sqft: r2(q), hides: Math.round((Number(c.hides) || 0) * fr * 10) / 10, sides: Math.round((Number(c.sides) || 0) * fr) }); } }
