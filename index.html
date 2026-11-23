@@ -2112,7 +2112,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 185, at: "2026-11-23T13:58:18+05:30", notes: "+ Add offers what belongs to the page you are on; page New buttons removed; 'Add a purchase invoice'; PO number optional (the app makes SSI-yymmdd-hhmm); type to find a PO when linking a lot or making a new lot" };
+  const APP_BUILD = { v: 185, at: "2026-11-23T14:24:37+05:30", notes: "+ Add per page; optional PO number; PO search; PO page: Link a lot, Start a new lot" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -2165,7 +2165,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (k === "order") { sel.orders = null; stack = []; if (tab !== "orders") go("orders"); openForm("order"); return; }
     if (k === "chemadd") { sel.chemicals = null; stack = []; if (tab !== "chemicals") go("chemicals"); openForm("chem_add"); return; }
   }
-  const PICK_T = { stage: "Which lot moved?", delivery: "Which lot was delivered?", chem: "Chemicals for which lot?", card: "Card for which lot?" };
+  let poPre = null; // the PO line a lot is being linked to from the PO's page
+  const PICK_T = { polink: "Which lot is for this PO?", stage: "Which lot moved?", delivery: "Which lot was delivered?", chem: "Chemicals for which lot?", card: "Card for which lot?" };
   function lotPick(why) {
     const L = data.lots.filter((l) => l.grp === 1 || (why === "card" && l.grp !== 3)).sort((a, b) => (b.num || 0) - (a.num || 0));
     const row = (l) => `<button class="xs-item" data-pickl="${esc(l.lot_no)}" data-why="${why}"><b>${esc(l.lot_no)}</b><small>${esc([l.customer, l.product].filter(Boolean).join(" · "))} · ${esc(l.stage || "")} · ${fmtN(l.lot_pcs, 0)} pcs</small></button>`;
@@ -2176,6 +2177,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function lotDo(k, why) {
     sheetClose();
     if (why === "card") { lotCards([k]); return; }
+    if (why === "polink") { const id = poPre; openLot(k, () => { openForm("po_link:" + k); setTimeout(() => { const s0 = $("#fl-line"); if (s0 && id != null) { s0.value = String(id); s0.dispatchEvent(new Event("change", { bubbles: true })); s0.dispatchEvent(new Event("input", { bubbles: true })); } }, 60); }); return; }
     openLot(k, () => { if (why === "stage") clickIn('[data-act="stage"]'); else if (why === "delivery") clickIn('[data-act="delivery"]'); else if (why === "chem") chemUsed(k); });
   }
   function chemUsed(k) { if (clickIn('[data-form^="chem_adjust:' + k + '|BOTH"]') || clickIn('[data-form^="chem_adjust:' + k + '|"]')) return;
@@ -2236,6 +2238,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (t.closest("#scanbtn")) { scanOpen(); return; }
     const lc = t.closest("[data-lotcard]"); if (lc) { lotCards([lc.dataset.lotcard], $("#detail")).catch((er) => showToast("The card could not be made: " + (er.message || er))); return; }
     const lcs = t.closest("[data-lotcards]"); if (lcs) { sheetClose(); lotCards(data.lots.filter((l) => l.grp === 1).sort((x, y) => (x.num || 0) - (y.num || 0)).map((l) => l.lot_no)).catch((er) => showToast("The cards could not be made: " + (er.message || er))); return; }
+    const pl = t.closest("[data-polink]"); if (pl) { poPre = pl.dataset.polink; lotPick("polink"); return; }
+    const pn = t.closest("[data-ponew]"); if (pn) { const id = pn.dataset.ponew; sel.lots = null; stack = []; go("lots"); openForm("new_lot"); setTimeout(() => { const s0 = $("#fn-line"); if (s0) { s0.value = String(id); s0.dispatchEvent(new Event("change", { bubbles: true })); s0.dispatchEvent(new Event("input", { bubbles: true })); } }, 60); return; }
     const cu = t.closest("[data-chemused]"); if (cu) { chemUsed(cu.dataset.chemused); return; }
     const sm = t.closest("[data-simple]"); if (sm) { setSimple(sm.dataset.simple === "1"); return; }
   });
@@ -6410,6 +6414,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const o = data.orders.find((x) => String(x.id) === String(id)); if (!o) return "";
     return `<p class="sub">${esc(o.customer)} · ${esc(o.item)}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${o.isNew ? `<p class="note"><span class="wait">New PO, waiting for Excel.</span></p>` : ""}
+      ${store && canWrite && o.grp === 1 && !o.closed_on && !o.short ? `<div class="acts"><button class="btn" data-polink="${esc(o.id)}">Link a lot</button><button class="btn alt" data-ponew="${esc(o.id)}">Start a new lot</button></div>` : ""}
       ${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit item</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
       ${o.phone ? `<p class="note"><span class="wait">Changes here are not in Excel yet.</span></p>` : ""}
       ${kv([["PO date", fmtD(o.po_date)], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
@@ -6657,7 +6662,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const opts = [...box.options].filter((o) => !o.value || w.every((x) => o.textContent.toLowerCase().includes(x)));
     sl.innerHTML = ""; opts.forEach((o) => sl.appendChild(o));
     const hits = opts.filter((o) => o.value); sl.value = hits.some((o) => o.value === keep) ? keep : (w.length && hits[0] ? hits[0].value : keep);
-    sl.dispatchEvent(new Event("change", { bubbles: true }));
+    sl.dispatchEvent(new Event("change", { bubbles: true })); sl.dispatchEvent(new Event("input", { bubbles: true }));
     let n = t.nextElementSibling && t.nextElementSibling.classList.contains("selcount") ? t.nextElementSibling : null; if (!n) { n = document.createElement("small"); n.className = "selcount note"; t.after(n); }
     n.textContent = w.length ? (hits.length ? hits.length + " PO line" + (hits.length === 1 ? "" : "s") + " match" + (hits.length === 1 ? "es" : "") : "No open PO matches") : ""; });
   // one tap: the next stage, today (23-Nov-2026)
