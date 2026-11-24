@@ -1354,6 +1354,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     data.dyePhone = {}; dyeE.forEach((e) => { data.dyes[e.process.toUpperCase()] = e.after; if (isWait(e)) data.dyePhone[e.process.toUpperCase()] = true; });
     data.pages = rows("SELECT name FROM process_pages").map((r) => r.name);
     data.rate = {}; data.chemicals.forEach((c) => { const k = c.name.toUpperCase(); if (!(k in data.rate)) data.rate[k] = c.rate || 0; });
+    // no rate: the latest Tally purchase rate of that item, after discount (24-Nov-2026)
+    { const last = {}; try { rows("SELECT vdate, lines FROM tally_purchases ORDER BY vdate").forEach((t) => String(t.lines || "").split("~^~").forEach((ln) => { const p = ln.split("|"); const n = UP(String(p[0] || "").trim()), r = Number(p[2]) || 0, d = Number(p[3]) || 0; if (n && r > 0) last[n] = r * (1 - d / 100); })); } catch (x) {}
+      Object.keys(data.rate).forEach((k) => { if (!data.rate[k] && last[k]) data.rate[k] = +last[k].toFixed(4); }); }
     data.finAnchor = {}; rows("SELECT * FROM process_fin").forEach((p) => { data.finAnchor[p.process.toUpperCase()] = JSON.parse(p.anchors); });
     data.mach = {}; rows("SELECT * FROM machinery").forEach((m) => { data.mach[m.name.toUpperCase()] = Object.assign(m, { fromXl: !!m.basis }); });
     // machines added, changed or deleted on the phone, in the order they were made
@@ -2136,7 +2139,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 192, at: "2026-11-24T13:49:32+05:30", notes: "PO due date (new PO, Edit PO, also on its open lots; card, PO page, order report, new lot)" };
+  const APP_BUILD = { v: 193, at: "2026-11-24T15:31:09+05:30", notes: "deliveries show hides and sides; Tally merge keeps chemical rates; rate fallback from Tally purchases" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -3327,7 +3330,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     let upd = 0, add = 0; const stamp = new Date().toISOString().slice(0, 19);
     b.run("BEGIN");
     q(x, "SELECT name, rate, tally_stock FROM chemicals").forEach((c) => { const cur = q(b, "SELECT name, rate, tally_stock FROM chemicals WHERE UPPER(name)=UPPER(?)", [c.name])[0];
-      if (cur) { if (Number(cur.rate) !== Number(c.rate) || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [c.rate, c.tally_stock, c.tally_stock, stamp, cur.name]); }
+      // a rate of 0 / empty from Tally keeps the rate the records already have (24-Nov-2026: app mode lost half the rates, so lot pages showed chemical cost ₹0)
+      if (cur) { const rt = Number(c.rate) > 0 ? Number(c.rate) : (Number(cur.rate) || 0); if (Number(cur.rate) !== rt || Number(cur.tally_stock) !== Number(c.tally_stock)) upd++; b.run("UPDATE chemicals SET rate=?, tally_stock=?, available=IFNULL(?,0)+IFNULL(ledger_qty,0), snapshot_at=? WHERE name=?", [rt, c.tally_stock, c.tally_stock, stamp, cur.name]); }
       else { add++; b.run("INSERT INTO chemicals(name, rate, tally_stock, ledger_qty, available, pack_size, snapshot_at) VALUES(?,?,?,?,?,?,?)", [c.name, c.rate, c.tally_stock, 0, Number(c.tally_stock) || 0, null, stamp]); } });
     ["tally_parties", "tally_items", "tally_sales", "tally_meta", "lot_pdfs", "tally_purchases", "tally_creditors", "app_tally", "tally_sale_bills", "tally_ledgers", "tally_ledger_rows"].forEach((t) => { if (!q(x, "SELECT 1 FROM sqlite_master WHERE name=?", [t]).length) return;
       const cols = q(x, `PRAGMA table_info(${t})`).map((c) => c.name); b.run(`CREATE TABLE IF NOT EXISTS ${t}(${cols.join(", ")})`); b.run(`DELETE FROM ${t}`);
@@ -4045,10 +4049,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <h3>Skins and where they came from</h3>${skinsTable(k)}${entries.filter((e) => e.type === "skins_back" && isWait(e) && (e.data.to === k || e.data.from === k)).map((e) => `<p class="note"><span class="wait">Waiting for Excel:</span> ${fmtN(e.data.pcs, 0) || 0} pcs, ${fmtN(e.data.sqft, 2) || 0} sqft back to ${esc(e.data.from)}${e.data.from === k ? " from " + esc(e.data.to) : ""}.</p>`).join("")}
       <h3>Stage history</h3>${hist.length ? `<div class="tbl"><table><thead><tr><th>Moved on</th><th>From</th><th>To</th><th class="r">Days in previous</th></tr></thead><tbody>${hist.map((h) =>
         `<tr><td class="nw">${fmtS(h.moved_on)}</td><td>${esc(h.from_stage)}</td><td>${esc(h.to_stage)}</td><td class="r num">${fmtN(h.days_in_prev, 0)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="note">No stage moves recorded through the app yet.</p>`}
-      ${pd.length ? `<h3>Deliveries from the phone</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${pd.map((d) =>
-        `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${store && canWrite ? ` <button class="mini" data-deledit="e:${esc(d.id)}">Edit</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
-      ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Pcs</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
-        { const w = entries.find((e) => e.type === "delivery_void" && isWait(e) && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${fmtN(d.pcs, 0)}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type === "DELIVERY" && !w && store && canWrite ? ` <button class="mini" data-deledit="d:${d.id}">Edit</button>` : ""}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
+      ${pd.length ? `<h3>Deliveries from the phone</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Hides</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${pd.map((d) =>
+        `<tr><td>${fmtD(d.entry_date)}</td><td class="r num">${esc(hsCell(d.note, d.pcs))}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${store && canWrite ? ` <button class="mini" data-deledit="e:${esc(d.id)}">Edit</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      ${dels.length ? `<h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Date</th><th class="r">Hides</th><th class="r">Sqft</th><th>Doc</th></tr></thead><tbody>${dels.map((d) =>
+        { const w = entries.find((e) => e.type === "delivery_void" && isWait(e) && Number(e.data.id) === d.id); return `<tr class="${d.status === "VOID" || w ? "void" : ""}"><td>${fmtD(d.del_date)}${d.entry_type === "OPENING" ? " (opening)" : d.entry_type === "RETURN" ? " (return)" : ""}</td><td class="r num">${esc(hsCell(d.note, d.pcs))}</td><td class="r num">${fmtN(d.sqft, 2)}</td><td>${esc(d.doc_no)}${d.status === "OK" && d.entry_type === "DELIVERY" && !w && store && canWrite ? ` <button class="mini" data-deledit="d:${d.id}">Edit</button>` : ""}${d.status === "OK" && d.entry_type !== "RETURN" && !w && store && canWrite ? ` <button class="mini" data-form="delivery_void:${esc(k)}|${d.id}">Cancel</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}
       ${(() => { const iv = invOfLot(k); return iv.length ? `<h3>Invoices</h3><p>${iv.map((v) => `<button class="mini" data-go="orders" data-k="inv:${esc(v.id)}">${esc(invName(v))} · ${fmtD(v.date)}</button>`).join(" ")}</p>` : ""; })()}
       ${(() => { const br = balRows(k), bp = balPend(k), nd = l.grp !== 1 || String(l.stage).toUpperCase() === "DISPATCHED" ? notDelivered(l) : null; if (!br.length && !bp.length && !(nd && nd.sh > 0 && nd.dp > 0)) return "";
         const lab = { REJECT: "rejected", STOCK: "leftover stock", LOT: "moved to", WASTE: "wastage" };
@@ -4670,7 +4674,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="tbl"><table><thead><tr><th>Chemical</th><th class="r">Deducted</th><th class="r">Recipe now</th><th class="r">Stock change</th></tr></thead><tbody>${ch.map((x) => `<tr><td>${esc(x.n)}</td><td class="r num">${n2(x.had)}</td><td class="r num">${n2(x.need)}</td><td class="r num">${x.q > 0 ? "-" : "+"}${n2(Math.abs(x.q))}</td></tr>`).join("")}</tbody></table></div>
       <p style="margin:0">Net extra chemical cost: ₹${fmtN(net, 0)}</p><p class="note" style="margin:0">Excel shows this list again at import and asks you to confirm.</p>${formEnd}</form>`; } },
     delivery_void: { title: "Cancel delivery", html: (a) => { const [lot, id] = a.split("|"), d = rows("SELECT * FROM lot_deliveries WHERE id=?", [Number(id)])[0];
-      return `<form class="fm" id="fm-delivery_void" data-lot="${esc(lot)}" data-id="${esc(id)}"><h3>${esc(lot)}</h3><p style="margin:0">${d.entry_type === "OPENING" ? "Opening figure" : "Delivery"} of ${fmtD(d.del_date)}: ${fmtN(d.pcs, 0)} pcs, ${fmtN(d.sqft, 2)} sqft${d.doc_no ? ", " + esc(d.doc_no) : ""}</p><p class="note" style="margin:0">Excel marks it cancelled and keeps it in the list. The lot's delivered quantity follows.</p>${txtF("fv-why", "Reason")}${formEnd}</form>`; } },
+      return `<form class="fm" id="fm-delivery_void" data-lot="${esc(lot)}" data-id="${esc(id)}"><h3>${esc(lot)}</h3><p style="margin:0">${d.entry_type === "OPENING" ? "Opening figure" : "Delivery"} of ${fmtD(d.del_date)}: ${esc(hsText(d.note, d.pcs))}, ${fmtN(d.sqft, 2)} sqft${d.doc_no ? ", " + esc(d.doc_no) : ""}</p><p class="note" style="margin:0">Excel marks it cancelled and keeps it in the list. The lot's delivered quantity follows.</p>${txtF("fv-why", "Reason")}${formEnd}</form>`; } },
     purchase_edit: { title: "Edit purchase", html: (a) => { const p = data.purchases.find((x) => x.key === a), q0 = (id, lb, val, attrs) => `<label>${lb}<input id="${id}" value="${v(val)}" autocomplete="off"${attrs || ""}></label>`, n = ' type="number" step="any" min="0" inputmode="decimal"';
       return `<form class="fm" id="fm-purchase_edit" data-key="${esc(a)}"><h3>${esc(p.purchase_no)}</h3>${q0("fe-sup", "Supplier", p.supplier, ' list="suplist"')}${dl("suplist", data.purchases.map((x) => x.supplier))}
       <div class="two">${q0("fe-ani", "Animal", p.animal, ' list="anilist"')}${dl("anilist", data.purchases.map((x) => x.animal))}${q0("fe-gra", "Grade", p.grade)}${q0("fe-pcs", "Pcs received", p.inP, n)}${q0("fe-sqft", "Sqft received", p.inS, n)}${q0("fe-rate", "Rate", p.rate, n)}
@@ -4877,6 +4881,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const f = full ? rem / full : 1, rd = (x) => Math.round((Number(x) || 0) * f * 10) / 10;
     return Object.assign({}, o, { sqft: rem, full, billed: r2(done), hides: rd(o.hides), sides: Math.round((Number(o.sides) || 0) * f), pcs: rd(o.pcs), part: true });
   }
+  const hsText = (note, pcs) => { const x = sidesOf(note, pcs); return x.sides ? fmtN(x.hides, 0) + " hides + " + fmtN(x.sides, 0) + " sides" : fmtN(x.hides, 1) + " hides"; };
+  const hsCell = (note, pcs) => { const x = sidesOf(note, pcs); return x.sides ? fmtN(x.hides, 0) + " + " + fmtN(x.sides, 0) + " sides" : fmtN(x.hides, 1); };
   function sidesOf(note, pcs) {
     const m = String(note || "").match(/([\d.]+)\s*HIDES\s*\+\s*([\d.]+)\s*SIDES/i);
     return m ? { hides: Number(m[1]), sides: Number(m[2]) } : { hides: Number(pcs) || 0, sides: 0 };
@@ -5022,7 +5028,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function invMarkDetail(v) {
     const sq = (v.lines || []).reduce((t, l) => t + (Number(l.sqft) || 0), 0);
     return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${kv([["Status", v.nobill ? "Not to be billed" : "Invoiced outside the app"], ["Invoice no", esc(v.ext_no || "")], ["Invoice date", v.ext_date ? fmtD(v.ext_date) : ""], ["Amount", v.amount ? rs(v.amount) : ""], ["Customer", esc(v.customer || "")], ["Marked on", fmtD(v.date)], ["Note", esc(v.note || "")]])}
-      <h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Lot</th><th>Delivered</th><th class="r">Sqft</th></tr></thead><tbody>${(v.lines || []).map((l) => { const d = invDelInfo(l.dkey); return `<tr><td>${lotLink(l.lot)}</td><td>${d && d.date ? fmtD(d.date) : ""}${d && d.doc ? " · " + esc(d.doc) : ""}</td><td class="r num">${fmtN(l.sqft, 2)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td class="r num"><b>${fmtN(sq, 2)}</b></td></tr></tfoot></table></div>
+      <h3>Deliveries</h3><div class="tbl"><table><thead><tr><th>Lot</th><th>Delivered</th><th class="r">Hides</th><th class="r">Sqft</th></tr></thead><tbody>${(v.lines || []).map((l) => { const d = invDelInfo(l.dkey); return `<tr><td>${lotLink(l.lot)}</td><td>${d && d.date ? fmtD(d.date) : ""}${d && d.doc ? " · " + esc(d.doc) : ""}</td><td class="r num">${l.hides != null || l.sides ? esc((Number(l.sides) ? fmtN(l.hides, 1) + " + " + fmtN(l.sides, 0) + " sides" : fmtN(l.hides, 1))) : ""}</td><td class="r num">${fmtN(l.sqft, 2)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="2"><b>Total</b></td><td class="r num"><b>${(() => { const h = (v.lines || []).reduce((t, l) => t + (Number(l.hides) || 0), 0), sd = (v.lines || []).reduce((t, l) => t + (Number(l.sides) || 0), 0); return fmtN(h, 1) + (sd ? " + " + fmtN(sd, 0) + " sides" : ""); })()}</b></td><td class="r num"><b>${fmtN(sq, 2)}</b></td></tr></tfoot></table></div>
       ${store && canWrite ? `<div class="acts"><button class="btn alt" data-ipa="unmark" data-id="${esc(v.id)}">Undo: put back in pending</button></div>` : ""}`;
   }
   // ---- list (Orders → Invoices)
@@ -6529,7 +6535,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (e.type === "chem") return `${d.kind.toLowerCase()} ${fmtN(d.qty, 3)}: ${d.reason}`;
     if (e.type === "recipe" && e.load_cur !== undefined) return `Process loaded from ${e.base_lot} v${e.base_version} · ${e.process}`;
     if (e.type === "recipe") return (e.base_process ? "Recipe copied from " + e.base_process : e.base_lot ? "New recipe from " + e.base_lot : "Recipe edit") + " · " + e.process + " · " + Object.keys(e.cells).length + " changes";
-    return e.type === "stage" ? `${e.from_stage || "no stage"} → ${e.to_stage}` : `Delivery ${fmtN(e.pcs, 0) || 0} pcs, ${fmtN(e.sqft, 2) || 0} sqft${e.doc_no ? ", " + e.doc_no : ""}`;
+    return e.type === "stage" ? `${e.from_stage || "no stage"} → ${e.to_stage}` : `Delivery ${hsText(e.note, e.pcs)}, ${fmtN(e.sqft, 2) || 0} sqft${e.doc_no ? ", " + e.doc_no : ""}`;
   }
   function entriesView() {
     if (!store) return `<p class="empty">Phone entries are not available in this view.</p>`;
