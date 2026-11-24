@@ -963,6 +963,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         if (now && nP(now.po_no) !== nP(d.po_no)) { if (rows("SELECT po_no FROM orders WHERE id<>?", [cur.order_id]).some((r) => nP(r.po_no) === nP(d.po_no))) throw new Error("PO " + d.po_no + " is already on the list");
           enRun("UPDATE orders SET po_no=?, po_norm=? WHERE id=?", [String(d.po_no).trim(), nP(d.po_no), cur.order_id]); } }
       enRun("UPDATE order_lines SET item=?, hsn=?, qty_sqft=?, rate=?, amount=? WHERE id=?", [d.item, d.hsn, Number(d.qty) || 0, Number(d.rate) || 0, Number(d.amount) || 0, id]);
+      if ("note" in d) enRun("UPDATE orders SET note=? WHERE id=?", [String(d.note || "").trim(), cur.order_id]);
       if ("due" in d) { ENGINE._ordDue(); enRun("UPDATE orders SET due_date=? WHERE id=?", [String(d.due || "").slice(0, 10) || null, cur.order_id]); if (d.due_lots) ENGINE._lotsDue(d.due_lots, String(d.due || "").slice(0, 10)); } },
     order_close(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
       if (d.close === "1") enRun("UPDATE order_lines SET closed_on=?, closed_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET closed_on=NULL WHERE id=?", [id]); },
@@ -978,6 +979,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     sup_party() { /* skins supplier -> Tally party, read from the entries (22-Nov-2026) */ },
     pur_bill() { /* a link to a bill already in Tally: read from the entries, nothing to write (22-Nov-2026) */ },
     po_unlink(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); enRun("DELETE FROM lot_orders WHERE UPPER(lot_no)=UPPER(?) AND line_id=?", [d.lot || e.lot_no, id]); },
+    // one item taken off a PO (whole-PO edit, 24-Nov-2026); refused when lots or deliveries count on it
+    po_item_delete(e) { const d = e.data || {}, id = ENGINE._line(d.line_id), cur = ENGINE._lineRow(id);
+      if (enOne("SELECT COUNT(*) n FROM lot_orders WHERE line_id=?", [id]).n) throw new Error("lots are linked to " + cur.item + ". Unlink them first");
+      if (enOne("SELECT COUNT(*) n FROM order_lines WHERE order_id=?", [cur.order_id]).n < 2) throw new Error("a PO needs at least one item. Delete the PO instead");
+      enRun("DELETE FROM order_lines WHERE id=?", [id]); },
     po_delete(e) { const oid = Number((e.data || {}).order_id) || 0;
       if (enOne("SELECT COUNT(*) n FROM lot_orders lo JOIN order_lines l ON l.id=lo.line_id WHERE l.order_id=?", [oid]).n) throw new Error("lots are linked to this PO. Unlink them first");
       enRun("DELETE FROM order_lines WHERE order_id=?", [oid]); enRun("DELETE FROM orders WHERE id=?", [oid]); },
@@ -1301,6 +1307,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     });
 
     data.orders = data.orders.filter((o) => !poDelE.some((e) => Number(e.data.order_id) === o.order_id));
+    { const itDel = of("po_item_delete"); if (itDel.length) data.orders = data.orders.filter((o) => !itDel.some((e) => String(e.data.line_id) === String(o.id))); }
     const mins = {}; rows("SELECT * FROM chem_min").forEach((m) => mins[m.chemical.toUpperCase()] = m);
     chemEdE.forEach((e) => { if (e.data.min !== undefined && e.data.min !== "") { const k = e.lot_no.toUpperCase(); mins[k] = Object.assign({ chemical: e.lot_no }, mins[k], { min_stock: Number(e.data.min) }); } });
     const pbQ = pbPendingQty();
@@ -1659,7 +1666,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // A chemical purchase bill typed on the phone counts in stock at once. Excel posts it to Tally as a Purchase voucher
   // (module TallyPurchase) unless the same bill is already there; then the phone shows both and the user chooses.
   const TALLY_TYPES = ["chem_purchase", "purchase_decision", "tally_delete"];
-  const APP_ONLY = ["po_share", "pur_bill", "sup_party"]; // kept by the app itself in either mode; Excel never sees them
+  const APP_ONLY = ["po_share", "pur_bill", "sup_party", "po_item_delete"]; // kept by the app itself in either mode; Excel never sees them
   const PB = { vtype: "Purchase", purchase: "Purchase", cgst: "Input CGST", sgst: "Input SGST", igst: "Input IGST", round: "Rounding Off", godown: "Main Location", home: "West Bengal" };
   const pbNorm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=.)/, "");
   const pbCred = () => trows("SELECT * FROM tally_creditors ORDER BY name");
@@ -2139,7 +2146,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 193, at: "2026-11-24T15:31:09+05:30", notes: "deliveries show hides and sides; Tally merge keeps chemical rates; rate fallback from Tally purchases" };
+  const APP_BUILD = { v: 194, at: "2026-11-24T18:24:41+05:30", notes: "Edit PO edits the whole PO: header, all items, add and remove items" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -3750,6 +3757,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <span class="m"><span><b>${esc(l.stage || "-")}</b>${l.grp === 1 && l.inStage !== null ? " · " + l.inStage + " d" : ""}</span>
         <span class="num">${fmtN(l.lot_pcs, 0)} pcs · ${fmtN(l.lot_sqft, 0)} sqft</span>${due}${l.phone ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
   }
+  const poItems = (o) => o.isNew ? data.orders.filter((x) => x.isNew && String(x.id).replace(/l\d+$/, "") === String(o.id).replace(/l\d+$/, "")) : data.orders.filter((x) => !x.isNew && x.order_id === o.order_id);
   const poOpenLots = (o) => [...new Set(data.orders.filter((x) => (o.order_id != null ? x.order_id === o.order_id : x === o)).flatMap((x) => x.lots || []))].filter((k) => data.lotBy[k] && data.lotBy[k].state === "OPEN");
   function orderCard(o) {
     const cls = { "NOT STARTED": "warn", "PART IN PRODUCTION": "info", "ALL IN PRODUCTION": "ok", "DELIVERED": "idle", "ARCHIVED": "idle" }[o.status];
@@ -4798,6 +4806,14 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     order: { title: "New PO", html: () => { const lines = (x, i) => `<div class="er ln" data-sec="lines" data-i="${i}"><input id="el-${i}-d" data-f="d" value="${v(x.d)}" placeholder="Item" aria-label="Item" autocomplete="off"><button type="button" class="x" data-eddel aria-label="Remove this item">×</button><div class="nums"><input id="el-${i}-q" data-f="q" value="${v(x.q)}" placeholder="Qty sqft" aria-label="Qty sqft" inputmode="decimal"><input id="el-${i}-r" data-f="r" value="${v(x.r)}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="el-${i}-a" data-f="a" value="${v(x.a)}" placeholder="Amount (auto)" aria-label="Amount" inputmode="decimal"><input id="el-${i}-h" data-f="h" value="${v(x.h)}" placeholder="HSN" aria-label="HSN" inputmode="numeric" data-numonly="1"></div></div>`;
       return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number (empty: the app makes one)")}${dateF("fo-date", "PO date", today0())}${dateF("fo-due", "Due date (optional)", "")}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
       <h3>Items</h3>${ed.lines.map(lines).join("")}<button type="button" class="btn alt" data-edadd="end" data-sec="lines">Add an item</button>${formEnd}</form>`; } },
+    po_full: { title: "Edit PO", html: (a) => { const q0 = (id, lb, val, attrs) => `<label>${lb}<input id="${id}" value="${v(val)}" autocomplete="off"${attrs || ""}></label>`, o = data.orders.find((x) => String(x.id) === String(a)); if (!o) return `<p class="empty">This PO is not on the list any more.</p>`;
+        const note = o.isNew ? (entries.find((e) => "n" + e.id === String(o.id).replace(/l\d+$/, "")) || { data: {} }).data.note || "" : ((rows("SELECT note FROM orders WHERE id=?", [o.order_id])[0] || {}).note || ""), L = poOpenLots(o);
+        const line = (x, i) => { const keep = (x.lots && x.lots.length) || x.delv > 0; return `<div class="er ln" data-sec="lines" data-i="${i}"><input id="el-${i}-d" data-f="d" value="${v(x.d)}" placeholder="Item" aria-label="Item" autocomplete="off">${keep ? `<span class="note" style="align-self:center;white-space:nowrap">${esc(x.lots && x.lots.length ? x.lots.join(", ") : "delivered")}</span>` : `<button type="button" class="x" data-eddel aria-label="Remove this item">×</button>`}<div class="nums"><input id="el-${i}-q" data-f="q" value="${v(x.q)}" placeholder="Qty sqft" aria-label="Qty sqft" inputmode="decimal"><input id="el-${i}-r" data-f="r" value="${v(x.r)}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="el-${i}-a" data-f="a" value="${v(x.a)}" placeholder="Amount (auto)" aria-label="Amount" inputmode="decimal"><input id="el-${i}-h" data-f="h" value="${v(x.h)}" placeholder="HSN" aria-label="HSN" inputmode="numeric" data-numonly="1"></div></div>`; };
+        return `<form class="fm" id="fm-po_full" data-id="${esc(a)}"><div class="two">${q0("fq-po", "PO number", o.po_no)}${dateF("fq-date", "PO date", String(o.po_date || "").slice(0, 10))}${dateF("fq-due", "Due date", String(o.due_date || "").slice(0, 10))}</div>
+          ${L.length ? `<label class="chk"><input type="checkbox" id="fq-duelots" checked> Also set the due date on its open lots (${esc(L.join(", "))})</label>` : ""}
+          ${q0("fq-cust", "Customer", o.customer, ' list="custlist"')}${dl("custlist", data.orders.map((x) => x.customer))}${q0("fq-note", "Note", note)}
+          <h3>Items</h3>${ed.lines.map(line).join("")}<button type="button" class="btn alt" data-edadd="end" data-sec="lines">Add an item</button>
+          <p class="note" style="margin:0">An item with lots or deliveries on it can be changed but not removed. Changing the amount by hand keeps it; otherwise it follows qty × rate.</p>${formEnd}</form>`; } },
     po_share: { title: "Move sqft to another PO", html: (a) => { const [k, id] = String(a).split("|"), l = data.lotBy[k], o = data.orders.find((x) => String(x.id) === String(id)); if (!l || !o) return "";
         const has = shareOn(l, o.id), over = o.qty_sqft ? Math.max(0, o.sqf - o.qty_sqft * PO_CAP) : 0;
         const opts = data.orders.filter((x) => !x.isNew && !x.closed_on && x.id !== o.id && x.qty_sqft).map((x) => ({ x, room: x.qty_sqft * PO_CAP - poUse(x.id) })).sort((a, b) => (b.x.customer === o.customer) - (a.x.customer === o.customer) || b.room - a.room)
@@ -5733,6 +5749,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function openForm(spec) {
     const i = spec.indexOf(":"), kind = i < 0 ? spec : spec.slice(0, i), arg = i < 0 ? "" : spec.slice(i + 1);
     if (kind === "order") ed = { lines: [{ d: "", q: "", r: "", h: "" }] };
+    if (kind === "po_full") { const o = data.orders.find((x) => String(x.id) === String(arg)); ed = { lines: o ? poItems(o).map((x) => ({ id: x.id, d: x.item || "", q: x.qty_sqft ?? "", r: x.rate ?? "", a: x.amount ?? "", h: x.hsn || "", lots: (x.lots || []).slice(), delv: x.delv || 0, o: { d: x.item || "", q: x.qty_sqft, r: x.rate, a: x.amount, h: x.hsn || "" } })) : [] }; }
     if (kind === "dye") { const orig = dbDyes(arg), cur0 = data.dyes[arg.toUpperCase()] || orig; ed = { dyes: cur0.map((x) => Object.assign({}, x, { r0: x.i })) }; if (!ed.dyes.length) ed.dyes.push({ d: "", c: "", m: "", a: "", b: "", r: "" }); }
     stack.push({ tab, k: sel[tab] }); flash = ""; sel[tab] = "form:" + kind + ":" + arg; formOpen = "form"; showDetail(); $("#detail").scrollTop = 0;
   }
@@ -6046,6 +6063,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const body = { type: "purchase_edit", lot_no: k, data: { key: k, supplier: need("#fe-sup"), animal: need("#fe-ani"), grade: need("#fe-gra"), pcs, sqft, rate: numOf("#fe-rate"), per: need("#fe-per"), date }, before: { supplier: p.supplier ?? "", animal: p.animal ?? "", grade: p.grade ?? "", rate: p.rate ?? "", pcs: rec.p, sqft: rec.s }, status: "pending", entered_by: uid, created_at: old ? old.created_at : new Date().toISOString() };
       btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("Purchase saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
     }
+    if (f.id === "fm-po_full") return savePoFull(f, msg, btn, bad);
     if (f.id === "fm-order_edit") {
       const normP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), po = need("#fx-po"), oo = data.orders.find((x) => String(x.id) === f.dataset.id);
       if (!po) return bad("Enter the PO number.");
@@ -6387,6 +6405,45 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // entries and invoices made on this phone, so it can tell its user when another phone's work changed them (23-Nov-2026)
   const mineGet = () => { try { return JSON.parse(localStorage.getItem("ssi-mine") || "[]"); } catch (e) { return []; } };
   const mineAdd = (id) => { try { const m = mineGet().filter((x) => x !== id).concat([id]).slice(-800); localStorage.setItem("ssi-mine", JSON.stringify(m)); } catch (e) { /* private window */ } };
+  // the whole PO in one go: header + every item (24-Nov-2026). Uses the entries Excel knows (order_edit per changed item, order add_to for new items); removed items are po_item_delete (app only)
+  async function savePoFull(f, msg, btn, bad) {
+    const normP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), oo = data.orders.find((x) => String(x.id) === f.dataset.id); if (!oo) return bad("This PO is not on the list any more.");
+    const po = need("#fq-po"), date = need("#fq-date"), due = need("#fq-due"), cust = need("#fq-cust"), note = need("#fq-note");
+    if (!po) return bad("Enter the PO number."); if (!date || checkDate(date)) return bad(checkDate(date) || "Enter the PO date."); if (!cust) return bad("Enter the customer.");
+    if (due && dueBad(due)) return bad(dueBad(due)); if (due && due < date) return bad("The due date is before the PO date.");
+    const mine = poItems(oo); if (normP(po) !== normP(oo.po_no) && data.orders.some((x) => !mine.includes(x) && normP(x.po_no) === normP(po))) return bad("PO " + po + " is already on the list.");
+    const ls = ed.lines.filter((x) => x.id || String(x.d).trim() || String(x.q).trim()); if (!ls.length) return bad("A PO needs at least one item. To remove the PO, use Delete PO.");
+    if (ls.some((x) => !String(x.d).trim() || !(Number(x.q) > 0) || isNaN(x.r || 0) || isNaN(x.a || 0))) return bad("Each item needs a name, a qty above 0, and numbers for rate and amount.");
+    const amtOf = (x) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || 0; if (x.o && (q !== Number(x.o.q || 0) || r !== Number(x.o.r || 0)) && a === Number(x.o.a || 0)) return +(q * r).toFixed(2); return a || +(q * r).toFixed(2); };
+    const gone = mine.filter((o) => !ls.some((x) => String(x.id) === String(o.id)));
+    for (const o of gone) if ((o.lots || []).length || o.delv > 0) return bad(o.item + " has lots or deliveries on it, so it can't be removed.");
+    const dueLots = due && $("#fq-duelots") && $("#fq-duelots").checked ? poOpenLots(oo).join(",") : "";
+    btn.disabled = true; msg.textContent = "Saving…";
+    try {
+      if (oo.isNew) { // still waiting: rewrite its own entry
+        const eid = String(oo.id).replace(/^n/, "").replace(/l\d+$/, ""), e0 = entries.find((e) => e.id === eid && e.type === "order" && isWait(e)); if (!e0) { btn.disabled = false; return bad("This PO has just been recorded. Open it again and edit."); }
+        const d = { po, date, customer: cust, note }; if (due) d.due = due; if (e0.data.add_to) d.add_to = e0.data.add_to;
+        ls.forEach((x, i) => { d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), Number(x.q) || 0, Number(x.r) || 0, String(x.h || "").trim(), amtOf(x)].join("~^~"); });
+        await writeEntry(store.doc("entries/" + e0.id), Object.assign({}, e0, { data: d, lot_no: "PO " + po })); sel[tab] = "n" + e0.id + "l1"; stack.length = 0; closeForm("PO changed."); return;
+      }
+      const hdrChanged = normP(po) !== normP(oo.po_no) || date !== String(oo.po_date || "").slice(0, 10) || UP(cust) !== UP(oo.customer || "") || due !== String(oo.due_date || "").slice(0, 10) || note !== String((rows("SELECT note FROM orders WHERE id=?", [oo.order_id])[0] || {}).note || "") || !!dueLots;
+      const t0 = Date.now(); let n = 0; const at = () => new Date(t0 + (n++) * 10).toISOString(), base = { status: "pending", entered_by: uid };
+      const keep = ls.filter((x) => x.id), add = ls.filter((x) => !x.id); let first = true, made = 0;
+      for (const x of keep) {
+        const ch = UP(String(x.d).trim()) !== UP(x.o.d) || Number(x.q) !== Number(x.o.q || 0) || Number(x.r || 0) !== Number(x.o.r || 0) || amtOf(x) !== Number(x.o.a || 0) || String(x.h || "").trim() !== String(x.o.h || "").trim();
+        if (!ch && !(first && hdrChanged)) continue;
+        const b0 = rows("SELECT l.*, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id WHERE l.id=?", [Number(x.id)])[0] || {};
+        await writeEntry(store.collection("entries").doc(), Object.assign({ type: "order_edit", lot_no: "PO " + po, data: Object.assign({ line_id: Number(x.id), order_id: oo.order_id, po_no: po, po_date: date, customer: cust, item: String(x.d).trim().toUpperCase(), hsn: String(x.h || "").trim(), qty: Number(x.q) || 0, rate: Number(x.r) || 0, amount: amtOf(x), due, note }, first && dueLots ? { due_lots: dueLots } : {}), before: { item: b0.item ?? "", qty: b0.qty_sqft ?? 0, rate: b0.rate ?? 0, customer: b0.customer ?? "" } }, base, { created_at: at() }));
+        first = false; made++;
+      }
+      if (first && hdrChanged && !keep.length) { /* every old item removed: header goes with the new items below */ }
+      if (add.length) { const d = { po, date, customer: cust, note, add_to: "1" }; if (due) d.due = due; add.forEach((x, i) => { d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), Number(x.q) || 0, Number(x.r) || 0, String(x.h || "").trim(), amtOf(x)].join("~^~"); });
+        await writeEntry(store.collection("entries").doc(), Object.assign({ type: "order", lot_no: "PO " + po, data: d }, base, { created_at: at() })); made++; }
+      for (const o of gone) { await writeEntry(store.collection("entries").doc(), Object.assign({ type: "po_item_delete", lot_no: "PO " + po, data: { line_id: o.id, order_id: oo.order_id, item: o.item } }, base, { created_at: at() })); made++; }
+      if (!made) { btn.disabled = false; msg.textContent = "Nothing was changed."; return; }
+      const stay = keep[0] ? keep[0].id : null; stack.length = 0; sel[tab] = stay; formOpen = null; ed = null; flash = recWord("PO saved. It is waiting for Excel."); refresh();
+    } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
   async function writeEntry(ref, body) {
     body = nlTag(body); mineAdd(ref.id);
     try { await ref.set(body); } catch (e) { if (e && e.code === "unavailable") { await new Promise((r) => setTimeout(r, 800 + Math.random() * 800)); await ref.set(body); } else throw e; }
@@ -6500,6 +6557,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (e.type === "lot_delete") return "Delete lot";
     if (e.type === "recipe_delete") return "Delete saved process · " + e.process;
     if (e.type === "po_delete") return "Delete PO";
+    if (e.type === "po_item_delete") return "Remove item " + (d.item || "") + " from the PO";
     if (e.type === "purchase_close") return d.close === "1" ? "Close purchase" : "Re-open purchase";
     if (e.type === "purchase_delete") return "Delete purchase";
     if (e.type === "purchase_split") return `Split: ${d.pcs} pcs, ${d.sqft} sqft to a new purchase`;
@@ -6607,7 +6665,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return `<p class="sub">${esc(o.customer)} · ${esc(o.item)}</p>
       ${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${o.isNew ? `<p class="note"><span class="wait">New PO, waiting for Excel.</span></p>` : ""}
       ${store && canWrite && o.grp === 1 && !o.closed_on && !o.short ? `<div class="acts"><button class="btn" data-polink="${esc(o.id)}">Link a lot</button><button class="btn alt" data-ponew="${esc(o.id)}">Start a new lot</button></div>` : ""}
-      ${store && canWrite && o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button></div>` : ""}${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
+      ${store && canWrite && o.isNew ? `<div class="acts"><button class="btn alt" data-form="po_full:${o.id}">Edit PO</button></div>` : ""}${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="po_full:${o.id}">Edit PO</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
       ${o.phone ? `<p class="note"><span class="wait">Changes here are not in Excel yet.</span></p>` : ""}
       ${kv([["PO date", fmtD(o.po_date)], ["Due date", o.due_date ? fmtD(String(o.due_date).slice(0, 10)) : ""], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
         ["Amount", o.amount ? "₹" + fmtN(o.amount, 0) : ""], ["HSN", esc(o.hsn)], ["In lots", fmtN(o.sqf, 2) + " sqft"], ["Delivered", fmtN(o.delv, 2) + " sqft"],
@@ -7162,7 +7220,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       h.textContent = !to ? "" : data.recipes["rec:" + l.lot_no + "|" + to] ? "This lot already has a recipe on that page, so nothing is copied." : !newLayout(to) ? "That page has an older layout, so the recipe can't be copied. Enter it in Excel." : "";
       return;
     }
-    if (!["fm-recipe", "fm-order", "fm-dye"].includes(f.id)) {
+    if (!["fm-recipe", "fm-order", "fm-dye", "fm-po_full"].includes(f.id)) {
       if (t.dataset.fillpo !== undefined && t.value) { const o = data.orders.find((x) => String(x.id) === t.value); if (o) { const set = (id, val) => { if (!$(id).value && val) $(id).value = val; }; set("#fn-cust", o.customer); set("#fn-prod", o.item); set("#fn-qty", o.qty_sqft); set("#fn-odt", String(o.po_date || "").slice(0, 10)); set("#fn-ddt", String(o.due_date || "").slice(0, 10)); } }
       return;
     }
