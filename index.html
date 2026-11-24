@@ -441,6 +441,15 @@ main.solo .detail.open { display: block; }
 .tview tbody tr:hover td { background: var(--accent-soft); }
 .tview td { white-space: nowrap; }
 .tview td.wrap { max-width: 24em; overflow: hidden; text-overflow: ellipsis; }
+.repf { padding: 4px 2px 0; }
+.reph { font-size: 1.15rem; margin: 6px 2px 8px; }
+.repgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 10px; }
+.repgrid label { display: flex; flex-direction: column; gap: 3px; font-size: .82rem; color: var(--muted); }
+.repgrid select, .repgrid input { font: inherit; font-size: .95rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); min-width: 0; }
+.repq { margin-top: 8px; }
+.tview.rep tfoot td { background: var(--accent-soft); position: sticky; bottom: 0; }
+.tview.rep tbody tr:not([data-repopen]) { cursor: default; }
+#list .tbl:has(.tview.rep) { max-height: 70vh; overflow: auto; }
 .hc { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 2px 10px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; }
 .hc:hover { border-color: var(--accent); }
 .hc b { font-family: var(--f-display); font-size: 15px; }
@@ -1393,8 +1402,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const CHIPS = {
     today: [],
     lots: [["open", "Open"], ["late", "Needs attention"], ["proc", "Process pages"], ["noproc", "Lots needing a process"], ["drafts", "Unsaved processes"], ["ready", "Ready to dispatch"], ["rework", "Rework"], ["guide", "Stages"], ["table", "Table"], ["done", "Dispatched / dumped"], ["arch", "Archived"], ["all", "All"]],
-    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["sdash", "Sales dashboard"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["pled", "Customer ledgers"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["tally", "Tally lists"], ["all", "All"]],
-    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["pdash", "Purchase dashboard"], ["sled", "Supplier ledgers"], ["bills", "Tally bills"], ["ledger", "Skins ledger"], ["all", "All"]],
+    orders: [["open", "Open"], ["start", "To start"], ["small", "Small balance"], ["done", "Delivered / archived"], ["sdash", "Sales dashboard"], ["inv", "Invoices"], ["tsales", "Tally sales"], ["pled", "Customer ledgers"], ["invpend", "Pending invoicing"], ["drep", "Delivery report"], ["orep", "Order report"], ["srep", "Sales report"], ["tally", "Tally lists"], ["all", "All"]],
+    purchases: [["open", "Skins left"], ["over", "Over-given"], ["closed", "Closed"], ["pdash", "Purchase dashboard"], ["sled", "Supplier ledgers"], ["bills", "Tally bills"], ["ledger", "Skins ledger"], ["prep", "Purchase report"], ["all", "All"]],
     chemicals: [["stock", "In stock"], ["reorder", "Reorder"], ["bills", "Purchase bills"], ["count", "Stock audit"], ["cost", "Cost per lot"], ["names", "Names not found"], ["usage", "Usage by lot"], ["cleanup", "Cleanup"], ["neg", "Negative"], ["zero", "Zero"], ["all", "All"]],
     health: [],
     settings: [],
@@ -1420,7 +1429,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   try { WIDE.addEventListener("change", sideMode); } catch (e) {}
   setTimeout(sideMode, 0);
   // the menu: main items, each opening into its pages (one tap on an item with pages opens or folds it)
-  const MI = { disp: '<svg viewBox="0 0 24 24"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>',
+  const MI = { rep: '<svg viewBox="0 0 24 24"><path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/></svg>', disp: '<svg viewBox="0 0 24 24"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>',
     inv: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
     proc: '<svg viewBox="0 0 24 24"><path d="M4 6h10M4 12h16M4 18h12"/><circle cx="17" cy="6" r="2"/><circle cx="19" cy="18" r="2"/></svg>',
     set: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
@@ -1429,8 +1438,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const MENU = [
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
-    { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally", "pled"]) },
-    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["orders|pled", "Customer ledgers"]] },
+    { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally", "pled", "srep"]) },
+    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["orders|pled", "Customer ledgers"], ["orders|srep", "Sales report"]] },
+    { id: "rep", label: "Reports", icon: MI.rep, items: [["orders|orep", "Order report"], ["orders|srep", "Sales report"], ["purchases|prep", "Purchase report"], ["orders|drep", "Delivery report"], ["orders|sdash", "Sales dashboard"], ["purchases|pdash", "Purchase dashboard"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
     { id: "purchases", label: "Purchases", items: chipItems("purchases") },
@@ -1510,7 +1520,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function render0() {
     chips();
     if (tab !== "calc") calc = null; // leaving the calculator forgets everything in it
-    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend" || filter.orders === "sdash")) || (tab === "purchases" && filter.purchases === "pdash") || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
+    $("main").classList.toggle("solo", tab === "calc" || tab === "mach" || tab === "today" || tab === "entries" || tab === "health" || tab === "settings" || tab === "about" || (tab === "lots" && (filter.lots === "table" || filter.lots === "rework" || filter.lots === "guide")) || (tab === "purchases" && filter.purchases === "ledger") || (tab === "orders" && filter.orders === "tally") || (tab === "orders" && (filter.orders === "drep" || filter.orders === "invpend" || filter.orders === "sdash" || filter.orders === "orep" || filter.orders === "srep")) || (tab === "purchases" && filter.purchases === "prep") || (tab === "purchases" && filter.purchases === "pdash") || (tab === "chemicals" && ["count", "cost", "names", "usage", "cleanup"].includes(filter.chemicals)));
     if (tab === "entries") { $("#list").innerHTML = entriesView(); namePeople(); return; }
     if (tab === "health") { $("#list").innerHTML = healthView(); return; }
     if (tab === "settings") { $("#list").innerHTML = settingsView(); return; }
@@ -1537,6 +1547,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (tab === "orders" && filter.orders === "tally") { $("#list").innerHTML = tallyView(ws); return; }
     if (tab === "orders" && filter.orders === "tsales") { $("#list").innerHTML = tsalesView(ws); return; }
     if (tab === "orders" && filter.orders === "sdash") { $("#list").innerHTML = sdashView(ws); return; }
+    if ((tab === "orders" && (filter.orders === "orep" || filter.orders === "srep")) || (tab === "purchases" && filter.purchases === "prep")) { const rk = tab === "purchases" ? "prep" : filter.orders, ae = document.activeElement, keep = ae && ae.dataset && ae.dataset.rep && document.querySelector(".repf[data-repk='" + rk + "']");
+      if (keep) { repOut(); return; } $("#list").innerHTML = repView(rk, ws); return; }
     if ((tab === "orders" && filter.orders === "pled") || (tab === "purchases" && filter.purchases === "sled")) { $("#list").innerHTML = plListView(ws); return; }
     if (tab === "purchases" && filter.purchases === "pdash") { $("#list").innerHTML = pdashView(); return; }
     if (tab === "lots" && filter.lots === "guide") { $("#list").innerHTML = guideView(ws); return; }
@@ -2119,7 +2131,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 190, at: "2026-11-24T00:45:42+05:30", notes: "finishing check by stage order everywhere; ON HOLD resumes after the paused stage; open forms keep typing during sync" };
+  const APP_BUILD = { v: 191, at: "2026-11-24T13:29:53+05:30", notes: "Reports: order, sales, purchase (filter, sort, totals, PDF, CSV); Orders tab opens Tally sales, invoices, ledgers again" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -3590,6 +3602,127 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const k = tsort.k, x = a[k], y = b[k], nx = k === "lot_no" ? a.num : x, ny = k === "lot_no" ? b.num : y;
     if (nx === ny) return 0; if (nx === null || nx === undefined || nx === "") return 1; if (ny === null || ny === undefined || ny === "") return -1;
     return (typeof nx === "number" ? nx - ny : String(nx).localeCompare(String(ny))) * tsort.dir; });
+  // ---- Reports: orders, sales, purchases — filter, sort, totals, PDF and CSV (24-Nov-2026)
+  const REPS = { orep: { title: "Order report", party: "Customer" }, srep: { title: "Sales report", party: "Customer" }, prep: { title: "Purchase report", party: "Supplier" } };
+  const REP_VIEWS = { orep: [["lines", "PO lines"], ["party", "By customer"], ["item", "By item"], ["month", "By month"], ["status", "By status"]],
+    srep: [["bills", "Bills"], ["items", "Items on bills"], ["party", "By customer"], ["item", "By item"], ["month", "By month"]],
+    prep: [["bills", "Bills"], ["items", "Items on bills"], ["party", "By supplier"], ["item", "By item"], ["month", "By month"]] };
+  const repFy0 = () => { const d = new Date(); return iso(new Date(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1, 3, 1)); };
+  let repSt = (() => { try { return JSON.parse(localStorage.getItem("ssi-rep") || "{}") || {}; } catch (x) { return {}; } })();
+  function repS(k) { const s = repSt[k] = repSt[k] || {}; if (s.from === undefined) s.from = repFy0(); if (s.to === undefined) s.to = ""; if (!s.view) s.view = REP_VIEWS[k][0][0]; if (!s.status) s.status = k === "orep" ? "open" : "all"; ["party", "item", "q"].forEach((x) => { if (s[x] === undefined) s[x] = ""; }); return s; }
+  const repSave = () => { try { localStorage.setItem("ssi-rep", JSON.stringify(repSt)); } catch (x) {} };
+  const monthName = (ym) => ym ? new Date(ym + "-01").toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "";
+  const repHas = (txt, words) => { const h = UP(txt); return words.every((w) => h.includes(UP(w))); };
+  const repWords = (t) => String(t || "").trim().split(/\s+/).filter(Boolean);
+  // group rows: key, label column, the number columns to add up
+  function repGroup(list, keyF, labelCol, sums, extra) {
+    const g = {}; list.forEach((r) => { const k = keyF(r) || "(none)", o = g[k] = g[k] || Object.assign({ [labelCol]: k, n: 0 }, extra ? extra(r) : {}); o.n++; sums.forEach((c) => { o[c] = (o[c] || 0) + (Number(r[c]) || 0); }); });
+    return Object.values(g);
+  }
+  // the rows and columns of a report, after its filters (ws: words in the search box at the top)
+  function repData(k, ws) {
+    const s = repS(k), from = s.from || "", to = s.to || "9999", pw = repWords(s.party), iw = repWords(s.item), qw = repWords(s.q).concat(ws || []);
+    const inDate = (d) => !!d && d >= from && d <= to;
+    if (k === "orep") {
+      const ST = { open: (o) => o.grp === 1, ns: (o) => o.status === "NOT STARTED", part: (o) => o.status === "PART IN PRODUCTION", allin: (o) => o.status === "ALL IN PRODUCTION", del: (o) => o.status === "DELIVERED", arch: (o) => o.status === "ARCHIVED", all: () => true };
+      const base = data.orders.filter((o) => (ST[s.status] || ST.all)(o) && (!s.from && !s.to || inDate(String(o.po_date || "").slice(0, 10))) && (!pw.length || repHas(o.customer, pw)) && (!iw.length || repHas(o.item, iw)) && (!qw.length || repHas(o.hay + " " + o.po_date, qw)))
+        .map((o) => { const amt = Number(o.amount) || (Number(o.qty_sqft) || 0) * (Number(o.rate) || 0); return { id: o.id, po: o.po_no, date: String(o.po_date || "").slice(0, 10), party: o.customer, item: o.item, qty: Number(o.qty_sqft) || 0, rate: Number(o.rate) || 0, amt, inprod: Math.max(0, o.sqf || 0), delv: Math.max(0, o.delv || 0), start: o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION" ? Math.max(0, o.left || 0) : 0, todel: o.grp === 1 ? Math.max(0, o.leftDel || 0) : 0, delval: o.grp === 1 ? Math.max(0, o.leftDel || 0) * (Number(o.rate) || 0) : 0, lots: (o.lots || []).join(", "), status: (o.status || "").toLowerCase() + (o.short ? " (closed short)" : "") }; });
+      const sums = ["qty", "amt", "inprod", "delv", "start", "todel", "delval"], NUM = [["qty", "Ordered sqft", 0], ["amt", "Order value ₹", 0], ["inprod", "In lots sqft", 0], ["delv", "Delivered sqft", 0], ["start", "To start sqft", 0], ["todel", "To deliver sqft", 0], ["delval", "To deliver ₹", 0]];
+      if (s.view === "lines") return { rows: base, cols: [["po", "PO"], ["date", "PO date", "d"], ["party", "Customer"], ["item", "Item"], ["qty", "Ordered sqft", 0], ["rate", "Rate", 2, "nosum"], ["amt", "Value ₹", 0], ["delv", "Delivered sqft", 0], ["start", "To start sqft", 0], ["todel", "To deliver sqft", 0], ["lots", "Lots"], ["status", "Status"]], def: ["date", -1] };
+      const by = { party: ["party", "Customer", (r) => r.party], item: ["item", "Item", (r) => r.item], month: ["month", "Month", (r) => r.date.slice(0, 7)], status: ["status", "Status", (r) => r.status] }[s.view];
+      const rows = repGroup(base, by[2], by[0], sums); if (s.view === "month") rows.forEach((r) => { r.mkey = r.month; r.month = monthName(r.month); });
+      return { rows, cols: [[by[0], by[1]], ["n", "PO lines", 0]].concat(NUM), def: s.view === "month" ? ["mkey", 1] : ["amt", -1] };
+    }
+    // sales and purchases: Tally's bills with their item lines
+    const T = (k === "srep" ? tsRows() : trows("SELECT * FROM tally_purchases ORDER BY vdate DESC, CAST(vno AS INTEGER) DESC")).map((t) => ({ t, d: tsYmd(t.vdate), ls: tsLines(t) }))
+      .filter((x) => (!s.from && !s.to || inDate(x.d)) && (!pw.length || repHas(x.t.party, pw)) && (s.status === "all" || !x.t.vtype || UP(x.t.vtype) === UP(s.status)));
+    const lineOk = (l) => !iw.length || repHas(l.n + " " + (l.desc || ""), iw);
+    const bills = T.filter((x) => !iw.length || x.ls.some(lineOk)).map((x) => { const ls = x.ls.filter(lineOk), goods = ls.reduce((a, l) => a + l.a, 0); return { guid: x.t.guid, date: x.d, no: x.t.vno, party: x.t.party, ref: x.t.ref || "", type: x.t.vtype || "", lines: ls.length, qty: ls.reduce((a, l) => a + l.q, 0), goods, amt: iw.length ? goods : Number(x.t.amount) || 0, items: ls.map((l) => l.n).join(", "), hay: [x.t.vno, x.t.party, x.t.ref, x.t.narration, ls.map((l) => l.n + " " + l.desc).join(" ")].join(" ") }; })
+      .filter((b) => !qw.length || repHas(b.hay, qw));
+    const items = []; bills.forEach((b) => { const x = T.find((y) => y.t.guid === b.guid); x.ls.filter(lineOk).filter((l) => !qw.length || repHas([b.no, b.party, b.ref, l.n, l.desc].join(" "), qw)).forEach((l) => items.push({ guid: b.guid, date: b.date, no: b.no, party: b.party, item: l.n, desc: l.desc || "", qty: l.q, unit: l.u || "", rate: l.r, disc: l.d, goods: l.a })); });
+    const P = k === "srep" ? "Customer" : "Supplier", tot = iw.length ? "Total of these items ₹" : "Bill total ₹ (with GST)";
+    if (s.view === "bills") return { rows: bills, cols: [["date", "Date", "d"], ["no", "No."], ["party", P], ["ref", "Ref"]].concat(k === "srep" ? [["type", "Type"]] : []).concat([["items", "Items"], ["qty", "Qty", 2], ["goods", "Goods ₹ (before GST)", 0], ["amt", tot, 0]]), def: ["date", -1] };
+    const uC = items.some((r) => r.unit) ? [["unit", "Unit"]] : [], dC = items.some((r) => r.desc) ? [["desc", "Description"]] : [];
+    if (s.view === "items") return { rows: items, cols: [["date", "Date", "d"], ["no", "No."], ["party", P], ["item", "Item"]].concat(dC, [["qty", "Qty", 2]], uC, [["rate", "Rate", 2, "nosum"], ["disc", "Disc %", 2, "nosum"], ["goods", "Amount ₹ (before GST)", 0]]), def: ["date", -1] };
+    if (s.view === "item") { const rows = repGroup(items, (r) => r.item, "item", ["qty", "goods"], (r) => ({ unit: r.unit })); rows.forEach((r) => { r.avg = r.qty ? r.goods / r.qty : 0; });
+      return { rows, cols: [["item", "Item"], ["n", "Lines", 0], ["qty", "Qty", 2]].concat(uC, [["avg", "Average rate", 2, "nosum"], ["goods", "Amount ₹ (before GST)", 0]]), def: ["goods", -1] }; }
+    const by = s.view === "party" ? ["party", P, (r) => r.party] : ["month", "Month", (r) => r.date.slice(0, 7)];
+    const rows = repGroup(bills, by[2], by[0], ["qty", "goods", "amt"]); if (s.view === "month") rows.forEach((r) => { r.mkey = r.month; r.month = monthName(r.month); });
+    return { rows, cols: [[by[0], by[1]], ["n", "Bills", 0], ["qty", "Qty", 2], ["goods", "Goods ₹ (before GST)", 0], ["amt", tot, 0]], def: s.view === "month" ? ["mkey", 1] : ["amt", -1] };
+  }
+  function repSorted(k, D) { const s = repS(k), sk = s.sort && D.cols.some((c) => c[0] === s.sort) ? [s.sort, s.dir || 1] : D.def, c = D.cols.find((x) => x[0] === sk[0]), num = c ? typeof c[2] === "number" : false;
+    const kf = (r) => sk[0] === "month" && r.mkey ? r.mkey : r[sk[0]];
+    return { sk, rows: D.rows.slice().sort((a, b) => { const x = kf(a), y = kf(b); return (num ? (Number(x) || 0) - (Number(y) || 0) : String(x ?? "").localeCompare(String(y ?? ""), "en", { numeric: true })) * sk[1]; }) }; }
+  const repCell = (c, v) => c[2] === "d" ? fmtD(v) : c[2] !== undefined ? fmtN(v, c[2]) : (v ?? "");
+  const repTot = (D, rows) => D.cols.map((c, i) => i === 0 ? "Total" : typeof c[2] === "number" && c[3] !== "nosum" ? fmtN(rows.reduce((a, r) => a + (Number(r[c[0]]) || 0), 0), c[2]) : "");
+  function repFilterText(k) { const s = repS(k), v = REP_VIEWS[k].find((x) => x[0] === s.view), bits = [v ? v[1] : ""];
+    bits.push(s.from || s.to ? (s.from ? fmtD(s.from) : "start") + " to " + (s.to ? fmtD(s.to) : "today") : "all dates");
+    if (s.party) bits.push(REPS[k].party + ": " + s.party); if (s.item) bits.push("Item: " + s.item); if (s.q) bits.push("Search: " + s.q);
+    if (k === "orep" && s.status !== "all") bits.push({ open: "open POs", ns: "not started", part: "part in production", allin: "all in production", del: "delivered", arch: "archived" }[s.status]);
+    if (k === "srep" && s.status !== "all") bits.push(s.status);
+    return bits.join(" · "); }
+  function repTable(k, ws) {
+    const D = repData(k, ws), S = repSorted(k, D), rows = S.rows, tot = repTot(D, rows), click = k === "orep" && repS(k).view === "lines" ? "orep" : (k !== "orep" && ["bills", "items"].includes(repS(k).view)) ? k : "";
+    const cls = (c) => typeof c[2] === "number" ? "r num" : (c[0] === "items" || c[0] === "lots" || c[0] === "desc") ? "wrap" : "";
+    return `<div class="count"><span>${rows.length} row${rows.length === 1 ? "" : "s"} · ${esc(repFilterText(k))}. Tap a heading to sort.</span></div>
+      ${rows.length ? `<div class="tbl"><table class="tview rep"><thead><tr>${D.cols.map((c) => `<th data-repsort="${c[0]}" class="${typeof c[2] === "number" ? "r" : ""}"${S.sk[0] === c[0] || (S.sk[0] === "mkey" && c[0] === "month") ? ` aria-sort="${S.sk[1] > 0 ? "ascending" : "descending"}"` : ""}>${esc(c[1])}${S.sk[0] === c[0] || (S.sk[0] === "mkey" && c[0] === "month") ? (S.sk[1] > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((r) => `<tr${click ? ` data-repopen="${esc(click)}:${esc(click === "orep" ? r.id : r.guid)}"` : ""}>${D.cols.map((c) => `<td class="${cls(c)}">${esc(repCell(c, r[c[0]]))}</td>`).join("")}</tr>`).join("")}</tbody>
+      <tfoot><tr>${tot.map((t, i) => `<td class="${typeof D.cols[i][2] === "number" ? "r num" : ""}"><b>${esc(t)}</b></td>`).join("")}</tr></tfoot></table></div>` : `<p class="empty">Nothing matches these filters.</p>`}`;
+  }
+  function repView(k, ws) {
+    const s = repS(k), R = REPS[k], T = k === "orep" ? null : (k === "srep" ? tsRows() : trows("SELECT party, lines FROM tally_purchases"));
+    if (T && !T.length) return `${askXBtn()}<p class="empty">Excel has not read Tally's ${k === "srep" ? "sales" : "purchase"} bills yet. It reads them every 30 minutes while Tally is open.</p>`;
+    const parties = [...new Set((k === "orep" ? data.orders.map((o) => o.customer) : T.map((t) => t.party)).filter(Boolean))].sort();
+    const items = [...new Set(k === "orep" ? data.orders.map((o) => o.item) : T.flatMap((t) => tsLines(t).map((l) => l.n)))].filter(Boolean).sort();
+    const types = k === "srep" ? [...new Set(T.map((t) => t.vtype).filter(Boolean))].sort() : [];
+    const opt = (L, v) => L.map(([a, b]) => `<option value="${esc(a)}"${a === v ? " selected" : ""}>${esc(b)}</option>`).join("");
+    return `<div class="repf" data-repk="${k}">
+      <h2 class="reph">${esc(R.title)}</h2>
+      <div class="repgrid">
+        <label>Show<select data-rep="view">${opt(REP_VIEWS[k], s.view)}</select></label>
+        ${k === "orep" ? `<label>POs<select data-rep="status">${opt([["open", "Open"], ["ns", "Not started"], ["part", "Part in production"], ["allin", "All in production"], ["del", "Delivered"], ["arch", "Archived"], ["all", "All"]], s.status)}</select></label>` : ""}
+        ${types.length > 1 ? `<label>Bill type<select data-rep="status">${opt([["all", "All"]].concat(types.map((t) => [t, t])), s.status)}</select></label>` : ""}
+        <label>From<input type="date" data-rep="from" value="${esc(s.from)}"></label>
+        <label>To<input type="date" data-rep="to" value="${esc(s.to)}"></label>
+        <label>${esc(R.party)}<input data-rep="party" list="rep-pl" value="${esc(s.party)}" placeholder="all" autocomplete="off"></label>
+        <label>Item<input data-rep="item" list="rep-il" value="${esc(s.item)}" placeholder="all" autocomplete="off"></label>
+        <label>Search<input data-rep="q" value="${esc(s.q)}" placeholder="PO, bill no., lot, words…" autocomplete="off"></label>
+      </div>
+      <datalist id="rep-pl">${parties.map((p) => `<option value="${esc(p)}">`).join("")}</datalist><datalist id="rep-il">${items.map((p) => `<option value="${esc(p)}">`).join("")}</datalist>
+      <div class="acts repq"><button class="btn alt sm" data-repr="tm">This month</button><button class="btn alt sm" data-repr="lm">Last month</button><button class="btn alt sm" data-repr="fy">This year</button><button class="btn alt sm" data-repr="all">All dates</button><button class="btn alt sm" data-repr="clear">Clear filters</button></div>
+      <div class="acts"><button class="btn" data-reppdf="${k}">Save PDF</button><button class="btn alt" data-repcsv="${k}">Excel (CSV)</button></div><div id="repmsg" class="fmsg"></div>
+      ${k !== "orep" ? `<p class="note" style="margin:4px 2px">From Tally's ${k === "srep" ? "sales" : "purchase"} bills${tMeta(k === "srep" ? "sales_at" : "purch_at") ? ", read " + esc(fmtD(String(tMeta(k === "srep" ? "sales_at" : "purch_at")).slice(0, 10))) : ""}. Goods ₹ is before GST; the bill total includes GST.</p>` : `<p class="note" style="margin:4px 2px">Order value = ordered sqft × PO rate. Delivered and to deliver follow the lots linked to each PO.</p>`}
+      </div><div id="rep-out">${repTable(k, ws)}</div>`;
+  }
+  async function repPdf(k, where) {
+    const JS = await pdfLib(), doc = new JS({ unit: "mm", format: "a4", orientation: "landscape" }), D = repData(k, words($("#q").value)), rows = repSorted(k, D).rows;
+    pdfHead(doc, REPS[k].title, repFilterText(k) + "   " + rows.length + " rows   Data of " + data.asOf);
+    const cs = {}; D.cols.forEach((c, i) => { if (typeof c[2] === "number") cs[i] = { halign: "right" }; });
+    doc.autoTable(Object.assign({}, TBL, { startY: 24, head: [D.cols.map((c) => plain(c[1].replace("₹", "Rs")))], body: rows.map((r) => D.cols.map((c) => plain(String(repCell(c, r[c[0]]))))), foot: [repTot(D, rows).map((t) => plain(String(t)))], columnStyles: cs, footStyles: { fillColor: [232, 238, 241], textColor: 20, fontStyle: "bold" }, showFoot: "lastPage" }));
+    const s = repS(k); await savePdf(doc, REPS[k].title + " " + (s.from || "start") + " to " + (s.to || iso(new Date())) + ".pdf", where, "report");
+  }
+  async function repCsv(k, where) {
+    const D = repData(k, words($("#q").value)), rows = repSorted(k, D).rows, q = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const txt = "﻿" + [D.cols.map((c) => q(c[1])).join(",")].concat(rows.map((r) => D.cols.map((c) => q(c[2] === "d" ? r[c[0]] : typeof c[2] === "number" ? (Math.round((Number(r[c[0]]) || 0) * 100) / 100) : r[c[0]])).join(","))).join("\r\n");
+    const dlp = window.claude ? await window.claude.use("downloads") : null; if (!dlp) { where.textContent = "Saving files isn't available in this view."; return; }
+    const s = repS(k); try { await dlp.save({ filename: REPS[k].title + " " + (s.from || "start") + " to " + (s.to || iso(new Date())) + ".csv", data: new TextEncoder().encode(txt) }); where.textContent = "Saved. It opens in Excel."; } catch (e) { if (e.code !== "declined") where.textContent = "The file could not be saved."; }
+  }
+  function repRange(k, r) { const s = repS(k), d = new Date(), y = d.getFullYear(), m = d.getMonth();
+    if (r === "tm") { s.from = iso(new Date(y, m, 1)); s.to = ""; } else if (r === "lm") { s.from = iso(new Date(y, m - 1, 1)); s.to = iso(new Date(y, m, 0)); } else if (r === "fy") { s.from = repFy0(); s.to = ""; } else if (r === "all") { s.from = ""; s.to = ""; }
+    else if (r === "clear") { repSt[k] = {}; repS(k); } repSave(); }
+  const repOut = () => { const k = (document.querySelector(".repf") || {}).dataset; if (!k || !k.repk) return; const o = $("#rep-out"); if (o) o.innerHTML = repTable(k.repk, words($("#q").value)); };
+  document.addEventListener("input", (e) => { const f = e.target.closest && e.target.closest("[data-rep]"); if (!f) return; const k = f.closest(".repf").dataset.repk, s = repS(k); s[f.dataset.rep] = f.value; repSave(); clearTimeout(repOut.t); repOut.t = setTimeout(repOut, f.tagName === "SELECT" || f.type === "date" ? 0 : 200); });
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest && e.target.closest("[data-repsort],[data-repr],[data-reppdf],[data-repcsv],[data-repopen]"); if (!t) return;
+    const box = document.querySelector(".repf"), k = box && box.dataset.repk;
+    if (t.dataset.repsort && k) { const s = repS(k); if (s.sort === t.dataset.repsort) s.dir = -(s.dir || 1); else { s.sort = t.dataset.repsort; s.dir = /^(date|amt|goods|qty|n|delv|start|todel|delval|inprod)$/.test(s.sort) ? -1 : 1; } repSave(); repOut(); return; }
+    if (t.dataset.repr && k) { repRange(k, t.dataset.repr); render(); return; }
+    if (t.dataset.reppdf) { const w = $("#repmsg"); w.textContent = "Making the PDF…"; repPdf(t.dataset.reppdf, w).then(() => { if (w.textContent === "Making the PDF…") w.textContent = ""; }, (x) => { w.textContent = "The PDF could not be made: " + (x && x.message || x); }); return; }
+    if (t.dataset.repcsv) { const w = $("#repmsg"); w.textContent = ""; repCsv(t.dataset.repcsv, w); return; }
+    if (t.dataset.repopen) { const [kk, id] = t.dataset.repopen.split(/:(.*)/); if (kk === "orep") { filter.orders = "open"; const o = data.orders.find((x) => String(x.id) === id); if (o && o.grp !== 1) filter.orders = "all"; sel.orders = o ? o.id : null; stack.length = 0; go("orders"); }
+      else if (kk === "srep") { filter.orders = "tsales"; sel.orders = "tsale:" + id; stack.length = 0; go("orders"); }
+      else { filter.purchases = "bills"; sel.purchases = "tbill:" + id; stack.length = 0; go("purchases"); } }
+  });
   function tableView(ws) {
     const list = tableRows(ws), cell = (l, c) => c[2] === 2 ? fmtD(l[c[0]]) : c[2] ? fmtN(l[c[0]], 2) : esc(l[c[0]]);
     return `<div class="acts" style="margin-top:8px"><button class="btn alt" data-tcsv>Export this table</button><button class="btn alt" data-pdf="table">Save PDF</button></div><div id="pdfmsg" class="fmsg"></div><div class="count"><span>${list.length} lots on the tracker. Tap a heading to sort.</span></div><div id="tcsvout"></div>
@@ -5723,7 +5856,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const recWord = (t) => !recMode() || typeof t !== "string" ? t : t.replace(/\s*(It is|They are) waiting for Excel\./g, "").replace(/,? ?waiting for Excel/gi, "");
   function closeForm(done) { formOpen = null; ed = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; flash = recWord(done); refresh();
     // the thing that was open is gone (PO deleted, lot deleted): back to the list, not a blank page (24-Nov-2026)
-    if (sel[tab] && ((tab === "orders" && !data.orders.some((x) => String(x.id) === String(sel[tab]))) || (tab === "lots" && !data.lotBy[sel[tab]]))) { sel[tab] = null; stack.length = 0; refresh(); } showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
+    if (sel[tab] && ((tab === "orders" && /^(\d+|n.+l\d+)$/.test(String(sel[tab])) && !data.orders.some((x) => String(x.id) === String(sel[tab]))) || (tab === "lots" && /^L\d/i.test(String(sel[tab])) && !data.lotBy[sel[tab]]))) { sel[tab] = null; stack.length = 0; refresh(); } showDetail(); setTimeout(() => { flash = ""; showDetailKeep(); }, 6000); if (!sel[tab]) { flash = ""; } }
   const nextUncounted = (name) => { const ws = words($("#q").value), l = openAudit().lines.filter((c) => match(c.n, ws) && c.n !== name && !countOf(c.n)).sort((a, b) => a.n.localeCompare(b.n)); return (l.find((c) => c.n.localeCompare(name) > 0) || l[0] || {}).n || ""; };
   function countCalc(f) {
     const full = $("#fq-full").value, loose = $("#fq-loose").value, recv = $("#fq-recv").value, out = $("#fq-calc");
@@ -6589,7 +6722,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function showDetail() { showDetail0(); try { polish(); } catch (e) { console.error(e); } }
   function showDetail0() {
     // a PO that was open has gone (deleted here or on another phone): show the list (24-Nov-2026)
-    if (tab === "orders" && sel.orders && !formOpen && data.orders && !data.orders.some((x) => String(x.id) === String(sel.orders))) { sel.orders = null; stack.length = 0; }
+    if (tab === "orders" && /^(\d+|n.+l\d+)$/.test(String(sel.orders || "")) && !formOpen && data.orders && !data.orders.some((x) => String(x.id) === String(sel.orders))) { sel.orders = null; stack.length = 0; } // only PO keys: tsale:, inv:, q:, pay:, pled: are other pages
     queueMicrotask(edRatesRefresh); queueMicrotask(syncHist);
     const k = sel[tab], d = $("#detail");
     if (!k) { d.classList.remove("open"); d.innerHTML = `<p class="empty">Pick an item to see everything about it.</p>`; return; }
