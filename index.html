@@ -943,6 +943,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     // CreatePurchase: a stock line with its receipt
     _stockLine(e, sub, d, note) { const k = ENGINE._newPurch(Object.assign({}, e, { id: e.id + sub }), Object.assign({ rate: 0, per: "SQFT" }, d), note); ENGINE._led(d.date, "SUPPLIER", k, d.pcs, d.sqft, "RECEIPT", e, note); return k; },
     // ---- POs (OrdSave, AfSaveOrderLine, AfArchiveOrderLine, close short, OrdLinkLot, AfUnlinkLot, PO delete)
+    _ordDue() { if (!rows("PRAGMA table_info(orders)").some((c) => c.name === "due_date")) enRun("ALTER TABLE orders ADD COLUMN due_date TEXT"); },
+    _lotsDue(list, due) { String(list || "").split(",").map((x) => x.trim()).filter(Boolean).forEach((k) => { const l = enOne("SELECT lot_no, state FROM lots WHERE UPPER(lot_no)=UPPER(?)", [k]); if (l && l.state === "OPEN") enRun("UPDATE lots SET due_date=? WHERE lot_no=?", [due || null, l.lot_no]); }); },
     order(e) { const d = e.data || {}, norm = UP(d.po).replace(/[^A-Z0-9]/g, ""), ex = norm ? enOne("SELECT id, po_no FROM orders WHERE po_norm=? ORDER BY id LIMIT 1", [norm]) : null;
       if (ex && d.add_to !== "1") throw new Error("PO " + ex.po_no + " is already saved");
       const lines = Object.keys(d).filter((k) => /^l\d+$/.test(k)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
@@ -951,7 +953,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (!oid) { oid = ENGINE._id("orders"); enRun("INSERT INTO orders(id, po_no, po_norm, po_date, customer, note, created_by, created_at) VALUES(?,?,?,?,?,?,?,?)", [oid, String(d.po || "").trim(), norm, String(d.date || "").slice(0, 10), String(d.customer || "").trim(), String(d.note || "").trim(), e.entered_by || "", e.created_at || enNow()]); }
       lines.forEach((k) => { const p = String(d[k]).split("~^~"); if (p.length !== 5) throw new Error("item " + k.slice(1) + " could not be read"); const id = ENGINE._id("order_lines");
         enRun("INSERT INTO order_lines(id, order_id, item, qty_sqft, rate, hsn, amount) VALUES(?,?,?,?,?,?,?)", [id, oid, p[0], Number(p[1]) || 0, Number(p[2]) || 0, p[3], Number(p[4]) || 0]);
-        enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", ["n" + e.id + k, String(id)]); }); },
+        enRun("INSERT OR REPLACE INTO app_keys VALUES(?,?)", ["n" + e.id + k, String(id)]); });
+      if (String(d.due || "").trim()) { ENGINE._ordDue(); enRun("UPDATE orders SET due_date=? WHERE id=?", [String(d.due).slice(0, 10), oid]); } },
     order_edit(e) { const d = e.data || {}, id = ENGINE._line(d.line_id), cur = ENGINE._lineRow(id), b = e.before || null;
       if (b) { const same = (x, y, num) => num ? Math.abs((Number(x) || 0) - (Number(y) || 0)) < 0.005 : UP(String(x ?? "").trim()) === UP(String(y ?? "").trim());
         if (("item" in b && !same(cur.item, b.item)) || ("qty" in b && !same(cur.qty_sqft, b.qty, 1)) || ("rate" in b && !same(cur.rate, b.rate, 1)) || ("customer" in b && !same(cur.customer, b.customer))) throw new Error("the item was changed after this entry was made"); }
@@ -959,7 +962,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (String(d.po_no || "").trim()) { const nP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), now = enOne("SELECT po_no FROM orders WHERE id=?", [cur.order_id]);
         if (now && nP(now.po_no) !== nP(d.po_no)) { if (rows("SELECT po_no FROM orders WHERE id<>?", [cur.order_id]).some((r) => nP(r.po_no) === nP(d.po_no))) throw new Error("PO " + d.po_no + " is already on the list");
           enRun("UPDATE orders SET po_no=?, po_norm=? WHERE id=?", [String(d.po_no).trim(), nP(d.po_no), cur.order_id]); } }
-      enRun("UPDATE order_lines SET item=?, hsn=?, qty_sqft=?, rate=?, amount=? WHERE id=?", [d.item, d.hsn, Number(d.qty) || 0, Number(d.rate) || 0, Number(d.amount) || 0, id]); },
+      enRun("UPDATE order_lines SET item=?, hsn=?, qty_sqft=?, rate=?, amount=? WHERE id=?", [d.item, d.hsn, Number(d.qty) || 0, Number(d.rate) || 0, Number(d.amount) || 0, id]);
+      if ("due" in d) { ENGINE._ordDue(); enRun("UPDATE orders SET due_date=? WHERE id=?", [String(d.due || "").slice(0, 10) || null, cur.order_id]); if (d.due_lots) ENGINE._lotsDue(d.due_lots, String(d.due || "").slice(0, 10)); } },
     order_close(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
       if (d.close === "1") enRun("UPDATE order_lines SET closed_on=?, closed_note=? WHERE id=?", [String(e.created_at || enNow()).slice(0, 10), d.note || "", id]); else enRun("UPDATE order_lines SET closed_on=NULL WHERE id=?", [id]); },
     order_short(e) { const d = e.data || {}, id = ENGINE._line(d.line_id ?? e.line_id); ENGINE._lineRow(id);
@@ -1279,9 +1283,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       data.shares = t.map((r) => ({ lot_no: UP(r.lot_no), line_id: r.line_id == null ? null : Number(r.line_id), from_line: Number(r.from_line), sqft: Number(r.sqft) || 0, reason: r.reason || "", at: r.created_at, by: r.made_by }))
         .concat(of("po_share").map((e) => { const d = e.data || {}; return { lot_no: UP(d.lot), line_id: d.to_line ? Number(d.to_line) : null, from_line: Number(d.line_id), sqft: Number(d.sqft) || 0, reason: d.reason || "", at: e.created_at, by: e.entered_by, eid: e.id }; }));
       data.shares.filter((x) => x.line_id != null).forEach((x) => { const a = (links[x.line_id] = links[x.line_id] || []); if (!a.includes(x.lot_no)) a.push(x.lot_no); }); }
-    const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
-    data.orders = rows("SELECT l.*, o.po_no, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id").map((o) => {
-      orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }, d.po_no ? { po_no: d.po_no } : {}); });
+    const synthLines = []; newPO.forEach((e) => { Object.keys(e.data).filter((k) => /^l\d+$/.test(k)).forEach((k) => { const x = e.data[k].split("~^~"); synthLines.push({ id: "n" + e.id + k, isNew: true, po_no: e.data.po, po_date: e.data.date, due_date: e.data.due || null, customer: e.data.customer, item: x[0], qty_sqft: Number(x[1]) || 0, rate: Number(x[2]) || 0, hsn: x[3], amount: Number(x[4]) || 0 }); }); });
+    const ordDue = rows("PRAGMA table_info(orders)").some((c) => c.name === "due_date");
+    data.orders = rows("SELECT l.*, o.po_no, o.po_date, o.customer" + (ordDue ? ", o.due_date" : "") + " FROM order_lines l JOIN orders o ON o.id=l.order_id").map((o) => {
+      orderEd.forEach((e) => { const d = e.data; if (Number(d.line_id) === o.id) Object.assign(o, { item: d.item, hsn: d.hsn, qty_sqft: Number(d.qty) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || 0, phone: true }); if (Number(d.order_id) === o.order_id) Object.assign(o, { po_date: d.po_date, customer: d.customer, phone: true }, d.po_no ? { po_no: d.po_no } : {}, "due" in d ? { due_date: d.due || null } : {}); });
       orderCl.forEach((e) => { if (Number(e.line_id) === o.id) { o.closed_on = e.data.close === "1" ? iso(today) : null; o.phone = true; } });
       orderSh.forEach((e) => { if (Number(e.line_id) === o.id) { o.short_on = e.data.close === "1" ? iso(today) : null; o.short_note = e.data.note || ""; o.phone = true; } });
       return o; }).concat(synthLines).map((o) => {
@@ -2131,7 +2136,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 191, at: "2026-11-24T13:29:53+05:30", notes: "Reports: order, sales, purchase (filter, sort, totals, PDF, CSV); Orders tab opens Tally sales, invoices, ledgers again" };
+  const APP_BUILD = { v: 192, at: "2026-11-24T13:49:32+05:30", notes: "PO due date (new PO, Edit PO, also on its open lots; card, PO page, order report, new lot)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -3626,9 +3631,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (k === "orep") {
       const ST = { open: (o) => o.grp === 1, ns: (o) => o.status === "NOT STARTED", part: (o) => o.status === "PART IN PRODUCTION", allin: (o) => o.status === "ALL IN PRODUCTION", del: (o) => o.status === "DELIVERED", arch: (o) => o.status === "ARCHIVED", all: () => true };
       const base = data.orders.filter((o) => (ST[s.status] || ST.all)(o) && (!s.from && !s.to || inDate(String(o.po_date || "").slice(0, 10))) && (!pw.length || repHas(o.customer, pw)) && (!iw.length || repHas(o.item, iw)) && (!qw.length || repHas(o.hay + " " + o.po_date, qw)))
-        .map((o) => { const amt = Number(o.amount) || (Number(o.qty_sqft) || 0) * (Number(o.rate) || 0); return { id: o.id, po: o.po_no, date: String(o.po_date || "").slice(0, 10), party: o.customer, item: o.item, qty: Number(o.qty_sqft) || 0, rate: Number(o.rate) || 0, amt, inprod: Math.max(0, o.sqf || 0), delv: Math.max(0, o.delv || 0), start: o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION" ? Math.max(0, o.left || 0) : 0, todel: o.grp === 1 ? Math.max(0, o.leftDel || 0) : 0, delval: o.grp === 1 ? Math.max(0, o.leftDel || 0) * (Number(o.rate) || 0) : 0, lots: (o.lots || []).join(", "), status: (o.status || "").toLowerCase() + (o.short ? " (closed short)" : "") }; });
+        .map((o) => { const amt = Number(o.amount) || (Number(o.qty_sqft) || 0) * (Number(o.rate) || 0); return { id: o.id, po: o.po_no, date: String(o.po_date || "").slice(0, 10), due: String(o.due_date || "").slice(0, 10), party: o.customer, item: o.item, qty: Number(o.qty_sqft) || 0, rate: Number(o.rate) || 0, amt, inprod: Math.max(0, o.sqf || 0), delv: Math.max(0, o.delv || 0), start: o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION" ? Math.max(0, o.left || 0) : 0, todel: o.grp === 1 ? Math.max(0, o.leftDel || 0) : 0, delval: o.grp === 1 ? Math.max(0, o.leftDel || 0) * (Number(o.rate) || 0) : 0, lots: (o.lots || []).join(", "), status: (o.status || "").toLowerCase() + (o.short ? " (closed short)" : "") }; });
       const sums = ["qty", "amt", "inprod", "delv", "start", "todel", "delval"], NUM = [["qty", "Ordered sqft", 0], ["amt", "Order value ₹", 0], ["inprod", "In lots sqft", 0], ["delv", "Delivered sqft", 0], ["start", "To start sqft", 0], ["todel", "To deliver sqft", 0], ["delval", "To deliver ₹", 0]];
-      if (s.view === "lines") return { rows: base, cols: [["po", "PO"], ["date", "PO date", "d"], ["party", "Customer"], ["item", "Item"], ["qty", "Ordered sqft", 0], ["rate", "Rate", 2, "nosum"], ["amt", "Value ₹", 0], ["delv", "Delivered sqft", 0], ["start", "To start sqft", 0], ["todel", "To deliver sqft", 0], ["lots", "Lots"], ["status", "Status"]], def: ["date", -1] };
+      if (s.view === "lines") return { rows: base, cols: [["po", "PO"], ["date", "PO date", "d"], ["due", "Due", "d"], ["party", "Customer"], ["item", "Item"], ["qty", "Ordered sqft", 0], ["rate", "Rate", 2, "nosum"], ["amt", "Value ₹", 0], ["delv", "Delivered sqft", 0], ["start", "To start sqft", 0], ["todel", "To deliver sqft", 0], ["lots", "Lots"], ["status", "Status"]], def: ["date", -1] };
       const by = { party: ["party", "Customer", (r) => r.party], item: ["item", "Item", (r) => r.item], month: ["month", "Month", (r) => r.date.slice(0, 7)], status: ["status", "Status", (r) => r.status] }[s.view];
       const rows = repGroup(base, by[2], by[0], sums); if (s.view === "month") rows.forEach((r) => { r.mkey = r.month; r.month = monthName(r.month); });
       return { rows, cols: [[by[0], by[1]], ["n", "PO lines", 0]].concat(NUM), def: s.view === "month" ? ["mkey", 1] : ["amt", -1] };
@@ -3741,12 +3746,13 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <span class="m"><span><b>${esc(l.stage || "-")}</b>${l.grp === 1 && l.inStage !== null ? " · " + l.inStage + " d" : ""}</span>
         <span class="num">${fmtN(l.lot_pcs, 0)} pcs · ${fmtN(l.lot_sqft, 0)} sqft</span>${due}${l.phone ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
   }
+  const poOpenLots = (o) => [...new Set(data.orders.filter((x) => (o.order_id != null ? x.order_id === o.order_id : x === o)).flatMap((x) => x.lots || []))].filter((k) => data.lotBy[k] && data.lotBy[k].state === "OPEN");
   function orderCard(o) {
     const cls = { "NOT STARTED": "warn", "PART IN PRODUCTION": "info", "ALL IN PRODUCTION": "ok", "DELIVERED": "idle", "ARCHIVED": "idle" }[o.status];
     return `<button class="row" data-k="${o.id}"${cur(String(o.id))}>
       <span class="k">PO ${esc(o.po_no)}</span><span class="pill ${cls}">${o.status.toLowerCase()}</span>
       <span class="t">${esc(o.customer)} · ${esc(o.item)}</span>
-      <span class="m num"><span>${fmtN(o.qty_sqft, 0)} sqft ordered</span><span>${o.lots.length ? o.lots.join(", ") : "no lot yet"}</span>${o.left > 0 && (o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION") ? `<span class="soon">${fmtN(o.left, 0)} to start</span>` : ""}${o.grp === 1 && o.leftDel > 0 ? `<span>${fmtN(o.leftDel, 0)} to deliver</span>` : ""}${o.short ? `<span>closed short</span>` : ""}${o.phone ? `<span class="wait">not in Excel yet</span>` : ""}${o.isNew ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
+      <span class="m num"><span>${fmtN(o.qty_sqft, 0)} sqft ordered</span>${o.due_date && o.grp === 1 ? `<span class="${String(o.due_date).slice(0, 10) < iso(new Date()) ? "late" : ""}">due ${esc(fmtD(String(o.due_date).slice(0, 10)))}</span>` : ""}<span>${o.lots.length ? o.lots.join(", ") : "no lot yet"}</span>${o.left > 0 && (o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION") ? `<span class="soon">${fmtN(o.left, 0)} to start</span>` : ""}${o.grp === 1 && o.leftDel > 0 ? `<span>${fmtN(o.leftDel, 0)} to deliver</span>` : ""}${o.short ? `<span>closed short</span>` : ""}${o.phone ? `<span class="wait">not in Excel yet</span>` : ""}${o.isNew ? `<span class="wait">not in Excel yet</span>` : ""}</span></button>`;
   }
   function purchaseCard(p) {
     const pill = p.over ? `<span class="pill bad">over-given ${fmtN(-p.leftP, 0)} pcs</span>` : p.grp === 1 ? `<span class="pill ok">${fmtN(p.leftP, 0)} pcs left</span>` : `<span class="pill idle">closed</span>`;
@@ -4670,8 +4676,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="two">${q0("fe-ani", "Animal", p.animal, ' list="anilist"')}${dl("anilist", data.purchases.map((x) => x.animal))}${q0("fe-gra", "Grade", p.grade)}${q0("fe-pcs", "Pcs received", p.inP, n)}${q0("fe-sqft", "Sqft received", p.inS, n)}${q0("fe-rate", "Rate", p.rate, n)}
       <label>Rate per<select id="fe-per">${["SQFT", "PC"].map((x) => opt(x, x, String(p.rate_basis || "SQFT").toUpperCase() === x)).join("")}</select></label>${dateF("fe-date", "Received", String(p.received_date || "").slice(0, 10))}</div>${formEnd}</form>`; } },
     order_edit: { title: "Edit PO", html: (a) => { const o = data.orders.find((x) => String(x.id) === a), q0 = (id, lb, val, attrs) => `<label>${lb}<input id="${id}" value="${v(val)}" autocomplete="off"${attrs || ""}></label>`, n = ' type="number" step="any" min="0" inputmode="decimal"';
-      return `<form class="fm" id="fm-order_edit" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3>${q0("fx-po", "PO number", o.po_no)}${q0("fx-item", "Item", o.item)}<div class="two">${q0("fx-qty", "Order qty (sqft)", o.qty_sqft, n)}${q0("fx-rate", "Rate", o.rate, n)}${q0("fx-amt", "Amount", o.amount, n)}${q0("fx-hsn", "HSN", o.hsn)}${dateF("fx-date", "PO date", String(o.po_date || "").slice(0, 10))}</div>${q0("fx-cust", "Customer", o.customer, ' list="custlist"')}${dl("custlist", data.orders.map((x) => x.customer))}
-      <p class="note" style="margin:0">PO number, PO date and customer apply to every item of this PO. Amount follows qty and rate unless you change it.</p>${formEnd}</form>`; } },
+      return `<form class="fm" id="fm-order_edit" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3>${q0("fx-po", "PO number", o.po_no)}${q0("fx-item", "Item", o.item)}<div class="two">${q0("fx-qty", "Order qty (sqft)", o.qty_sqft, n)}${q0("fx-rate", "Rate", o.rate, n)}${q0("fx-amt", "Amount", o.amount, n)}${q0("fx-hsn", "HSN", o.hsn)}${dateF("fx-date", "PO date", String(o.po_date || "").slice(0, 10))}${dateF("fx-due", "Due date", String(o.due_date || "").slice(0, 10))}</div>${(() => { const L = poOpenLots(o); return L.length ? `<label class="chk"><input type="checkbox" id="fx-duelots" checked> Also set this due date on its open lots (${esc(L.join(", "))})</label>` : ""; })()}${q0("fx-cust", "Customer", o.customer, ' list="custlist"')}${dl("custlist", data.orders.map((x) => x.customer))}
+      <p class="note" style="margin:0">PO number, PO date, due date and customer apply to every item of this PO. Amount follows qty and rate unless you change it.</p>${formEnd}</form>`; } },
     order_close: { title: "Archive order item", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
       return `<form class="fm" id="fm-order_close" data-id="${esc(a)}"><h3>PO ${esc(o.po_no)}</h3><p style="margin:0">${esc(o.item)}</p><p class="note" style="margin:0">${o.closed_on ? "This opens the item again." : "The item leaves the open list. You can reopen it later."}</p>${o.closed_on ? "" : txtF("fz-note", "Note")}${formEnd}</form>`; } },
     order_short: { title: "Close short", html: (a) => { const o = data.orders.find((x) => String(x.id) === a);
@@ -4786,7 +4792,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="two">${txtF("fp-ani", "Animal", "anilist")}${dl("anilist", data.purchases.map((p) => p.animal))}${txtF("fp-gra", "Grade")}${numF("fp-pcs", "Pcs")}${numF("fp-sqft", "Sqft")}${numF("fp-rate", "Rate")}
       <label>Rate per<select id="fp-per"><option>SQFT</option><option>PC</option></select></label>${dateF("fp-date", "Date", today0())}</div>${txtF("fp-note", "Note")}${formEnd}</form>` },
     order: { title: "New PO", html: () => { const lines = (x, i) => `<div class="er ln" data-sec="lines" data-i="${i}"><input id="el-${i}-d" data-f="d" value="${v(x.d)}" placeholder="Item" aria-label="Item" autocomplete="off"><button type="button" class="x" data-eddel aria-label="Remove this item">×</button><div class="nums"><input id="el-${i}-q" data-f="q" value="${v(x.q)}" placeholder="Qty sqft" aria-label="Qty sqft" inputmode="decimal"><input id="el-${i}-r" data-f="r" value="${v(x.r)}" placeholder="Rate" aria-label="Rate" inputmode="decimal"><input id="el-${i}-a" data-f="a" value="${v(x.a)}" placeholder="Amount (auto)" aria-label="Amount" inputmode="decimal"><input id="el-${i}-h" data-f="h" value="${v(x.h)}" placeholder="HSN" aria-label="HSN" inputmode="numeric" data-numonly="1"></div></div>`;
-      return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number (empty: the app makes one)")}${dateF("fo-date", "PO date", today0())}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
+      return `<form class="fm" id="fm-order"><div class="two">${txtF("fo-po", "PO number (empty: the app makes one)")}${dateF("fo-date", "PO date", today0())}${dateF("fo-due", "Due date (optional)", "")}</div>${txtF("fo-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer).concat(data.orders.map((o) => o.customer)))}${txtF("fo-note", "Note")}
       <h3>Items</h3>${ed.lines.map(lines).join("")}<button type="button" class="btn alt" data-edadd="end" data-sec="lines">Add an item</button>${formEnd}</form>`; } },
     po_share: { title: "Move sqft to another PO", html: (a) => { const [k, id] = String(a).split("|"), l = data.lotBy[k], o = data.orders.find((x) => String(x.id) === String(id)); if (!l || !o) return "";
         const has = shareOn(l, o.id), over = o.qty_sqft ? Math.max(0, o.sqf - o.qty_sqft * PO_CAP) : 0;
@@ -6037,6 +6043,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (f.id === "fm-order_edit") {
       const normP = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), po = need("#fx-po"), oo = data.orders.find((x) => String(x.id) === f.dataset.id);
       if (!po) return bad("Enter the PO number.");
+      const due = need("#fx-due"); if (due && dueBad(due)) return bad(dueBad(due)); if (due && need("#fx-date") && due < need("#fx-date")) return bad("The due date is before the PO date.");
+      const dueLots = due && $("#fx-duelots") && $("#fx-duelots").checked ? poOpenLots(oo).join(",") : "";
       if (normP(po) !== normP(oo.po_no) && data.orders.some((x) => x !== oo && (x.order_id ?? x.id) !== (oo.order_id ?? oo.id) && normP(x.po_no) === normP(po))) return bad("PO " + po + " is already on the list.");
       if (oo.isNew) { // a PO still waiting: change its own entry (24-Nov-2026)
         const eid = String(oo.id).replace(/^n/, "").replace(/l\d+$/, ""), k = String(oo.id).match(/l\d+$/)[0], e0 = entries.find((e) => e.id === eid && e.type === "order" && isWait(e));
@@ -6044,7 +6052,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         const date = need("#fx-date"), item = need("#fx-item"), qty = numOf("#fx-qty"), rate = numOf("#fx-rate"); let amount = numOf("#fx-amt");
         if (!date) return bad("Enter the PO date."); if (!need("#fx-cust")) return bad("Enter the customer."); if (!item) return bad("Enter the item."); if (qty <= 0) return bad("Order qty must be above 0.");
         if ((qty !== (oo.qty_sqft || 0) || rate !== (oo.rate || 0)) && amount === (oo.amount || 0)) amount = +(qty * rate).toFixed(2);
-        const d = Object.assign({}, e0.data, { po, date, customer: need("#fx-cust") }); d[k] = [item, qty, rate, need("#fx-hsn"), amount].join("~^~");
+        const d = Object.assign({}, e0.data, { po, date, customer: need("#fx-cust") }); if (due) d.due = due; else delete d.due; d[k] = [item, qty, rate, need("#fx-hsn"), amount].join("~^~");
         btn.disabled = true; writeEntry(store.doc("entries/" + e0.id), Object.assign({}, e0, { data: d, lot_no: "PO " + po })).then(() => { sel[tab] = "n" + e0.id + k; closeForm("PO changed."); }, (x) => { btn.disabled = false; msg.textContent = saveError(x); }); return;
       }
       const id = Number(f.dataset.id), b0 = rows("SELECT l.*, o.po_date, o.customer FROM order_lines l JOIN orders o ON o.id=l.order_id WHERE l.id=?", [id])[0], date = need("#fx-date"), item = need("#fx-item");
@@ -6052,7 +6060,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const qty = numOf("#fx-qty"), rate = numOf("#fx-rate"); let amount = numOf("#fx-amt"); if (qty <= 0) return bad("Order qty must be above 0.");
       const o0 = data.orders.find((x) => x.id === id); if ((qty !== (o0.qty_sqft || 0) || rate !== (o0.rate || 0)) && amount === (o0.amount || 0)) amount = +(qty * rate).toFixed(2);
       const old = entries.find((e) => e.status === "pending" && e.type === "order_edit" && Number(e.data.line_id) === id);
-      const body = { type: "order_edit", lot_no: "PO " + b0.order_id, data: { line_id: id, order_id: b0.order_id, po_no: po, po_date: date, customer: need("#fx-cust"), item, hsn: need("#fx-hsn"), qty, rate, amount }, before: { item: b0.item ?? "", qty: b0.qty_sqft ?? 0, rate: b0.rate ?? 0, customer: b0.customer ?? "" }, status: "pending", entered_by: uid, created_at: old ? old.created_at : new Date().toISOString() };
+      const body = { type: "order_edit", lot_no: "PO " + b0.order_id, data: Object.assign({ line_id: id, order_id: b0.order_id, po_no: po, po_date: date, customer: need("#fx-cust"), item, hsn: need("#fx-hsn"), qty, rate, amount, due }, dueLots ? { due_lots: dueLots } : {}), before: { item: b0.item ?? "", qty: b0.qty_sqft ?? 0, rate: b0.rate ?? 0, customer: b0.customer ?? "" }, status: "pending", entered_by: uid, created_at: old ? old.created_at : new Date().toISOString() };
       body.lot_no = "PO " + po;
       btn.disabled = true; writeEntry(old ? store.doc("entries/" + old.id) : store.collection("entries").doc(), body).then(() => closeForm("PO saved. It is waiting for Excel."), (e) => { btn.disabled = false; msg.textContent = saveError(e); }); return;
     }
@@ -6111,7 +6119,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (ls.some((x) => !String(x.d).trim() || !(Number(x.q) > 0) || isNaN(x.r || 0) || isNaN(x.a || 0))) return bad("Each item needs a name, a qty above 0, and numbers for rate and amount.");
       const dup = data.orders.find((o) => !o.isNew && norm(o.po_no) === norm(po));
       if (dup && warnOnce(f, `PO ${dup.po_no} is already saved for ${dup.customer}${dup.customer.toUpperCase() !== cust.toUpperCase() ? ", a different customer" : ""}. Save again to add these items to it.`)) return;
-      const d = { po, date, customer: cust, note: need("#fo-note") }; if (dup) d.add_to = "1";
+      const due = need("#fo-due"); if (due && dueBad(due)) return bad(dueBad(due)); if (due && due < date) return bad("The due date is before the PO date.");
+      const d = { po, date, customer: cust, note: need("#fo-note") }; if (due) d.due = due; if (dup) d.add_to = "1";
       ls.forEach((x, i) => { const q = Number(x.q) || 0, r = Number(x.r) || 0, a = Number(x.a) || q * r; d["l" + (i + 1)] = [String(x.d).trim().toUpperCase(), q, r, String(x.h || "").trim(), +a.toFixed(2)].join("~^~"); });
       if (qPoFrom) { const qid = qPoFrom; qPoFrom = null; store.doc("quotes/" + qid).update({ po, status: "Confirmed", updated_at: new Date().toISOString() }).catch(() => {}); }
       return saveNew({ type: "order", lot_no: "PO " + po, data: d }, (autoPo ? "PO saved as " + po + " (no number was typed)." : "PO saved.") + " It is waiting for Excel.", msg, btn);
@@ -6355,6 +6364,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <label>Note<input id="fd-note" autocomplete="off"${v(o && o.note)}></label></details>${o ? `<label>What was wrong${o.k.startsWith("d:") ? "" : " (optional)"}<input id="fd-why" autocomplete="off" placeholder="for example wrong sqft typed"></label>` : ""}<p class="note" style="margin:0">Two sides count as one hide in Delivered.</p><p class="fmsg" id="fm-msg"></p>
       <div class="acts" style="margin:0"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-formclose>Cancel</button></div></form>`;
   }
+  // a due date may be in the future; only a real date in a sensible range (24-Nov-2026)
+  const dueBad = (v) => !/^\d{4}-\d\d-\d\d$/.test(v) || isNaN(new Date(v)) ? "The due date is not a valid date." : (v < "2020-01-01" || v > "2035-12-31") ? "Check the due date's year." : "";
   function checkDate(v) {
     const d = toDate(v); if (!d) return "Pick a date.";
     if (d.getTime() > today.getTime() + DAY) return "The date is in the future."; return "";
@@ -6502,7 +6513,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (e.type === "route_set") { const n = String(d.steps || "").split("~^~").filter(Boolean); return n.length ? "Stages of " + d.page + ": " + n.join(" → ") : d.page + ": standard stage order"; }
     if (e.type === "no_finish") return d.on === "0" ? "Finishing needed after all" + (d.reason ? ": " + d.reason : "") : "No finishing" + (d.reason ? ": " + d.reason : "");
     if (e.type === "purchase_edit") return `Edit purchase: ${d.supplier}, ${d.pcs} pcs, ${d.sqft} sqft`;
-    if (e.type === "order_edit") return `Edit PO${d.po_no ? " " + d.po_no : ""}: ${d.item}, ${fmtN(d.qty, 0)} sqft`;
+    if (e.type === "order_edit") return `Edit PO${d.po_no ? " " + d.po_no : ""}: ${d.item}, ${fmtN(d.qty, 0)} sqft${d.due ? ", due " + fmtD(d.due) : ""}${d.due_lots ? " (also lots " + d.due_lots.replace(/,/g, ", ") + ")" : ""}`;
     if (e.type === "order_close") return d.close === "1" ? "Archive order item" : "Reopen order item";
     if (e.type === "order_short") return d.close === "1" ? "Close order item short" : "Reopen order balance";
     if (e.type === "po_unlink") return "Unlink from PO";
@@ -6592,7 +6603,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       ${store && canWrite && o.grp === 1 && !o.closed_on && !o.short ? `<div class="acts"><button class="btn" data-polink="${esc(o.id)}">Link a lot</button><button class="btn alt" data-ponew="${esc(o.id)}">Start a new lot</button></div>` : ""}
       ${store && canWrite && o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button></div>` : ""}${store && canWrite && !o.isNew ? `<div class="acts"><button class="btn alt" data-form="order_edit:${o.id}">Edit PO</button>${o.short || (o.status === "PART IN PRODUCTION" && o.left > 0) ? `<button class="btn alt" data-form="order_short:${o.id}">${o.short ? "Reopen balance" : "Close short"}</button>` : ""}<button class="btn alt" data-form="order_close:${o.id}">${o.closed_on ? "Reopen item" : "Archive item"}</button>${!data.orders.some((x) => x.order_id === o.order_id && x.lots.length) ? `<button class="btn alt" data-form="po_delete:${o.id}">Delete PO</button>` : ""}</div>` : ""}
       ${o.phone ? `<p class="note"><span class="wait">Changes here are not in Excel yet.</span></p>` : ""}
-      ${kv([["PO date", fmtD(o.po_date)], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
+      ${kv([["PO date", fmtD(o.po_date)], ["Due date", o.due_date ? fmtD(String(o.due_date).slice(0, 10)) : ""], ["Status", o.status.toLowerCase()], ["Order qty", fmtN(o.qty_sqft, 0) + " sqft"], ["Rate", o.rate ? "₹" + fmtN(o.rate, 2) : ""],
         ["Amount", o.amount ? "₹" + fmtN(o.amount, 0) : ""], ["HSN", esc(o.hsn)], ["In lots", fmtN(o.sqf, 2) + " sqft"], ["Delivered", fmtN(o.delv, 2) + " sqft"],
         ["Still to start", o.left > 0 ? fmtN(o.left, 2) + " sqft" + (o.short ? " (closed short, will not be made)" : "") : "-"], ["Left to deliver", o.leftDel > 0 ? fmtN(o.leftDel, 2) + " sqft" : "-"], ["Closed short on", o.short ? fmtD(o.short_on) : ""], ["Short note", o.short ? esc(o.short_note) : ""], ["Archived on", fmtD(o.closed_on)]])}
       ${(data.shares || []).filter((x) => String(x.from_line) === String(o.id)).map((x) => { const t = x.line_id != null ? data.orders.find((y) => String(y.id) === String(x.line_id)) : null;
@@ -7146,7 +7157,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       return;
     }
     if (!["fm-recipe", "fm-order", "fm-dye"].includes(f.id)) {
-      if (t.dataset.fillpo !== undefined && t.value) { const o = data.orders.find((x) => String(x.id) === t.value); if (o) { const set = (id, val) => { if (!$(id).value && val) $(id).value = val; }; set("#fn-cust", o.customer); set("#fn-prod", o.item); set("#fn-qty", o.qty_sqft); set("#fn-odt", String(o.po_date || "").slice(0, 10)); } }
+      if (t.dataset.fillpo !== undefined && t.value) { const o = data.orders.find((x) => String(x.id) === t.value); if (o) { const set = (id, val) => { if (!$(id).value && val) $(id).value = val; }; set("#fn-cust", o.customer); set("#fn-prod", o.item); set("#fn-qty", o.qty_sqft); set("#fn-odt", String(o.po_date || "").slice(0, 10)); set("#fn-ddt", String(o.due_date || "").slice(0, 10)); } }
       return;
     }
     if (t.dataset.h) ed.head[t.dataset.h] = t.value;
