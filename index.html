@@ -1502,7 +1502,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (tab === "lots" && pick && String(it[pick.field] || "").toUpperCase() !== pick.value.toUpperCase()) return false;
     if (f === "all" || f === "table") return true;
     if (tab === "lots" && f === "ready") return it.grp === 1 && /QC|READY/i.test(String(it.stage || ""));
-    if (tab === "lots" && f === "noproc") return it.grp === 1 && trackedLot(it.lot_no) && (!String(it.process_page || "").trim() || (NEED_PROC.includes(String(it.stage || "").toUpperCase()) && !processSaved(it)));
+    if (tab === "lots" && f === "noproc") return it.grp === 1 && trackedLot(it.lot_no) && (!String(it.process_page || "").trim() || (NEED_PROC.includes(String(it.stage || "").toUpperCase()) && !processSaved(rwSrc(it))));
     if (tab === "lots") return f === "open" ? it.grp === 1 : f === "late" ? needsAttn(it) && !isMuted(it.lot_no) : f === "done" ? it.grp === 2 : it.grp === 3;
     if (tab === "orders") return f === "open" ? it.grp === 1 : f === "start" ? (it.status === "NOT STARTED" || it.status === "PART IN PRODUCTION") : f === "small" ? smallBal(it) : it.grp === 2;
     if (tab === "purchases") return f === "open" ? it.grp === 1 : f === "over" ? it.over : it.grp === 2;
@@ -2146,7 +2146,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 195, at: "2026-11-25T07:12:42+05:30", notes: "New lot from old stock not in the app (OLD STOCK receipt + lot)" };
+  const APP_BUILD = { v: 196, at: "2026-11-25T08:07:03+05:30", notes: "lot page says linked-but-no-recipe vs no page linked, with a button; rework parts follow parent's process" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -6750,7 +6750,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div class="hero-nums">${nums.map(([v, t]) => `<div><b>${v}</b><span>${t}</span></div>`).join("")}</div>
       <div class="hero-links">${l.recKey || l.procKey ? `<button class="hlink" data-go="lots" data-k="${esc(l.recKey || l.procKey)}"><span>Process</span>${esc(l.process_page || (l.recKey ? data.recipes[l.recKey].process : ""))}${l.recKey && draftOf(l.recKey) ? ` <b style="color:var(--warn)">· unsaved changes</b>` : ""}</button>` : ""}${l.po ? `<button class="hlink" data-go="orders" data-k="${l.po.line_id}"><span>Customer PO</span>PO ${esc(l.po.po_no)}</button>` : ""}${(data.shares || []).filter((x) => x.lot_no === UP(l.lot_no) && x.line_id != null).map((x) => { const o = data.orders.find((y) => String(y.id) === String(x.line_id)) || {};
         return `<button class="hlink" data-go="orders" data-k="${x.line_id}"><span>Also on</span>PO ${esc(o.po_no || x.line_id)} · ${fmtN(x.sqft, 0)} sqft</button>`; }).join("")}</div>
-      ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const sv = processSaved(l), pm = pdfMade(l); return `<p class="note" style="margin:0">${sv ? "✓ Process saved" : `<span class="bad">Process not saved</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>`; })() : ""}
+      ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const src = rwSrc(l), sv = processSaved(src), pm = pdfMade(l), pg = String(l.process_page || "").trim();
+        // say what is missing in plain words: no page linked, or a page linked but no recipe of this lot saved on it yet (25-Nov-2026)
+        return `<p class="note" style="margin:0">${sv ? "✓ Process saved" + (src !== l ? " (follows " + esc(src.lot_no) + ")" : "") : !pg ? `<span class="bad">No process page linked</span>` : `Linked to ${esc(pg)} · <span class="bad">no recipe saved for ${esc(l.lot_no)} yet</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>${!sv && store && canWrite && !formOpen ? `<div class="acts" style="margin:4px 0 0"><button class="btn alt" data-form="process:${esc(l.lot_no)}">${pg ? "Load a recipe for it" : "Link a process"}</button></div>` : ""}`; })() : ""}
       ${l.chem_check ? `<p class="missing" style="margin:8px 0 0">${esc(l.chem_check.replace(/^\W+/, ""))}</p>` : ""}</div>`;
   }
   // Excel remarks are one long line of dated notes: show them one under the other
