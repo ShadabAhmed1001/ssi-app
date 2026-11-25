@@ -2152,7 +2152,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 198, at: "2026-11-25T09:47:38+05:30", notes: "PO note shown on the PO page, PO card, order report; searchable" };
+  const APP_BUILD = { v: 199, at: "2026-11-25T11:34:33+05:30", notes: "costing calculator: finish yield %, finishing follows finished sqft, mixes keep their ratios" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -2770,17 +2770,30 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const cRate = (n) => data.rate[String(n || "").trim().toUpperCase()] || 0;
   const cCol = (a) => ({ COW: "cow", CALF: "calf", BUFF: "buff", GOAT: "goat" })[String(a || "").trim().toUpperCase()];
   const cMachRate = (d, a) => { const rw = data.mach[String(d || "").trim().toUpperCase()], c = cCol(a); return rw && c ? rw[c] || 0 : 0; };
-  function calcBlank() { return { src: "", animal: "Cow", pcs: "", wt: "", inSq: "", outSq: "", wb: "", sell: "", crust: [], fin: [], mach: [], extra: [] }; }
+  function calcBlank() { return { src: "", animal: "Cow", pcs: "", wt: "", inSq: "", outSq: "", yld: "90", wb: "", sell: "", crust: [], fin: [], mach: [], extra: [] }; }
   function calcLoad(key) {
     const r = key ? getRecipe(key) : null; if (!r) { calc = calcBlank(); return; }
     const wbM = new Set(), lot = data.lotBy[r.lot_no], wb = lot ? lotBlue(r.lot_no, wbM) : 0, sell = lot && lot.po ? (rows("SELECT rate FROM order_lines WHERE id=?", [lot.po.line_id])[0] || {}).rate || "" : "";
     const inSq = r.wb_sqft || (lot && lot.lot_sqft) || "";
-    calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell, wbMiss: [...wbM].map((x) => x.replace(/^wet blue (rate of )?/, "")),
+    calc = { src: key, srcName: r.lot_no + " · " + (r.details || r.process), animal: r.animal || "Cow", pcs: r.pcs || (lot && lot.lot_pcs) || "", wt: r.shaved_wt || "", inSq, outSq: r.finish_sqft || (inSq ? +(inSq * 0.9).toFixed(2) : ""), wb: wb || "", sell, yld: "", wbMiss: [...wbM].map((x) => x.replace(/^wet blue (rate of )?/, "")),
       crust: r.crust.filter((c) => c.p !== null && c.p !== undefined && String(c.d || "").trim()).map((c) => ({ p: +(c.p * 100).toFixed(4), d: c.d, rate: cRate(c.d) })),
-      fin: finRows(r).filter((f) => String(f.d || "").trim() && Number(f.w)).map((f) => ({ r: f.r, d: f.d, w: f.w, rate: cRate(f.d) })),
+      fin: (() => { const fr = finRows(r), sid = finSecIds(fr, r.finishing); return fr.map((f, n) => Object.assign({}, f, { sec: sid[n] })).filter((f) => String(f.d || "").trim() && Number(f.w)).map((f) => ({ r: f.r, d: f.d, w: f.w, rate: cRate(f.d), sec: f.sec })); })(),
       mach: r.machinery.filter((m) => String(m.d || "").trim() && m.n !== "" && m.n !== "0").map((m) => ({ d: m.d, n: m.n, rate: cMachRate(m.d, r.animal), flat: machRun(m.d) })),
       extra: [] };
+    calc.yld = cNum(calc.inSq) && cNum(calc.outSq) ? String(+(cNum(calc.outSq) / cNum(calc.inSq) * 100).toFixed(2)) : "90";
   }
+  // finish yield and finishing mixes (25-Nov-2026): finished sqft follows wet blue × yield; finishing weights follow the finished sqft; inside a mix the weights keep their ratios
+  const cSet = (k, v) => { const el = document.querySelector(`[data-c="${k}"]`); if (el && document.activeElement !== el) el.value = v; };
+  function calcScaleFin(oldOut, newOut) { if (!(oldOut > 0) || !(newOut > 0) || oldOut === newOut) return; const f = newOut / oldOut;
+    calc.fin.forEach((x, j) => { const w = cNum(x.w); if (w) { x.w = String(+(w * f).toFixed(3)); cSet("fin|" + j + "|w", x.w); } }); }
+  function calcHead(f) { const c = calc, inS = cNum(c.inSq), y = cNum(c.yld), old = c._out ?? cNum(c.outSq);
+    if (f === "inSq" || f === "yld") { if (inS > 0 && y > 0) { c.outSq = String(+(inS * y / 100).toFixed(2)); cSet("h||outSq", c.outSq); } }
+    else if (f === "outSq") { if (inS > 0 && cNum(c.outSq) > 0) { c.yld = String(+(cNum(c.outSq) / inS * 100).toFixed(2)); cSet("h||yld", c.yld); } }
+    if (f === "inSq" || f === "yld" || f === "outSq") calcScaleFin(old, cNum(c.outSq)); c._out = cNum(c.outSq); }
+  function calcFinMix(i, f) { const x = calc.fin[i], r = cNum(x.r); if (x.sec === undefined) return;
+    const mates = calc.fin.map((y, j) => [y, j]).filter(([y, j]) => y.sec === x.sec && j !== i && cNum(y.r) > 0);
+    if (f === "r") { const a = mates.find(([y]) => cNum(y.w) > 0); if (a && r > 0) { x.w = String(+(cNum(a[0].w) / cNum(a[0].r) * r).toFixed(3)); cSet("fin|" + i + "|w", x.w); } }
+    else if (f === "w" && r > 0 && cNum(x.w) > 0) { const k = cNum(x.w) / r; mates.forEach(([y, j]) => { y.w = String(+(k * cNum(y.r)).toFixed(3)); cSet("fin|" + j + "|w", y.w); }); } }
   function calcMath() {
     const c = calc, wt = cNum(c.wt), pcs = cNum(c.pcs), out = cNum(c.outSq);
     const cr = c.crust.map((x) => { const q = cNum(x.p) / 100 * wt; return { q, amt: q * cNum(x.rate) }; });
@@ -2807,7 +2820,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <datalist id="cl-chem">${[...data.chemNames].slice(0, 2000).map((x) => `<option value="${esc((data.chemBy[x] || {}).name || x)}">`).join("")}</datalist>
       <datalist id="cl-mach">${Object.keys(data.mach).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
       <details class="sec csec" data-sec="calc:head"${secIsOpen("calc:head", true) ? " open" : ""}><summary>Lot figures</summary><div class="two calchead"><label>Animal<select class="cin" data-c="h||animal">${["Cow", "Calf", "Buff", "Goat"].map((a) => `<option${UP(a) === UP(c.animal) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
-        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div>${c.wbMiss && c.wbMiss.length ? `<div class="warnbox">${esc(wbWarn({ wbMiss: c.wbMiss, wb: c.wb }))}</div>` : ""}</details>
+        ${head("pcs", "Pieces", c.pcs)}${head("wt", "Shaved weight", c.wt, "kg")}${head("inSq", "Wet blue in", c.inSq, "sqft")}${head("yld", "Finish yield", c.yld, "% of wet blue")}${head("outSq", "Finished out", c.outSq, "sqft")}${head("wb", "Wet blue rate", c.wb, "₹ / sqft")}${head("sell", "Selling rate", c.sell, "₹ / sqft")}</div>${c.wbMiss && c.wbMiss.length ? `<div class="warnbox">${esc(wbWarn({ wbMiss: c.wbMiss, wb: c.wb }))}</div>` : ""}</details>
       ${sec("crust", "Crusting", [["%", 1], ["Chemical"], ["Qty kg", 1], ["₹ / kg", 1], ["₹", 1]], c.crust.map((x, i) => `<tr><td>${n("crust", i, "p", x.p, "", "w5")}</td><td>${n("crust", i, "d", x.d)}</td><td class="r num" id="cq-${i}"></td><td>${n("crust", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-crust-${i}"></td>${del("crust", i)}</tr>`).join(""), "chemical")}
       ${sec("fin", "Finishing", [["Ratio", 1], ["Chemical"], ["Weight kg", 1], ["₹ / kg", 1], ["₹", 1]], c.fin.map((x, i) => `<tr><td>${n("fin", i, "r", x.r, "", "w5")}</td><td>${n("fin", i, "d", x.d)}</td><td>${n("fin", i, "w", x.w, "", "w6")}</td><td>${n("fin", i, "rate", x.rate, "", "w6")}</td><td class="r num" id="ca-fin-${i}"></td>${del("fin", i)}</tr>`).join(""), "chemical")}
       ${sec("mach", "Machinery", [["Machine"], ["Rounds", 1], ["₹ / pc / round", 1], ["Per lot"], ["₹", 1]], c.mach.map((x, i) => `<tr><td>${n("mach", i, "d", x.d)}</td><td>${n("mach", i, "n", x.n, "", "w5")}</td><td>${n("mach", i, "rate", x.rate, "", "w6")}</td><td><input type="checkbox" class="cin" data-c="mach|${i}|flat"${x.flat ? " checked" : ""} aria-label="Charged per lot, not per piece"></td><td class="r num" id="ca-mach-${i}"></td>${del("mach", i)}</tr>`).join(""), "machine")}
@@ -2829,9 +2842,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const t = e.target; if (!calc || tab !== "calc") return;
     if (t.id === "calc-src") { const v = t.value.trim(), hit = Object.values(data.recipes).find((x) => x.lot_no + " · " + (x.details || x.process) === v); if (hit) { calcLoad(hit.key); render(); } return; }
     if (!t.dataset || !t.dataset.c) return; const [secN, i, f] = t.dataset.c.split("|"), val = t.type === "checkbox" ? t.checked : t.value;
-    if (secN === "h") { calc[f] = val; if (f === "animal") calc.mach.forEach((x) => { if (!x.own) x.rate = cMachRate(x.d, val); }), render(); else calcTotals(); return; }
+    if (secN === "h") { calc[f] = val; calcHead(f); if (f === "animal") calc.mach.forEach((x) => { if (!x.own) x.rate = cMachRate(x.d, val); }), render(); else calcTotals(); return; }
     const row = calc[secN] && calc[secN][Number(i)]; if (!row) return; row[f] = val;
     if (f === "rate") row.own = true;
+    if (secN === "fin" && (f === "r" || f === "w")) calcFinMix(Number(i), f);
     if (f === "d" && secN !== "extra") { const nr = secN === "mach" ? cMachRate(val, calc.animal) : cRate(val); if (nr) { row.rate = nr; row.own = false; const ri = document.querySelector(`[data-c="${secN}|${i}|rate"]`); if (ri) ri.value = nr; }
       if (secN === "mach") { const fl = machRun(val); row.flat = fl; const cb = document.querySelector(`[data-c="mach|${i}|flat"]`); if (cb) cb.checked = fl; } }
     calcTotals();
@@ -2862,7 +2876,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         columnStyles: Object.fromEntries((colR || []).map((i) => [i, { halign: "right" }])), didDrawPage: () => {}, willDrawCell: () => {}, tableLineWidth: 0.1, showHead: "everyPage",
         startYTitle: null }); y = doc.lastAutoTable.finalY + 4; };
       doc.setFontSize(10); doc.setFont("helvetica", "bold");
-      T("", ["Animal", "Pieces", "Shaved kg", "Wet blue sqft", "Finished sqft", "Wet blue ₹/sqft".replace("₹", "Rs"), "Selling Rs/sqft"], [[c.animal, c.pcs, c.wt, c.inSq, c.outSq, c.wb, c.sell]], null, [1, 2, 3, 4, 5, 6]);
+      T("", ["Animal", "Pieces", "Shaved kg", "Wet blue sqft", "Yield %", "Finished sqft", "Wet blue ₹/sqft".replace("₹", "Rs"), "Selling Rs/sqft"], [[c.animal, c.pcs, c.wt, c.inSq, c.yld, c.outSq, c.wb, c.sell]], null, [1, 2, 3, 4, 5, 6, 7]);
       if (c.crust.length) T("", ["%", "Crusting chemical", "Qty kg", "Rs / kg", "Rs"], c.crust.map((x, i) => [x.p, x.d, fmtN(m.cr[i].q, 3), x.rate, f2(m.cr[i].amt)]), ["", "Crusting", "", "", f2(m.crust)], [0, 2, 3, 4]);
       if (c.fin.length) T("", ["Ratio", "Finishing chemical", "Weight kg", "Rs / kg", "Rs"], c.fin.map((x, i) => [x.r, x.d, x.w, x.rate, f2(m.fi[i].amt)]), ["", "Finishing", "", "", f2(m.fin)], [0, 2, 3, 4]);
       if (c.mach.length) T("", ["Machine", "Rounds", "Rs / pc / round", "Charged", "Rs"], c.mach.map((x, i) => [x.d, x.n, x.rate, x.flat ? "per lot" : "x " + (c.pcs || 0) + " pcs", f2(m.ma[i].amt)]), ["Machinery", "", "", "", f2(m.mach)], [1, 2, 4]);
