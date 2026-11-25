@@ -2146,7 +2146,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 194, at: "2026-11-24T18:24:41+05:30", notes: "Edit PO edits the whole PO: header, all items, add and remove items" };
+  const APP_BUILD = { v: 195, at: "2026-11-25T07:12:42+05:30", notes: "New lot from old stock not in the app (OLD STOCK receipt + lot)" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4790,7 +4790,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       ${(() => { const r0 = l[0] || {}, lt = /^L/.test(r0.from_key || "") && data.lotBy[r0.from_key]; return `<label id="fb-rsl"${lt ? "" : ' style="display:none"'}>Stage of ${esc(lt ? r0.from_key : "")} <select id="fb-rs">${lt ? recvStageOpts(r0.from_key) : ""}</select></label>${emptyStageHtml("fb-empty", r0.to_key || "this lot")}`; })()}${txtF("fb-note", "Reason")}
       <p class="note" style="margin:0">Skins added on the phone and not imported yet aren't listed. Cancel those under Phone entries.</p>${formEnd}</form>`; } },
     new_lot: { title: "New lot", html: (a) => `<form class="fm" id="fm-new_lot"><p class="note" style="margin:0">This lot will be ${esc(nextKey("L"))}. You can use it straight away. ${recMode() ? "If another phone makes a lot at the same moment and takes this number, yours gets the next free one and Today tells you which." : "Excel keeps the number when it imports it, unless the PC used it meanwhile."}</p>
-      <label>From purchase<select id="fn-from" data-pinfo="fn-info">${purchOpts(a)}</select></label><p class="note" id="fn-info" style="margin:0">${esc(purchInfo(a))}</p>
+      <label>Skins from<select id="fn-from" data-pinfo="fn-info">${purchOpts(a)}<option value="__OLD">Old stock (not in the app)</option></select></label><p class="note" id="fn-info" style="margin:0">${esc(purchInfo(a))}</p>
+      <div id="fn-oldw" style="display:none"><p class="note" style="margin:0">Skins from old stock that were never entered as a purchase. The app adds them to skins stock as <b>OLD STOCK</b> and gives all of them to this lot, so stock and costs stay right.</p>
+        <div class="two">${txtF("fn-oani", "Animal (cow, buff, goat…)", "anilist")}${dl("anilist", data.purchases.map((x) => x.animal))}${txtF("fn-ogra", "Grade / description")}${numF("fn-orate", "Rate per sqft, if known")}${txtF("fn-onote", "Where they came from")}</div></div>
       <div class="two">${numF("fn-pcs", "Pieces")}${numF("fn-sqft", "Sqft")}</div>
       <label>Customer order (PO)<input class="selfind" data-for="fn-line" type="search" placeholder="Type to find a PO: number, customer or item" autocomplete="off" aria-label="Find a PO"><select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
       ${txtF("fn-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer))}${txtF("fn-prod", "Product")}
@@ -6119,16 +6121,26 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       return saveNew({ type: "skins", lot_no: to, data: Object.assign({ from, to, pcs, sqft, date, note: need("#fk-note") }, fromEntry(from)) }, "Skins saved. They are waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-new_lot") {
-      const from = need("#fn-from"), pcs = numOf("#fn-pcs"), sqft = numOf("#fn-sqft"), date = need("#fn-date"), p = data.purchases.find((x) => x.key === from);
-      if (!from) return bad("Pick the purchase."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft for the new lot."); if (checkDate(date)) return bad(checkDate(date));
+      let from = need("#fn-from"); const newLotData = (fr, ex) => ({ lot_no: nextKey("L"), ...ex, from: fr, pcs: numOf("#fn-pcs"), sqft: numOf("#fn-sqft"), date: need("#fn-date"), line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") });
+      const pcs = numOf("#fn-pcs"), sqft = numOf("#fn-sqft"), date = need("#fn-date"), p = data.purchases.find((x) => x.key === from);
+      if (!from) return bad("Pick where the skins come from."); if (!pcs && !sqft) return bad("Type the pcs and / or sqft for the new lot."); if (checkDate(date)) return bad(checkDate(date));
+      // old stock never entered as a purchase (25-Nov-2026): an OLD STOCK receipt for exactly these skins, then the lot from it
+      if (from === "__OLD") { if (!(pcs > 0)) return bad("Type the pieces taken from old stock.");
+        const nk0 = nextKey("L"); if (capCheck(f, need("#fn-line"), sqft, nk0, msg)) return;
+        btn.disabled = true; msg.textContent = "Saving…";
+        const ref = store.collection("entries").doc(), pk = nextKey("P"), t0 = Date.now();
+          writeEntry(ref, { type: "purchase", lot_no: "NEW", data: { supplier: "OLD STOCK", animal: need("#fn-oani").toUpperCase(), grade: need("#fn-ogra").toUpperCase(), pcs, sqft, rate: numOf("#fn-orate"), per: "SQFT", date, note: need("#fn-onote") || "Old stock, not entered before; all given to " + nk0 }, status: "pending", entered_by: uid, created_at: new Date(t0).toISOString() })
+          .then(() => writeEntry(store.collection("entries").doc(), { type: "new_lot", lot_no: "NEW", data: newLotData(pk, { from_entry: ref.id }), status: "pending", entered_by: uid, created_at: new Date(t0 + 10).toISOString() }))
+          .then(() => closeForm("Lot " + nk0 + " saved, from old stock (" + pk + " OLD STOCK). It is waiting for Excel."), (x) => { btn.disabled = false; msg.textContent = saveError(x); });
+        return; }
       if ((pcs > p.leftP + 0.0001 || sqft > p.leftS + 1) && warnOnce(f, from + " has only " + fmtN(p.leftP, 0) + " pcs and " + fmtN(p.leftS, 2) + " sqft left.")) return;
       const nk = nextKey("L"); if (capCheck(f, need("#fn-line"), sqft, nk, msg)) return;
-      return saveNew({ type: "new_lot", lot_no: "NEW", data: { lot_no: nk, ...fromEntry(from), from, pcs, sqft, date, line_id: need("#fn-line"), customer: need("#fn-cust"), product: need("#fn-prod"), order_qty: need("#fn-qty"), shaving: need("#fn-shav"), weight: need("#fn-wt"), order_date: need("#fn-odt"), due_date: need("#fn-ddt"), stage: need("#fn-stage"), process_page: need("#fn-page"), remarks: need("#fn-rem"), note: need("#fn-note") } }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
+      return saveNew({ type: "new_lot", lot_no: "NEW", data: newLotData(from, fromEntry(from)) }, "New lot " + nextKey("L") + " saved. It is waiting for Excel.", msg, btn);
     }
     if (f.id === "fm-purchase") {
       const pcs = numOf("#fp-pcs"), date = need("#fp-date");
       if (!need("#fp-sup")) return bad("Enter the supplier."); if (pcs <= 0) return bad("Enter the pieces received."); if (checkDate(date)) return bad(checkDate(date));
-      if (!(numOf("#fp-rate") > 0) && !/^(RETURNED|REJECTED|LEFTOVER) /i.test(need("#fp-sup"))) return bad("Enter the rate. Cost per lot is wrong without it.");
+      if (!(numOf("#fp-rate") > 0) && !/^(RETURNED |REJECTED |LEFTOVER |OLD STOCK)/i.test(need("#fp-sup"))) return bad("Enter the rate. Cost per lot is wrong without it.");
       { const sup = need("#fp-sup").toUpperCase(), dup = data.purchases.filter((x) => String(x.supplier || "").toUpperCase() === sup && String(x.received_date || "").slice(0, 10) === date && Math.abs((Number(x.inP) || 0) - pcs) < 0.01);
         if (dup.length && warnOnce(f, "Looks like a repeat: " + dup.map((x) => x.purchase_no).join(", ") + " is the same supplier, date and pcs. Save again if it's really a second purchase.")) return; }
       return saveNew({ type: "purchase", lot_no: "NEW", data: { supplier: need("#fp-sup"), animal: need("#fp-ani"), grade: need("#fp-gra"), pcs, sqft: numOf("#fp-sqft"), rate: numOf("#fp-rate"), per: need("#fp-per"), date, note: need("#fp-note") } }, "Purchase " + nextKey("P") + " saved. It is waiting for Excel.", msg, btn);
@@ -7214,6 +7226,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (f.id === "fm-count") { countCalc(f); return; }
     if (e.target.id === "fv-to") { $("#fv-newl").style.display = e.target.value ? "none" : ""; lmShow(); return; }
     if (["fv-pcs", "fb-pcs", "fb-entry", "fe2-pcs"].includes(e.target.id)) lmShow();
+    if (e.target.id === "fn-from") { const old = e.target.value === "__OLD"; $("#fn-oldw").style.display = old ? "" : "none"; $("#fn-info").textContent = old ? "" : purchInfo(e.target.value); return; }
     if (e.target.dataset.pinfo) { $("#" + e.target.dataset.pinfo).textContent = purchInfo(e.target.value); return; }
     if (f.id === "fm-page") {
       const h = $("#fg-hint"), to = $("#fg-page").value, l = data.lotBy[f.dataset.lot]; if (!h) return;
