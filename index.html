@@ -717,7 +717,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { invXml: (v) => invXml([v]), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
+    window.__ssi = { invXml: (v) => invXml([v]), newInv: () => menuAct("invnew"), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -899,6 +899,12 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       enRun("UPDATE purchase_ledger SET to_key=? WHERE UPPER(to_key)=?", [B, A]); enRun("UPDATE purchase_ledger SET from_key=? WHERE UPPER(from_key)=?", [B, A]); enRun("DELETE FROM purchases WHERE purchase_no=?", [a.purchase_no]); },
     // ---- chemicals: the chemical ledger (chem_moves) and column E of A. CHEMICALS (ledger_qty; available = Tally + ledger)
     _chem(n) { const c = enOne("SELECT * FROM chemicals WHERE UPPER(name)=UPPER(?)", [n]); if (!c) throw new Error(n + " is not on A. CHEMICALS"); return c; },
+    // the lot's chemical note from Excel ("⚠ Finishing missing"): clear the sections now adjusted, add back the ones undone
+    _chk(lot, clr1, clr2, add1, add2) { const cur = String(one("SELECT IFNULL(chem_check,'') FROM lots WHERE lot_no=?", [lot]) || "");
+      let parts = cur.split(/\r?\n|;\s*/).map((x) => x.trim()).filter(Boolean);
+      [clr1, clr2].filter(Boolean).forEach((w) => { parts = parts.filter((x) => !new RegExp("\\b" + w + " missing", "i").test(x)); });
+      [add1, add2].filter(Boolean).forEach((w) => { if (!parts.some((x) => new RegExp("\\b" + w + " missing", "i").test(x))) parts.push("⚠ " + w + " missing"); });
+      const nx = parts.join("\n"); if (nx !== cur) enRun("UPDATE lots SET chem_check=? WHERE lot_no=?", [nx || null, lot]); },
     _mv(e, n, qty, type, ref, sec, reason) { const c = ENGINE._chem(n), q = +Number(qty).toFixed(6);
       enRun("INSERT INTO chem_moves(entry_date, chemical, qty, entry_type, ref, section, reason, status) VALUES(?,?,?,?,?,?,?,?)", [String(e.created_at || enNow()).replace("T", " ").slice(0, 19), c.name, q, type, ref || "", sec || "", reason || "", "OK"]);
       enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)+?, available=IFNULL(available,0)+? WHERE name=?", [q, q, c.name]); },
@@ -906,14 +912,17 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     chem_adjust(e) { const d = e.data || {}, l = enLot(e.lot_no), secs = [d.crust === "1" ? "CRUSTING" : "", d.fin === "1" ? "FINISHING" : ""].filter(Boolean);
       const parts = e.by_sec || (secs.length === 1 ? [{ s: secs[0], lines: e.lines || [] }] : [{ s: secs[0] || "CRUSTING", lines: e.lines || [] }]);
       parts.forEach((p) => (p.lines || []).forEach((x) => { if (Number(x.q)) ENGINE._mv(e, x.n, -Math.abs(Number(x.q)), "LOT USE", l.lot_no, p.s, ""); }));
-      if (d.crust === "1") enRun("UPDATE lots SET chem_crust='✔' WHERE lot_no=?", [l.lot_no]); if (d.fin === "1") enRun("UPDATE lots SET chem_finish='✔' WHERE lot_no=?", [l.lot_no]); },
+      if (d.crust === "1") enRun("UPDATE lots SET chem_crust='✔' WHERE lot_no=?", [l.lot_no]); if (d.fin === "1") enRun("UPDATE lots SET chem_finish='✔' WHERE lot_no=?", [l.lot_no]);
+      // Excel's note "⚠ Finishing missing" stayed on the lot after the app adjusted it, so the lot page kept saying it (25-Nov-2026, L545)
+      ENGINE._chk(l.lot_no, d.crust === "1" ? "Crusting" : "", d.fin === "1" ? "Finishing" : "", ""); },
     // re-adjust after the process changed: the difference, more taken (LOT USE) or given back (LOT RETURN)
     chem_readjust(e) { const l = enLot(e.lot_no); (e.lines || []).forEach((x) => { const q = Number(x.q) || 0; if (q) ENGINE._mv(e, x.n, -q, q > 0 ? "LOT USE" : "LOT RETURN", l.lot_no, "RE-ADJUST", ""); }); },
     // DtUndoChem: the lot's ledger rows of the section are cancelled and their chemicals come back
     chem_undo(e) { const d = e.data || {}, l = enLot(e.lot_no), all = d.what === "ALL";
       const mv = rows("SELECT * FROM chem_moves WHERE status='OK' AND entry_type IN ('LOT USE','LOT RETURN') AND UPPER(ref)=UPPER(?)" + (all ? " AND IFNULL(section,'')<>'REWORK'" : " AND section=?"), all ? [l.lot_no] : [l.lot_no, d.what]);
       mv.forEach((m) => { enRun("UPDATE chem_moves SET status='VOID' WHERE id=?", [m.id]); enRun("UPDATE chemicals SET ledger_qty=IFNULL(ledger_qty,0)-?, available=IFNULL(available,0)-? WHERE UPPER(name)=UPPER(?)", [m.qty, m.qty, m.chemical]); });
-      if (all || d.what === "CRUSTING") enRun("UPDATE lots SET chem_crust='—' WHERE lot_no=?", [l.lot_no]); if (all || d.what === "FINISHING") enRun("UPDATE lots SET chem_finish='—' WHERE lot_no=?", [l.lot_no]); },
+      if (all || d.what === "CRUSTING") enRun("UPDATE lots SET chem_crust='—' WHERE lot_no=?", [l.lot_no]); if (all || d.what === "FINISHING") enRun("UPDATE lots SET chem_finish='—' WHERE lot_no=?", [l.lot_no]);
+      ENGINE._chk(l.lot_no, "", "", (all || d.what === "CRUSTING") && mv.some((m) => m.section === "CRUSTING") ? "Crusting" : "", (all || d.what === "FINISHING") && mv.some((m) => m.section === "FINISHING") ? "Finishing" : ""); },
     // Record use / correction on one chemical
     chem(e) { const d = e.data || {}, q = Math.abs(Number(d.qty) || 0); ENGINE._mv(e, d.chemical, d.kind === "CORRECTION" ? Number(d.qty) || 0 : -q, d.kind || "USE", "", "", [d.date, d.reason].filter(Boolean).join(" ")); },
     // a posted stock audit: one AUDIT ADJ row per counted chemical that differed
@@ -2174,7 +2183,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 203, at: "2026-11-25T17:45:56+05:30", notes: "Every pick-from-a-list box is now a drop-down with type-to-search (no more pop-up list of round buttons); long lists of bills/lines get a search box; old separate PO find boxes removed" };
+  const APP_BUILD = { v: 204, at: "2026-11-25T18:39:22+05:30", notes: "L545: direct move to Dispatched no longer called 'before' MILLING (FINISH); app's finishing/crusting adjust clears Excel's 'missing' note; GST rounded like Excel (invoice 88); transporter section (ID, mode, vehicle type, distance) in invoice and Tally XML" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -5052,7 +5061,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const byRate = {}; lines.forEach((x) => { const g = Number(x.gst) || 0; byRate[g] = r2((byRate[g] || 0) + x.amt); });
     const main = lines.slice().sort((a, b) => b.amt - a.amt)[0], mr = main ? Number(main.gst) || 0 : Number(S.gst) || 0;
     if (S.taxExtras !== "no" && extra) byRate[mr] = r2((byRate[mr] || 0) + extra);
-    const up2 = (x) => Math.ceil(Math.round(x * 1e6) / 1e4) / 100;
+    const up2 = (x) => Math.round(Math.round(x * 1e6) / 1e4) / 100; // GST to the paisa, rounded like Excel's ROUND (25-Nov-2026: invoice 88 IGST 14834.5625 went as .57, Excel .56)
     let cgst = 0, igst = 0; Object.entries(byRate).forEach(([g, base]) => { if (intra) cgst += up2(base * Number(g) / 200); else igst += up2(base * Number(g) / 100); });
     cgst = r2(cgst); igst = r2(igst);
     const exact = r2(goods + extra + cgst * 2 + igst), total = Math.round(exact), ro = r2(total - exact);
@@ -5122,7 +5131,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (isMark(v)) return invMarkDetail(v);
     const t = invCalc(v), S = iset();
     const warn = (v.lines || []).map((ln) => { const d = invDelInfo(ln.dkey); return !d ? ln.lot + ": its delivery is not found." : d.void ? ln.lot + ": its delivery was cancelled." : ""; }).filter(Boolean);
-    const tr = [["Transporter", v.transporter], ["Vehicle no", v.vehicle], ["LR / doc no", v.lr], ["LR date", v.lrdate ? fmtD(v.lrdate) : ""], ["E-way bill", v.eway], ["E-way date", v.ewaydate ? fmtD(v.ewaydate) : ""], ["Destination", v.dest]].filter((x) => x[1]);
+    const tr = [["Mode", v.tmode && v.tmode !== "1 - Road" ? v.tmode.replace(/^\d - /, "") : ""], ["Transporter", v.transporter], ["Transporter ID", v.transid], ["Vehicle no", v.vehicle], ["Distance", Number(v.dist) > 0 ? v.dist + " km" : ""], ["LR / doc no", v.lr], ["LR date", v.lrdate ? fmtD(v.lrdate) : ""], ["E-way bill", v.eway], ["E-way date", v.ewaydate ? fmtD(v.ewaydate) : ""], ["Destination", v.dest]].filter((x) => x[1]);
     const fx = v.tally_fix;
     return `${flash ? `<p class="okmsg toast" role="status">${esc(flash)}</p>` : ""}${warn.length ? `<p class="fmsg bad">${esc(warn.join(" "))}</p>` : ""}
       ${fx && v.tally_no ? `<div class="invfix"><p style="margin:0"><b>Changed after it was entered in Tally.</b> Make the same change to invoice ${esc(v.tally_no)} in Tally by hand (Alter the voucher). A new Tally file would enter it a second time.</p>
@@ -5143,6 +5152,20 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <p class="note">Ledgers used: ${esc(S.sales)}, ${t.intra ? esc(S.cgst) + ", " + esc(S.sgst) : esc(S.igst)}${t.fr ? ", " + esc(S.freight) : ""}${t.pk ? ", " + esc(S.packing) : ""}${t.ds ? ", " + esc(S.discount) : ""}${t.ro ? ", " + esc(S.round) : ""}. Change names under Orders → Invoices → Tally names.</p>`;
   }
   // ---- editor
+  // transporters already used: from the app's invoices (with their ID) and Tally's own sales (name only); newest first (25-Nov-2026)
+  const TR_MODES = [["1 - Road", "Road"], ["2 - Rail", "Rail"], ["3 - Air", "Air"], ["4 - Ship", "Ship"]];
+  function invTransporters() { const m = new Map(), add = (n, id, at) => { n = String(n || "").trim(); if (!n) return; const k = UP(n), o = m.get(k);
+      if (!o) m.set(k, { name: n, id: String(id || "").trim().toUpperCase(), at: at || "" }); else { if (!o.id && id) o.id = String(id).trim().toUpperCase(); if ((at || "") > o.at) o.at = at; } };
+    invLive().slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).forEach((x) => add(x.transporter, x.transid, x.date));
+    try { tsRows().forEach((r) => { const m = tsMeta(r); if (m.shipby) add(m.shipby, "", r.vdate); }); } catch (e) { /* no Tally sales yet */ }
+    return [...m.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))); }
+  const invTrOf = (name) => invTransporters().find((x) => UP(x.name) === UP(String(name || "").trim()));
+  const invLastDist = (v) => { const x = invLive().filter((o) => o.id !== v.id && UP(o.party || "") === UP(v.party || "") && Number(o.dist) > 0).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0]; return x ? x.dist : ""; };
+  const invTrNote = (v) => { const id = String(v.transid || "").trim();
+    if (id && !/^[0-9A-Z]{15}$/i.test(id)) return "The transporter ID should be 15 letters and numbers (their GSTIN or TRANSIN).";
+    if (!v.transporter && !v.vehicle) return "Fill the transporter or the vehicle no so Tally can make the e-way bill without asking.";
+    return (v.transporter && !id ? "No transporter ID: Tally will need it for Part A unless you give the vehicle no. " : "") + (Number(v.dist) > 0 ? "" : "Distance 0: the e-way bill portal works it out from the two pincodes.");
+  };
   const ivF = (id, lb, val, more) => `<label>${lb}<input id="${id}" data-iv="${id.slice(3)}" value="${esc(val ?? "")}" autocomplete="off"${more || ""}></label>`;
   function invForm() {
     const v = inv; if (!v) return `<p class="empty">Nothing to edit.</p>`;
@@ -5168,8 +5191,15 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
           <p class="note" style="margin:6px 0 0">From the delivered quantity: type how many hides and sqft this bill is for; the rest stays in Pending invoicing. New delivery: the skins are added to the lot's delivered count when you save (they can't be more than the lot has).</p></div>`; })() : ""}</div>
       <h3 style="margin:10px 0 0">Freight, packing, sampling, discount</h3>
       <div class="two">${ivF("iv-freight", "Freight ₹", v.freight, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-packing", "Packing ₹", v.packing, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-sampling", "Sampling ₹", v.sampling, ' type="number" step="any" inputmode="decimal"')}${ivF("iv-discount", "Discount ₹", v.discount, ' type="number" step="any" inputmode="decimal"')}</div>
-      <h3 style="margin:10px 0 0">Transport and e-way bill</h3>
-      <div class="two">${ivF("iv-transporter", "Transporter", v.transporter)}${ivF("iv-vehicle", "Vehicle no", v.vehicle)}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
+      <h3 style="margin:10px 0 0">Transporter (goes into Tally for the e-way bill)</h3>
+      <div class="two"><label>Mode<select id="iv-tmode" data-iv="tmode">${TR_MODES.map(([k, n]) => `<option value="${k}"${(v.tmode || "1 - Road") === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      ${ivF("iv-transporter", "Transporter name", v.transporter, ' list="iv-trlist" placeholder="Transport company"')}${ivF("iv-transid", "Transporter ID (GSTIN or TRANSIN)", v.transid, ' maxlength="15" placeholder="15 characters" style="text-transform:uppercase"')}
+      ${ivF("iv-vehicle", "Vehicle no", v.vehicle, ' placeholder="WB23A1234" style="text-transform:uppercase"')}<label>Vehicle type<select id="iv-vehtype" data-iv="vehtype">${[["R - Regular", "Regular"], ["O - ODC", "Over-dimensional cargo"]].map(([k, n]) => `<option value="${k}"${(v.vehtype || "R - Regular") === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      ${ivF("iv-dist", "Distance (km)", v.dist, ' type="number" step="1" min="0" inputmode="numeric" placeholder="0 = from pincodes"')}${ivF("iv-lr", "LR / doc no", v.lr)}${ivF("iv-lrdate", "LR date", v.lrdate, ' type="date"')}${ivF("iv-dest", "Destination", v.dest)}</div>
+      <p class="note" style="margin:0" id="iv-trnote">${esc(invTrNote(v))}</p>
+      <h3 style="margin:10px 0 0">E-way bill (after it is made)</h3>
+      <div class="two">${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}</div>
+      <datalist id="iv-trlist">${invTransporters().map((x) => `<option value="${esc(x.name)}">${esc(x.id || "")}</option>`).join("")}</datalist>
       ${ivF("iv-narration", "Comments for Tally (narration, optional)", v.narration)}
       <div id="iv-tot">${invTotHtml(v)}</div>
       <datalist id="iv-items">${(tItems().length ? tItems().map((x) => x.name) : items).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
@@ -5220,7 +5250,11 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (t.dataset.iv) {
       const k = t.dataset.iv; v[k] = t.value;
       if (k === "customer") { v.lines = []; invPartyFill(v); invRedraw(); return; }
-      if (k === "party") { const tp = tParty(t.value); if (tp) { v.party = tp.name; v.gstin = tp.gstin || ""; v.state = tp.state || v.state; v.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); invRedraw(); return; } }
+      if (k === "party") { const tp = tParty(t.value); if (tp) { v.party = tp.name; v.gstin = tp.gstin || ""; v.state = tp.state || v.state; v.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); if (!v.dist) v.dist = invLastDist(v); invRedraw(); return; } }
+      if (k === "transporter") { const o = invTrOf(t.value); if (o && o.id && (!v.transid || v.transidAuto)) { v.transid = o.id; v.transidAuto = true; const ti = $("#iv-transid"); if (ti) ti.value = o.id; } }
+      if (k === "transid") { v.transid = t.value.trim().toUpperCase(); v.transidAuto = false; }
+      if (k === "vehicle") v.vehicle = t.value.toUpperCase().replace(/\s+/g, "");
+      if (["transporter", "transid", "vehicle", "dist"].includes(k)) { const nb = $("#iv-trnote"); if (nb) nb.textContent = invTrNote(v); }
       if (k === "gstin") { const st = GST_CODE[t.value.trim().slice(0, 2)]; if (st && t.value.trim().length >= 2) { v.state = st; const s = $("#iv-state"); if (s) s.value = st; } }
     } else if (t.dataset.ivl !== undefined) {
       const ln = v.lines[Number(t.dataset.ivl)], f = t.dataset.f; ln[f] = t.type === "checkbox" ? t.checked : t.value;
@@ -5270,6 +5304,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (!String(v.vno || "").trim()) v.vno = nextVno(v.id);
     { const dup = invLive().find((x) => x.id !== v.id && String(x.vno || x.tally_no || "").trim() === String(v.vno).trim()); if (dup) return bad("Invoice no " + v.vno + " is already on " + (dup.tally_no || dup.temp) + ". Next free: " + nextVno(v.id) + "."); }
     if (v.gstin && !/^\d{2}[A-Z0-9]{13}$/i.test(v.gstin.trim())) return bad("The GSTIN should be 15 characters starting with the 2-digit state code.");
+    if (v.transid && !/^[0-9A-Z]{15}$/i.test(String(v.transid).trim())) return bad("The transporter ID should be 15 letters and numbers (the transporter's GSTIN or TRANSIN), or leave it empty.");
+    if (v.dist !== "" && v.dist != null && !(Number(v.dist) >= 0 && Number(v.dist) <= 4000)) return bad("The distance should be in km, 0 to 4000.");
     if (!v.lines.length) return bad("Add at least one lot.");
     if (Number(v.discount) && !S.discount) return bad("Tally has no discount ledger yet. Make one in Tally, type its name under Orders → Invoices → Tally names, or give the discount as a % on the lines.");
     for (const ln of v.lines) {
@@ -5362,7 +5398,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const ways = `<EWAYBILLDETAILS.LIST>${S.caddr ? `<CONSIGNORADDRESS.LIST TYPE="String">${T("CONSIGNORADDRESS", String(S.caddr).split(/\n/)[0])}</CONSIGNORADDRESS.LIST>` : ""}${v.addr ? `<CONSIGNEEADDRESS.LIST TYPE="String">${T("CONSIGNEEADDRESS", String(v.addr).replace(/\n/g, ", ").slice(0, 120))}</CONSIGNEEADDRESS.LIST>` : ""}`
       + `${v.eway ? T("BILLDATE", td(v.ewaydate || v.date)) + T("BILLNUMBER", v.eway) : ""}<DOCUMENTTYPE>Tax Invoice</DOCUMENTTYPE><SUBTYPE>Supply</SUBTYPE>${T("CONSIGNEEGSTIN", (v.gstin || "").toUpperCase())}${T("CONSIGNEEPINCODE", toPin)}${T("CONSIGNEESTATENAME", v.state)}${T("CONSIGNEEPLACE", placeOf(v.addr) || v.dest || "")}`
       + `${T("CONSIGNORPLACE", placeOf(S.caddr) || "Kolkata")}${T("CONSIGNORPINCODE", fromPin)}${T("CONSIGNORGSTIN", S.gstin)}${T("SHIPPEDFROMSTATE", S.state)}${T("SHIPPEDTOSTATE", v.state)}`
-      + `<TRANSPORTDETAILS.LIST>${T("TRANSPORTERNAME", v.transporter)}<TRANSPORTMODE>1 - Road</TRANSPORTMODE>${T("VEHICLENUMBER", String(v.vehicle || "").replace(/\s+/g, ""))}${T("DOCUMENTNUMBER", v.lr)}${T("DOCUMENTDATE", td(v.lrdate))}</TRANSPORTDETAILS.LIST></EWAYBILLDETAILS.LIST>`;
+      // the transporter part, in the order Tally's own export has it (tally-study/purchases.xml): doc date, transporter ID, doc no, name, mode, vehicle, vehicle type, distance (25-Nov-2026)
+      + `<TRANSPORTDETAILS.LIST>${T("DOCUMENTDATE", td(v.lrdate))}${T("TRANSPORTERID", String(v.transid || "").trim().toUpperCase())}${T("DOCUMENTNUMBER", v.lr)}${T("TRANSPORTERNAME", v.transporter)}<TRANSPORTMODE>${xe(v.tmode || "1 - Road")}</TRANSPORTMODE>`
+      + `${T("VEHICLENUMBER", String(v.vehicle || "").replace(/\s+/g, "").toUpperCase())}${v.vehicle ? `<VEHICLETYPE>${xe(v.vehtype || "R - Regular")}</VEHICLETYPE>` : ""}<DISTANCE>${Math.max(0, Math.round(Number(v.dist) || 0))}</DISTANCE></TRANSPORTDETAILS.LIST></EWAYBILLDETAILS.LIST>`;
     const consig = `${T("CONSIGNEEMAILINGNAME", v.party.trim())}${T("CONSIGNEEGSTIN", (v.gstin || "").toUpperCase())}${T("CONSIGNEESTATENAME", v.state)}<CONSIGNEECOUNTRYNAME>India</CONSIGNEECOUNTRYNAME>${T("CONSIGNEEPINCODE", toPin)}${T("PARTYPINCODE", toPin)}`;
     return `<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${xe(S.vtype)}" ACTION="Create" OBJVIEW="Invoice Voucher View">`
       + `<DATE>${td(v.date)}</DATE><EFFECTIVEDATE>${td(v.date)}</EFFECTIVEDATE>${T("VOUCHERTYPENAME", S.vtype)}${T("VOUCHERNUMBER", v.tally_no || v.vno || "")}${T("REFERENCE", v.temp)}${T("REFERENCEDATE", td(v.date))}`
@@ -5491,7 +5529,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       // HSN tax summary
       const byH = {}; t.lines.forEach((ln) => { const h = ln.hsn || S.hsn; byH[h] = byH[h] || { val: 0, g: Number(ln.gst) || 0 }; byH[h].val = r2(byH[h].val + ln.amt); });
       const extraAmt = r2(t.taxable - t.lines.reduce((a, x) => a + x.amt, 0)); if (extraAmt) { const main = Object.keys(byH).sort((a, b) => byH[b].val - byH[a].val)[0]; if (main) byH[main].val = r2(byH[main].val + extraAmt); }
-      const up2 = (x) => Math.ceil(Math.round(x * 1e6) / 1e4) / 100;
+      const up2 = (x) => Math.round(Math.round(x * 1e6) / 1e4) / 100; // same rounding as invCalc
       const hx = t.intra ? [L, L + 78, L + 100, L + 112, L + 134, L + 146, L + 168, R] : [L, L + 100, L + 124, L + 138, L + 164, R];
       box(L, fy, R - L, 9); const grp = t.intra ? [[2, "CGST"], [4, "SGST/UTGST"]] : [[2, "IGST"]], inG = new Set(grp.map(([i]) => i + 1));
       hx.slice(1, -1).forEach((x, k) => line(x, inG.has(k + 1) ? fy + 4.5 : fy, x, fy + 9));
@@ -6238,7 +6276,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if ((l.lot_pcs > 0 && pcs > l.lot_pcs + 0.0001) || (l.lot_sqft > 0 && sqft > l.lot_sqft + 0.5)) return bad("That is more than the lot's " + fmtN(l.lot_pcs, 0) + " pcs and " + fmtN(l.lot_sqft, 2) + " sqft.");
       if (!whole && l.lot_pcs > 0 && pcs >= l.lot_pcs - 0.0001) return bad("That is the whole lot. Choose 'The whole lot goes back' instead.");
       if (whole && rwOpen(lot)) return bad(lot + " already has a rework open. Mark it done first.");
-      const ra = routeIdx(l, at), rb = routeIdx(l, back), sa = ra >= 0 && rb >= 0 ? ra + 1 : stageNo(at) || 0, sb = ra >= 0 && rb >= 0 ? rb + 1 : stageNo(back) || 0;
+      const ra = routeIdx(l, at), rb = routeIdx(l, back), sa = ra >= 0 && rb >= 0 ? ra + 1 : ordNo(at), sb = ra >= 0 && rb >= 0 ? rb + 1 : ordNo(back);
       if (sa && sb && sb > sa && warnOnce(f, back + " comes after " + at + ", where the fault was found.")) return;
       const nl = whole ? "" : f.dataset.new, wt = numOf("#rw-wt") || rwWtGuess(lot, pcs, whole) || "";
       if (wt && Number(l.weight) > 0 && wt > Number(l.weight) * 1.5 && warnOnce(f, wt + " kg is much more than the lot's " + fmtN(l.weight, 2) + " kg. Tap Save again if it is right.")) return;
@@ -6380,6 +6418,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   const pageRoute = (page) => { const r = (data.routes || {})[normPage(page)]; return r && r.steps.length ? r : null; };
   const lotRoute = (l) => { const r = l && pageRoute(l.process_page); return r ? r.steps : stdRoute(); };
   const routeIdx = (l, n) => lotRoute(l).findIndex((x) => UP(x) === UP(n));
+  // order used by the "comes before" warnings when the two stages aren't both on the product's route: Dispatched is always last, and
+  // stages added from the phone (MILLING (FINISH), TOGELLING (FINISH)... seq 16+ on the guide) take their phase's gate number, not their row number
+  // (25-Nov-2026: L545 MILLING (FINISH) › Dispatched was refused as "Dispatched comes before MILLING (FINISH)")
+  const ordNo = (n) => UP(n) === "DISPATCHED" ? 9999 : gateNo(n) || stageNo(n) || 0;
   const stageNo = (n) => { const s = data.stages.find((x) => x.name.toUpperCase() === String(n || "").toUpperCase()); return s ? s.seq : null; };
   // ON HOLD pauses a lot where it was: the stage before the hold (24-Nov-2026)
   const isHold = (n) => /^ON HOLD/i.test(String(n || "").trim());
@@ -6522,7 +6564,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   function warnOnce(f, text) {
     if (f.dataset.warned === text) return false;
-    f.dataset.warned = text; $("#fm-msg").textContent = text + " Tap Save again to save it anyway."; return true;
+    f.dataset.warned = text; $("#fm-msg").textContent = /save again/i.test(text) ? text : text + " Tap Save again to save it anyway."; return true;
   }
   async function submitEntry(f) {
     if (f.id === "fm-recipe") return submitRecipe(f);
@@ -6538,7 +6580,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       if (to.toUpperCase() === String(l.stage || "").toUpperCase()) { msg.textContent = l.lot_no + " is already in " + to + "."; return; }
       const since = toDate(l.stage_since);
       if (since && toDate(date) < since) { msg.textContent = "The date is before the lot entered " + l.stage + " (" + fmtD(l.stage_since) + ")."; return; }
-      const c0 = heldAt(l) || l.stage, ra = routeIdx(l, c0), rb = routeIdx(l, to), a = ra >= 0 && rb >= 0 ? ra + 1 : stageNo(c0), b = ra >= 0 && rb >= 0 ? rb + 1 : stageNo(to), up = to.toUpperCase(), cu = String(l.stage || "").toUpperCase();
+      const c0 = heldAt(l) || l.stage, ra = routeIdx(l, c0), rb = routeIdx(l, to), a = ra >= 0 && rb >= 0 ? ra + 1 : ordNo(c0), b = ra >= 0 && rb >= 0 ? rb + 1 : ordNo(to), up = to.toUpperCase(), cu = String(l.stage || "").toUpperCase();
       const sg = data.stages.find((x) => x.name.toUpperCase() === cu), minD = sg ? Number(sg.min_days) || 0 : 0, hereD = since ? Math.floor((toDate(date) - since) / DAY) : null;
       if (since && minD > 0 && hereD < minD && warnOnce(f, l.stage + " normally takes at least " + fmtN(minD, 0) + " day(s); " + l.lot_no + " has been there " + hereD + " day(s).")) return;
       if (a && b && b < a && !isHold(up) && up !== "DUMPED" && (!isHold(cu) || heldAt(l)) && warnOnce(f, to + " comes before " + c0 + (isHold(cu) ? ", where " + l.lot_no + " was paused" : "") + ".")) return;
