@@ -374,6 +374,27 @@ body.sideopen #fab, body:has(#xsheet:not([hidden])) #fab { display: none; }
 body.simple nav.tabs .tab[data-tab="orders"], body.simple nav.tabs .tab[data-tab="purchases"], body.simple nav.tabs .tab[data-tab="chemicals"] { display: none; }
 body.simple #detail [data-invlot], body.simple #detail [data-act="lot"], body.simple #detail [data-form^="skinsio:"], body.simple #detail [data-form^="po_link:"], body.simple #detail [data-form^="lot_move:"], body.simple #detail [data-form^="rework:"], body.simple #detail [data-form^="lot_return:"], body.simple #detail [data-form^="lot_delete:"], body.simple #detail [data-form^="part_ahead:"], body.simple #detail [data-form^="page:"], body.simple #detail [data-form^="skins_edit:"], body.simple #detail [data-form^="no_finish:"], body.simple #detail [data-form^="process:"], body.simple #detail [data-go="orders"], body.simple #detail [data-go="purchases"] { display: none !important; }
 body.simple #detail .lotacts .btn { min-height: 52px; font-size: 16px; }
+.cb { display: block; position: relative; min-width: 0; width: 100%; }
+.cb::after { content: ""; position: absolute; right: 12px; top: 50%; width: 7px; height: 7px; margin-top: -6px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); pointer-events: none; }
+.cb.open::after { transform: rotate(-135deg); margin-top: -2px; }
+.cb-in { width: 100%; box-sizing: border-box; padding-right: 30px !important; text-overflow: ellipsis; cursor: pointer; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.cb-in[readonly] { caret-color: transparent; }
+.cb.open .cb-in { border-color: var(--accent); outline: 2px solid var(--accent-soft); cursor: text; }
+.cb-in:disabled { opacity: .6; cursor: default; }
+select.cb-native { display: none !important; }
+.drnav .cb { flex: 1; width: auto; }
+.cb-pop { position: fixed; z-index: 10001; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / .22); padding: 4px 0; font-size: 15px; -webkit-overflow-scrolling: touch; }
+.cb-o { padding: 11px 14px; cursor: pointer; line-height: 1.3; border-top: 1px solid var(--line); word-break: break-word; }
+.cb-o:first-child, .cb-g + .cb-o { border-top: 0; }
+.cb-o b { color: var(--accent); }
+.cb-o.sel { font-weight: 600; }
+.cb-o.sel::after { content: " ✓"; color: var(--accent); }
+.cb-o.act { background: var(--accent-soft); }
+.cb-o.dis { opacity: .45; cursor: default; }
+.cb-g { padding: 8px 14px 4px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.cb-none { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+.cb-filter { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 15px; background: var(--surface); color: var(--ink); margin-bottom: 6px; }
+.ipr[hidden] { display: none; }
 .selfind { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); margin-bottom: 4px; }
 details.more { border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: var(--surface); }
 details.more > summary { cursor: pointer; padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--accent); list-style: none; }
@@ -2153,7 +2174,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 202, at: "2026-11-25T13:00:58+05:30", notes: "Tally XML: round off (and every non-party line) now uses Tally's own side flag, so a minus round off stays minus in Tally - fixes invoice 86 showing +0.38; same fix on purchase bills" };
+  const APP_BUILD = { v: 203, at: "2026-11-25T17:45:56+05:30", notes: "Every pick-from-a-list box is now a drop-down with type-to-search (no more pop-up list of round buttons); long lists of bills/lines get a search box; old separate PO find boxes removed" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4822,7 +4843,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <div id="fn-oldw" style="display:none"><p class="note" style="margin:0">Skins from old stock that were never entered as a purchase. The app adds them to skins stock as <b>OLD STOCK</b> and gives all of them to this lot, so stock and costs stay right.</p>
         <div class="two">${txtF("fn-oani", "Animal (cow, buff, goat…)", "anilist")}${dl("anilist", data.purchases.map((x) => x.animal))}${txtF("fn-ogra", "Grade / description")}${numF("fn-orate", "Rate per sqft, if known")}${txtF("fn-onote", "Where they came from")}</div></div>
       <div class="two">${numF("fn-pcs", "Pieces")}${numF("fn-sqft", "Sqft")}</div>
-      <label>Customer order (PO)<input class="selfind" data-for="fn-line" type="search" placeholder="Type to find a PO: number, customer or item" autocomplete="off" aria-label="Find a PO"><select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
+      <label>Customer order (PO)<select id="fn-line" data-fillpo><option value="">No order</option>${lineOpts()}</select></label>
       ${txtF("fn-cust", "Customer", "custlist")}${dl("custlist", data.lots.map((l) => l.customer))}${txtF("fn-prod", "Product")}
       <details class="more"><summary>More details: date, order, due date, stage, recipe, remarks</summary>
       <div class="two">${dateF("fn-date", "Date", today0())}${numF("fn-qty", "Order qty (sqft)")}${txtF("fn-shav", "Shaving (thickness)")}${txtF("fn-wt", "Weight")}${dateF("fn-odt", "Order date", "")}${dateF("fn-ddt", "Due date", "")}</div>
@@ -4852,7 +4873,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
           <label>Sqft<input id="ps-sqft" inputmode="decimal" value="${over > 0.5 ? +Math.min(over, has).toFixed(2) : ""}"></label>
           <label>Put them on PO<select id="ps-line"><option value="">- none, keep here and give the reason -</option>${opts}</select></label><p class="note" id="ps-line-info" style="margin:4px 0 0"></p>
           <label>Reason<input id="ps-why" placeholder="needed when no PO is picked"></label>${formEnd}</form>`; } },
-    po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<input class="selfind" data-for="fl-line" type="search" placeholder="Type to find a PO: number, customer or item" autocomplete="off" aria-label="Find a PO"><select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
+    po_link: { title: "Link to PO", html: (a) => `<form class="fm" id="fm-po_link" data-lot="${esc(a)}"><h3>${esc(a)}</h3><label>Customer order line<select id="fl-line">${lineOpts(data.lotBy[a].po && data.lotBy[a].po.line_id)}</select></label>${formEnd}</form>` },
     chem: { title: "Record use", html: (a) => `<form class="fm" id="fm-chem" data-chem="${esc(a)}"><h3>${esc(a)}</h3>
       <div class="two"><label>Type<select id="fc-kind"><option value="SAMPLING">Sampling</option><option value="WASTAGE">Wastage</option><option value="ISSUED OTHER">Issued other</option><option value="CORRECTION">Correction</option></select></label>
       <label>Qty<input id="fc-qty" type="number" step="any" inputmode="decimal"></label>${dateF("fc-date", "Date", today0())}</div>
@@ -6960,6 +6981,88 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   $("#topnav").addEventListener("click", navClick); $("#subnav").addEventListener("click", navClick);
   $("#side").addEventListener("click", (e) => sideClick(e));
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-xseen]"); if (!b) return; try { localStorage.setItem("ssi-xseen", JSON.stringify(xSeenGet().concat([b.dataset.xseen]).slice(-400))); } catch (er) { /* private */ } render(); });
+  // ---- type-to-search drop-downs (25-Nov-2026): every pick-from-a-list box opens a list under it that keeps only what matches the typing,
+  // instead of the phone's pop-up list of round buttons. The real <select> stays in the page (hidden) and holds the value, so every form reads it as before.
+  (function () {
+    const SP = HTMLSelectElement.prototype, dv = Object.getOwnPropertyDescriptor(SP, "value"), di = Object.getOwnPropertyDescriptor(SP, "selectedIndex");
+    const sync = (s) => { if (s.__cb) s.__cb.sync(); };
+    Object.defineProperty(SP, "value", { configurable: true, get() { return dv.get.call(this); }, set(v) { dv.set.call(this, v); sync(this); } });
+    Object.defineProperty(SP, "selectedIndex", { configurable: true, get() { return di.get.call(this); }, set(v) { di.set.call(this, v); sync(this); } });
+    const SHORT = 4, MAX = 250, esc1 = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const words = (q) => String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const mark = (txt, w) => { if (!w.length) return esc1(txt); const lo = txt.toLowerCase(), hit = new Array(txt.length).fill(false);
+      w.forEach((x) => { let i = lo.indexOf(x); while (i >= 0) { for (let j = i; j < i + x.length; j++) hit[j] = true; i = lo.indexOf(x, i + x.length); } });
+      let out = "", on = false; for (let i = 0; i < txt.length; i++) { if (hit[i] !== on) { out += on ? "</b>" : "<b>"; on = hit[i]; } out += esc1(txt[i]); } return out + (on ? "</b>" : ""); };
+    const pop = document.createElement("div"); pop.className = "cb-pop"; pop.hidden = true; pop.setAttribute("role", "listbox");
+    let cur = null; // the open box
+    const place = () => { if (!cur) return; const r = cur.inp.getBoundingClientRect(), vv = window.visualViewport, vh = vv ? vv.height + vv.offsetTop : innerHeight;
+      if (r.bottom < 0 || r.top > vh) { close(); return; }
+      const below = vh - r.bottom - 8, above = r.top - 8, up = below < 180 && above > below;
+      pop.style.left = Math.max(4, r.left) + "px"; pop.style.width = Math.min(innerWidth - 8, Math.max(r.width, 220)) + "px";
+      pop.style.maxHeight = Math.max(120, Math.min(360, up ? above : below)) + "px";
+      if (up) { pop.style.top = ""; pop.style.bottom = (innerHeight - r.top + 2) + "px"; } else { pop.style.bottom = ""; pop.style.top = (r.bottom + 2) + "px"; } };
+    function close(keep) { if (!cur) return; const c = cur; cur = null; pop.hidden = true; pop.innerHTML = ""; c.w.classList.remove("open"); c.inp.setAttribute("aria-expanded", "false"); if (!keep) c.sync(); }
+    function choose(c, idx) { const s = c.s; close(true); if (idx != null && idx !== di.get.call(s)) { di.set.call(s, idx); s.dispatchEvent(new Event("input", { bubbles: true })); s.dispatchEvent(new Event("change", { bubbles: true })); }
+      c.sync(); c.inp.blur(); }
+    function draw(c, q) { const w = words(q), sel = di.get.call(c.s); let n = 0, html = "", grp = null, act = -1;
+      [...c.s.options].forEach((o) => { const t = o.textContent.trim(); if (o.hidden) return; if (w.length && !w.every((x) => t.toLowerCase().includes(x))) return;
+        if (n >= MAX) { n++; return; }
+        const g = o.parentNode && o.parentNode.tagName === "OPTGROUP" ? o.parentNode.label : null; if (g && g !== grp) { html += `<div class="cb-g">${esc1(g)}</div>`; } grp = g;
+        if (act < 0 && (w.length ? !o.disabled : o.index === sel)) act = o.index;
+        html += `<div class="cb-o${o.index === sel ? " sel" : ""}${o.disabled ? " dis" : ""}" role="option" data-i="${o.index}">${mark(t || "(blank)", w)}</div>`; n++; });
+      if (!n) html = `<div class="cb-none">Nothing matches “${esc1(q)}”</div>`; else if (n > MAX) html += `<div class="cb-none">${n - MAX} more: keep typing to narrow</div>`;
+      pop.innerHTML = html; c.act = act; hi(c, false); }
+    function hi(c, scroll = true) { pop.querySelectorAll(".cb-o.act").forEach((x) => x.classList.remove("act")); const el = pop.querySelector(`.cb-o[data-i="${c.act}"]`);
+      if (el) { el.classList.add("act"); if (scroll) el.scrollIntoView({ block: "nearest" }); else { const t = el.offsetTop - pop.clientHeight / 2 + el.offsetHeight / 2; pop.scrollTop = Math.max(0, t); } } }
+    function open(c) { if (cur === c) return; close(); cur = c; c.typed = false; c.w.classList.add("open"); c.inp.setAttribute("aria-expanded", "true"); if (!pop.isConnected) document.body.appendChild(pop);
+      pop.hidden = false; draw(c, ""); place(); if (!c.inp.readOnly) { try { c.inp.select(); } catch (e) { /* ignore */ } } }
+    pop.addEventListener("pointerdown", (e) => e.preventDefault()); // keep the typing box focused while picking
+    pop.addEventListener("click", (e) => { const o = e.target.closest(".cb-o"); if (!o || !cur || o.classList.contains("dis")) return; choose(cur, Number(o.dataset.i)); });
+    addEventListener("scroll", (e) => { if (cur && !pop.contains(e.target)) place(); }, true); addEventListener("resize", place); if (window.visualViewport) visualViewport.addEventListener("resize", place);
+    document.addEventListener("pointerdown", (e) => { if (cur && !pop.contains(e.target) && !cur.w.contains(e.target)) close(); }, true);
+    function enhance(s) {
+      if (s.__cb || s.multiple || s.size > 1 || s.hasAttribute("data-native")) return;
+      const old = s.previousElementSibling; if (old && old.classList.contains("cb") && old.__s !== s) old.remove();
+      const w = document.createElement("span"); w.className = "cb"; w.__s = s;
+      const inp = document.createElement("input"); inp.type = "text"; inp.className = "cb-in"; inp.autocomplete = "off"; inp.spellcheck = false; inp.setAttribute("autocapitalize", "off");
+      inp.setAttribute("role", "combobox"); inp.setAttribute("aria-expanded", "false"); inp.setAttribute("aria-label", s.getAttribute("aria-label") || (s.closest("label") ? s.closest("label").firstChild.textContent.trim() : "") || "Pick");
+      if (s.classList.contains("cin")) inp.classList.add("cin");
+      w.appendChild(inp); s.before(w); s.classList.add("cb-native"); s.tabIndex = -1;
+      const c = { s, w, inp, typed: false, act: -1 };
+      c.sync = () => { if (!s.isConnected) { if (w.isConnected) w.remove(); return; } const o = s.options[di.get.call(s)];
+        const n = [...s.options].filter((x) => !x.hidden).length; inp.readOnly = n <= SHORT; inp.inputMode = n <= SHORT ? "none" : "search";
+        inp.placeholder = n <= SHORT ? "" : "Type to search"; inp.disabled = s.disabled;
+        w.hidden = s.hidden || s.style.display === "none"; w.title = o ? o.textContent.trim() : "";
+        if (cur !== c) inp.value = o ? o.textContent.trim() : ""; else if (!c.typed) { inp.value = o ? o.textContent.trim() : ""; draw(c, ""); } };
+      s.__cb = c; c.sync();
+      new MutationObserver(() => c.sync()).observe(s, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["hidden", "style", "disabled"] });
+      inp.addEventListener("focus", () => open(c)); inp.addEventListener("click", () => { if (cur !== c) open(c); });
+      inp.addEventListener("blur", () => { setTimeout(() => { if (cur === c && document.activeElement !== inp) close(); }, 150); });
+      inp.addEventListener("input", (e) => { e.stopPropagation(); if (cur !== c) open(c); c.typed = true; draw(c, inp.value); place(); });
+      inp.addEventListener("change", (e) => e.stopPropagation());
+      inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") { close(); inp.blur(); return; }
+        if (e.key === "Tab") { close(); return; }
+        if (cur !== c) { if (e.key === "ArrowDown" || e.key === "Enter") { e.preventDefault(); open(c); } return; }
+        const els = [...pop.querySelectorAll(".cb-o:not(.dis)")].map((x) => Number(x.dataset.i)), at = els.indexOf(c.act);
+        if (e.key === "ArrowDown") { e.preventDefault(); c.act = els[Math.min(els.length - 1, at + 1)] ?? c.act; hi(c); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); c.act = els[Math.max(0, at - 1)] ?? c.act; hi(c); }
+        else if (e.key === "Enter") { e.preventDefault(); if (c.act >= 0) choose(c, c.act); else close(); } });
+    }
+    const scan = (n) => { if (!n || n.nodeType !== 1) return; if (n.tagName === "SELECT") enhance(n); else if (n.querySelector) n.querySelectorAll("select").forEach(enhance); filterLists(n); };
+    // long lists of round buttons or tick boxes (bills, invoice lines) get a search box on top too
+    function filterLists(root) { (root.matches && root.matches(".ipc") ? [root] : [...root.querySelectorAll(".ipc")]).forEach((box) => {
+      if (box.__f || box.querySelectorAll(".ipr").length < 6) return; box.__f = 1;
+      const f = document.createElement("input"); f.type = "search"; f.className = "cb-filter"; f.placeholder = "Type to search this list"; f.autocomplete = "off"; f.setAttribute("aria-label", "Search this list");
+      box.before(f);
+      f.addEventListener("input", (e) => { e.stopPropagation(); const w = words(f.value), rows = [...box.querySelectorAll(".ipr")];
+        let head = null, headHit = false, anyKid = false; const fin = () => { if (head) head.hidden = !(headHit || anyKid); };
+        rows.forEach((r) => { const ok = !w.length || w.every((x) => r.textContent.toLowerCase().includes(x));
+          if (r.classList.contains("iplot")) { fin(); head = r; headHit = ok; anyKid = false; r.hidden = false; return; }
+          const show = ok || (head && headHit); r.hidden = !show; if (show) anyKid = true; }); fin(); });
+      f.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); }); }); }
+    const go = () => { scan(document.body); new MutationObserver((ms) => ms.forEach((m) => { m.addedNodes.forEach(scan); m.removedNodes.forEach((n) => { if (n.nodeType === 1 && cur && !cur.s.isConnected) close(true); }); })).observe(document.body, { childList: true, subtree: true }); };
+    if (document.body) go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
   // type to find a PO in a long list (23-Nov-2026): the list keeps only the matching orders, the first one is picked
   document.addEventListener("input", (e) => { const t = e.target; if (!t.classList || !t.classList.contains("selfind")) return; const sl = document.getElementById(t.dataset.for); if (!sl) return;
     if (!sl.dataset.all) sl.dataset.all = sl.innerHTML; const w = t.value.trim().toLowerCase().split(/\s+/).filter(Boolean), keep = sl.value;
