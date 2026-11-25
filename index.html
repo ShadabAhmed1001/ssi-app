@@ -799,6 +799,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const q = "(lot_no, process, version, versions, saved_at, saved_by, details, substance, shaved_wt, pcs, wb_sqft, finish_sqft, process_note, remarks, crust, machinery, finishing, animal) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
       enRun("INSERT OR REPLACE INTO lot_recipes" + q, vals); enRun("INSERT OR REPLACE INTO lot_recipe_versions" + q, vals);
       enRun("UPDATE lot_recipe_versions SET versions=? WHERE lot_no=? AND process=?", [v, lot, pr]);
+      // a lot with no process page takes the page of the recipe saved for it (25-Nov-2026)
+      enRun("UPDATE lots SET process_page=? WHERE UPPER(lot_no)=UPPER(?) AND IFNULL(TRIM(process_page),'')=''", [pr, lot]);
     },
     // ---- skins: purchases, new lots, skins given to and taken back from lots, lot moves and splits (purchase ledger)
     _key(t) { const re = t === "P" ? /^P(\d+)$/ : /^L(\d+)$/, list = t === "P" ? rows("SELECT purchase_no k FROM purchases") : rows("SELECT lot_no k FROM lots UNION SELECT to_key FROM purchase_ledger UNION SELECT from_key FROM purchase_ledger");
@@ -1392,6 +1394,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const p = procs[l.procKey], own = Object.values(data.recipes).filter((r) => r.lot_no === l.lot_no);
       const r = own.find((x) => p && "proc:" + x.process.replace(/\s+/g, " ").trim().toUpperCase() === p.key) || (l.process_page ? null : own[0]);
       l.recKey = r ? r.key : null;
+      // a recipe saved but the lot's process page left empty (25-Nov-2026, L555): the lot is on the recipe's page
+      if (r && !String(l.process_page || "").trim()) { l.process_page = r.process; l.pageFromRecipe = true;
+        const pk = "proc:" + r.process.replace(/\s+/g, " ").trim().toUpperCase(); if (procs[l.procKey]) procs[l.procKey].lots = procs[l.procKey].lots.filter((x) => x !== l);
+        (procs[pk] = procs[pk] || { key: pk, name: r.process, none: false, lots: [] }).lots.push(l); l.procKey = pk; }
     });
     data.processes = Object.values(procs).map((p) => {
       const open = p.lots.filter((l) => l.grp === 1), last = p.lots.map((l) => l.order_date || "").sort().pop();
@@ -2146,7 +2152,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 196, at: "2026-11-25T08:07:03+05:30", notes: "lot page says linked-but-no-recipe vs no page linked, with a button; rework parts follow parent's process" };
+  const APP_BUILD = { v: 197, at: "2026-11-25T08:38:18+05:30", notes: "lot with a saved recipe but no process page counts as on the recipe's page (L555); saving a recipe sets the lot's page; recipe 'saved by' wording" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -3819,6 +3825,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // process page needed from FAT on (crusting starts there)
   // Mark Dispatched: the lot's process must be saved (a version of its own) and its PDF made (Excel's Save Process or the app's PDF)
   const lotPdfs = (lot) => { try { return rows("SELECT file, made_at FROM lot_pdfs WHERE lot_no=? ORDER BY made_at DESC", [lot]); } catch (e) { return null; } };
+  // who saved a recipe: a sign-in id (ms_…) means it was saved in the app, not a name to show (25-Nov-2026)
+  const whoSaved = (x) => { const t = String(x || "").replace(/^Phone /, ""); return !t ? "" : t === uid ? "you, in the app" : /^ms_|^[0-9a-f-]{20,}$/i.test(t) ? "in the app" : t; };
   function processSaved(l) {
     if (l.recKey) return true;
     return entries.some((e) => e.status === "pending" && e.type === "recipe" && String(e.lot_no || "").toUpperCase() === l.lot_no.toUpperCase());
@@ -4117,7 +4125,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       ${r.phone ? `<p class="note"><span class="wait">Edited on the phone, not in Excel yet.</span></p>` : ""}
       ${old ? `<p class="missing">Older version. <button class="link" data-go="lots" data-k="${esc(base)}">Open the latest</button></p>` : ""}
       ${kv([["Lot", lot ? lotLink(r.lot_no) : esc(r.lot_no)], ["Process page", `<button class="link" data-go="lots" data-k="${esc(pk)}">${esc(r.process)}</button>`], ["Substance", esc(r.substance)], ["Shaved wt", fmtN(r.shaved_wt, 2)],
-        ["Pcs", fmtN(r.pcs, 0)], ["Wet blue sqft", fmtN(r.wb_sqft, 2)], ["Finish sqft", fmtN(r.finish_sqft, 2)], ["Saved", r.phone ? "On the phone" : `v${r.version} of ${r.versions} · ${fmtD(r.saved_at)} · ${esc(r.saved_by)}`]])}
+        ["Pcs", fmtN(r.pcs, 0)], ["Wet blue sqft", fmtN(r.wb_sqft, 2)], ["Finish sqft", fmtN(r.finish_sqft, 2)], ["Saved", r.phone ? "On the phone" : `v${r.version} of ${r.versions} · ${fmtD(r.saved_at)} · ${esc(whoSaved(r.saved_by))}`]])}
       ${r.process_note ? `<h3>Process</h3><p class="prose">${esc(r.process_note)}</p>` : ""}
       ${r.remarks ? `<h3>Remarks</h3><p class="prose">${esc(r.remarks)}</p>` : ""}
       <h3>Crusting</h3>${crust.length ? `<div class="tbl"><table class="recipe"><thead><tr><th>%</th><th>Chemical</th><th class="r">Qty</th><th>Time</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${crust.map(crow).join("")}</tbody></table></div>` : `<p class="note">Nothing saved.</p>`}
@@ -4125,8 +4133,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       ${mach.length ? `<h3>Machinery</h3><div class="tbl"><table class="recipe"><thead><tr><th>Machine</th><th class="r">Round / coat</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${mach.map((x) => { const m = machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0); return `<tr><td>${esc(x.d)}</td><td class="r num">${esc(x.n)}</td>${showRates ? `<td class="r num">${fmtN(m.rate, 2)}${m.per ? "" : "/pc"}</td><td class="r num">${fmtN(m.amt, 0)}</td>` : ""}</tr>`; }).join("")}</tbody>${showRates ? `<tfoot><tr><td colspan="3"><b>Total</b>${r.animal ? "" : " (no animal set)"}</td><td class="r num"><b>${fmtN(mach.reduce((t, x) => t + machCalc(x.d, x.n, r.animal, r.pcs || (lot && lot.lot_pcs) || 0).amt, 0), 0)}</b></td></tr></tfoot>` : ""}</table></div>` : ""}
       ${fin.length ? `<h3>Finishing</h3><div class="tbl"><table class="recipe"><thead><tr><th>Ratio</th><th>Chemical</th><th class="r">Weight</th>${showRates ? `<th class="r">Rate</th><th class="r">₹</th>` : ""}</tr></thead><tbody>${fin.map((f, n) => frow(f, n)).join("")}</tbody></table></div>` : ""}
       <h3>Costing${costOf(r).wbMiss.length ? " ⚠ wet blue rate missing" : ""}</h3>${costInputs(r)}<div id="costbox">${costBox(r)}</div>
-      ${older.length && !old ? `<h3>Older versions</h3><p style="margin:0">${older.map((o) => `<button class="link" data-go="lots" data-k="${esc(base + "@v" + o.version)}">v${o.version} · ${fmtD(o.saved_at)} · ${esc(o.saved_by)}</button>`).join("<br>")}</p>` : ""}
-      ${old ? "" : `<p class="note foot" style="margin-top:12px">This is the latest version saved in Excel. Prices are from your last update.</p>`}`;
+      ${older.length && !old ? `<h3>Older versions</h3><p style="margin:0">${older.map((o) => `<button class="link" data-go="lots" data-k="${esc(base + "@v" + o.version)}">v${o.version} · ${fmtD(o.saved_at)} · ${esc(whoSaved(o.saved_by))}</button>`).join("<br>")}</p>` : ""}
+      ${old ? "" : `<p class="note foot" style="margin-top:12px">This is the latest version${recMode() ? "" : " saved in Excel"}. Prices are from your last update.</p>`}`;
   }
   // ---------------------------------------------------------------- recipes: read and edit
   function dbRecipe(lot, process) {
