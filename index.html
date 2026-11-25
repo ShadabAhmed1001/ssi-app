@@ -374,6 +374,7 @@ body.sideopen #fab, body:has(#xsheet:not([hidden])) #fab { display: none; }
 body.simple nav.tabs .tab[data-tab="orders"], body.simple nav.tabs .tab[data-tab="purchases"], body.simple nav.tabs .tab[data-tab="chemicals"] { display: none; }
 body.simple #detail [data-invlot], body.simple #detail [data-act="lot"], body.simple #detail [data-form^="skinsio:"], body.simple #detail [data-form^="po_link:"], body.simple #detail [data-form^="lot_move:"], body.simple #detail [data-form^="rework:"], body.simple #detail [data-form^="lot_return:"], body.simple #detail [data-form^="lot_delete:"], body.simple #detail [data-form^="part_ahead:"], body.simple #detail [data-form^="page:"], body.simple #detail [data-form^="skins_edit:"], body.simple #detail [data-form^="no_finish:"], body.simple #detail [data-form^="process:"], body.simple #detail [data-go="orders"], body.simple #detail [data-go="purchases"] { display: none !important; }
 body.simple #detail .lotacts .btn { min-height: 52px; font-size: 16px; }
+.trrow { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 0 0 8px; }
 .cb { display: block; position: relative; min-width: 0; width: 100%; }
 .cb::after { content: ""; position: absolute; right: 12px; top: 50%; width: 7px; height: 7px; margin-top: -6px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); pointer-events: none; }
 .cb.open::after { transform: rotate(-135deg); margin-top: -2px; }
@@ -717,7 +718,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { invXml: (v) => invXml([v]), newInv: () => menuAct("invnew"), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
+    window.__ssi = { invXml: (v) => invXml([v]), newInv: () => menuAct("invnew"), menu: (a) => menuAct(a), invset: () => invSet, trRem: (n, v) => trRemember(n, v), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -1490,7 +1491,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     { id: "today", label: "Today", tab: "today" },
     { id: "lots", label: "Production", items: chipItems("lots", ["proc", "noproc", "drafts", "ready", "guide"]) },
     { id: "orders", label: "Orders", items: chipItems("orders", ["sdash", "inv", "tsales", "invpend", "drep", "tally", "pled", "srep"]) },
-    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["orders|tsales", "Sales in Tally"], ["orders|pled", "Customer ledgers"], ["orders|srep", "Sales report"]] },
+    { id: "inv", label: "Sales", icon: MI.inv, items: [["orders|sdash", "Sales dashboard"], ["lots|ready", "Ready to dispatch"], ["orders|drep", "Deliveries (delivery report)"], ["lots|done", "Dispatched lots"], ["orders|invpend", "Pending invoicing"], ["@invnew", "New invoice"], ["orders|inv", "All invoices"], ["@transporters", "Transporters"], ["orders|tsales", "Sales in Tally"], ["orders|pled", "Customer ledgers"], ["orders|srep", "Sales report"]] },
     { id: "rep", label: "Reports", icon: MI.rep, items: [["orders|orep", "Order report"], ["orders|srep", "Sales report"], ["purchases|prep", "Purchase report"], ["orders|drep", "Delivery report"], ["orders|sdash", "Sales dashboard"], ["purchases|pdash", "Purchase dashboard"]] },
     { id: "proc", label: "Processes", icon: MI.proc, items: [["lots|proc", "Process pages"], ["lots|noproc", "Lots needing a process"], ["lots|drafts", "Unsaved processes"], ["calc|", "Costing calculator"]] },
     { id: "chemicals", label: "Chemicals", items: chipItems("chemicals") },
@@ -1547,7 +1548,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // pages of the app found by name in the search box ("machinery", "settings", "audit chemicals")
   const PAGE_WORDS = { "mach|": "machinery machine machines rates rate", "calc|": "costing calculator cost", "chemicals|count": "audit count counting physical", "chemicals|reorder": "order low minimum",
     "chemicals|bills": "purchase bills tally", "purchases|bills": "wet blue bill bills tally purchase leather", "settings|": "general look theme dark backup restore tour phone folder options preferences", "health|": "problems errors integrity checks", "entries|pending": "phone excel sync waiting pending",
-    "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "@onedrive": "onedrive sync sign in cloud folder", "lots|guide": "stages stage",
+    "entries|all": "phone history", "about|": "version update updates new", "today|": "home dashboard", "orders|inv": "invoice invoices billing", "@invnew": "invoice bill", "@invset": "tally ledger gst", "@transporters": "transporter transport vehicle lorry truck e-way eway", "@onedrive": "onedrive sync sign in cloud folder", "lots|guide": "stages stage",
     "lots|table": "table excel sheet tracker", "lots|proc": "recipes recipe", "orders|drep": "dispatch delivery deliveries", "purchases|ledger": "skins ledger", "lots|rework": "rework", "lots|drafts": "draft drafts", "orders|pled": "ledger ledgers party parties customer debtors receivable outstanding balance statement", "purchases|sled": "ledger ledgers party parties supplier creditors payable outstanding balance statement", "purchases|pdash": "purchase purchases dashboard bought" };
   let PAGES = null;
   function pageList() {
@@ -2183,7 +2184,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 204, at: "2026-11-25T18:39:22+05:30", notes: "L545: direct move to Dispatched no longer called 'before' MILLING (FINISH); app's finishing/crusting adjust clears Excel's 'missing' note; GST rounded like Excel (invoice 88); transporter section (ID, mode, vehicle type, distance) in invoice and Tally XML" };
+  const APP_BUILD = { v: 205, at: "2026-11-25T19:02:48+05:30", notes: "Transporters: saved list (ID, vehicle, mode) filled in by picking the name on an invoice; new ones saved with the invoice; customer's usual transporter and distance remembered; Transporters page to add, change, delete" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -5029,6 +5030,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   function invPartyFill(v) {
     const S = iset(), p0 = S.parties[UP(v.customer)] || {}, tp = p0.party ? tParty(p0.party) : null, p = tp ? Object.assign({}, p0, { party: tp.name, gstin: tp.gstin, state: tp.state || p0.state, addr: [tp.address, tp.pincode].filter(Boolean).join(" ") }) : p0;
     v.party = p.party || v.customer; v.gstin = p.gstin || ""; v.state = p.state || (GST_CODE[String(p.gstin || "").slice(0, 2)] || S.state); v.addr = p.addr || ""; v.dest = v.dest || p.dest || "";
+    if (!v.transporter && p.tr) { v.transporter = p.tr; invTrApply(v, p.tr); } if (!v.dist && Number(p.dist) > 0) v.dist = p.dist;
   }
   function invNew(cust, lot) {
     invAsk = null;
@@ -5154,11 +5156,26 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // ---- editor
   // transporters already used: from the app's invoices (with their ID) and Tally's own sales (name only); newest first (25-Nov-2026)
   const TR_MODES = [["1 - Road", "Road"], ["2 - Rail", "Rail"], ["3 - Air", "Air"], ["4 - Ship", "Ship"]];
-  function invTransporters() { const m = new Map(), add = (n, id, at) => { n = String(n || "").trim(); if (!n) return; const k = UP(n), o = m.get(k);
-      if (!o) m.set(k, { name: n, id: String(id || "").trim().toUpperCase(), at: at || "" }); else { if (!o.id && id) o.id = String(id).trim().toUpperCase(); if ((at || "") > o.at) o.at = at; } };
+  // the saved transporters (Transporters page, and every invoice saved with a transporter); kept in invset/main so every phone has them.
+  // Each is {name, id, vehicle, mode, vehtype, at}; a deleted one stays as {del: true, at} so the delete reaches the other phones (25-Nov-2026)
+  const trMap = () => invSet.transporters || {};
+  const trMaster = () => Object.values(trMap()).filter((x) => x && !x.del && x.name).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  function invTransporters() { const m = new Map(), gone = new Set(Object.entries(trMap()).filter(([, x]) => x && x.del).map(([k]) => k));
+    trMaster().forEach((x) => m.set(UP(x.name), Object.assign({ saved: true }, x)));
+    const add = (n, id, at) => { n = String(n || "").trim(); const k = UP(n); if (!n || gone.has(k) || m.has(k)) return; m.set(k, { name: n, id: String(id || "").trim().toUpperCase(), at: at || "" }); };
     invLive().slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).forEach((x) => add(x.transporter, x.transid, x.date));
-    try { tsRows().forEach((r) => { const m = tsMeta(r); if (m.shipby) add(m.shipby, "", r.vdate); }); } catch (e) { /* no Tally sales yet */ }
-    return [...m.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))); }
+    try { tsRows().forEach((r) => { const mm = tsMeta(r); if (mm.shipby) add(mm.shipby, "", r.vdate); }); } catch (e) { /* no Tally sales yet */ }
+    return [...m.values()]; }
+  // a transporter's details go into the invoice: ID, vehicle, mode and vehicle type; only boxes that are empty or were filled this way change
+  function invTrApply(v, name) { const o = invTrOf(name); if (!o) return false; let ch = false;
+    [["transid", o.id], ["vehicle", o.vehicle], ["tmode", o.mode], ["vehtype", o.vehtype]].forEach(([k, val]) => { if (!val) return; v.trAuto = v.trAuto || {};
+      if (!v[k] || v.trAuto[k] || (k === "tmode" && v[k] === "1 - Road") || (k === "vehtype" && v[k] === "R - Regular")) { if (v[k] !== val) ch = true; v[k] = val; v.trAuto[k] = true; } });
+    return ch; }
+  // the invoice's transporter is remembered (and the customer's usual transporter), so it is typed only once
+  function trRemember(next, v) { const n = String(v.transporter || "").trim(); if (!n) return next; const k = UP(n), old = (next.transporters || {})[k] || {};
+    const keep = (a, b) => String(a || "").trim() || (old.del ? "" : b || "");
+    next.transporters = Object.assign({}, next.transporters || {}, { [k]: { name: n, id: keep(String(v.transid || "").toUpperCase(), old.id), vehicle: keep(String(v.vehicle || "").replace(/\s+/g, "").toUpperCase(), old.vehicle), mode: v.tmode || old.mode || "1 - Road", vehtype: v.vehtype || old.vehtype || "R - Regular", at: new Date().toISOString() } });
+    return next; }
   const invTrOf = (name) => invTransporters().find((x) => UP(x.name) === UP(String(name || "").trim()));
   const invLastDist = (v) => { const x = invLive().filter((o) => o.id !== v.id && UP(o.party || "") === UP(v.party || "") && Number(o.dist) > 0).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0]; return x ? x.dist : ""; };
   const invTrNote = (v) => { const id = String(v.transid || "").trim();
@@ -5199,7 +5216,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <p class="note" style="margin:0" id="iv-trnote">${esc(invTrNote(v))}</p>
       <h3 style="margin:10px 0 0">E-way bill (after it is made)</h3>
       <div class="two">${ivF("iv-eway", "E-way bill no", v.eway, ' inputmode="numeric"')}${ivF("iv-ewaydate", "E-way date", v.ewaydate, ' type="date"')}</div>
-      <datalist id="iv-trlist">${invTransporters().map((x) => `<option value="${esc(x.name)}">${esc(x.id || "")}</option>`).join("")}</datalist>
+      <datalist id="iv-trlist">${invTransporters().map((x) => `<option value="${esc(x.name)}">${esc([x.id, x.vehicle].filter(Boolean).join(" · "))}</option>`).join("")}</datalist>
       ${ivF("iv-narration", "Comments for Tally (narration, optional)", v.narration)}
       <div id="iv-tot">${invTotHtml(v)}</div>
       <datalist id="iv-items">${(tItems().length ? tItems().map((x) => x.name) : items).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
@@ -5251,9 +5268,10 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       const k = t.dataset.iv; v[k] = t.value;
       if (k === "customer") { v.lines = []; invPartyFill(v); invRedraw(); return; }
       if (k === "party") { const tp = tParty(t.value); if (tp) { v.party = tp.name; v.gstin = tp.gstin || ""; v.state = tp.state || v.state; v.addr = [tp.address, tp.pincode].filter(Boolean).join(" "); if (!v.dist) v.dist = invLastDist(v); invRedraw(); return; } }
-      if (k === "transporter") { const o = invTrOf(t.value); if (o && o.id && (!v.transid || v.transidAuto)) { v.transid = o.id; v.transidAuto = true; const ti = $("#iv-transid"); if (ti) ti.value = o.id; } }
-      if (k === "transid") { v.transid = t.value.trim().toUpperCase(); v.transidAuto = false; }
-      if (k === "vehicle") v.vehicle = t.value.toUpperCase().replace(/\s+/g, "");
+      if (k === "transporter" && invTrApply(v, t.value)) { [["iv-transid", v.transid], ["iv-vehicle", v.vehicle], ["iv-tmode", v.tmode], ["iv-vehtype", v.vehtype]].forEach(([id, val]) => { const el = $("#" + id); if (el && val) el.value = val; }); }
+      if (k === "transid") { v.transid = t.value.trim().toUpperCase(); if (v.trAuto) v.trAuto.transid = false; }
+      if (k === "vehicle") { v.vehicle = t.value.toUpperCase().replace(/\s+/g, ""); if (v.trAuto) v.trAuto.vehicle = false; }
+      if ((k === "tmode" || k === "vehtype") && v.trAuto) v.trAuto[k] = false;
       if (["transporter", "transid", "vehicle", "dist"].includes(k)) { const nb = $("#iv-trnote"); if (nb) nb.textContent = invTrNote(v); }
       if (k === "gstin") { const st = GST_CODE[t.value.trim().slice(0, 2)]; if (st && t.value.trim().length >= 2) { v.state = st; const s = $("#iv-state"); if (s) s.value = st; } }
     } else if (t.dataset.ivl !== undefined) {
@@ -5344,9 +5362,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
           body.tally_fix = notes.length || Math.abs(before - body.total) > 0.5 ? { at: now, before, base, notes } : null; } }
       await ref.set(body); mineAdd(ref.id);
       // remember party details and item names for next time
-      const parties = Object.assign({}, S.parties, { [UP(v.customer)]: { party: v.party.trim(), gstin: (v.gstin || "").trim().toUpperCase(), state: v.state, addr: v.addr || "", dest: v.dest || "" } }), its = Object.assign({}, S.items);
+      const parties = Object.assign({}, S.parties, { [UP(v.customer)]: { party: v.party.trim(), gstin: (v.gstin || "").trim().toUpperCase(), state: v.state, addr: v.addr || "", dest: v.dest || "", tr: String(v.transporter || "").trim(), dist: Number(v.dist) > 0 ? Number(v.dist) : ((S.parties[UP(v.customer)] || {}).dist || "") } }), its = Object.assign({}, S.items);
       v.lines.forEach((ln) => { if (ln.poitem && ln.item) its[UP(ln.poitem)] = ln.item.trim(); });
-      await store.doc("invset/main").set(Object.assign({}, invSet, { parties, items: its, lastNo: Math.max(Number(S.lastNo) || 0, vnoNum(v.vno)) }));
+      await store.doc("invset/main").set(trRemember(Object.assign({}, invSet, { parties, items: its, lastNo: Math.max(Number(S.lastNo) || 0, vnoNum(v.vno)) }), v));
       const id = ref.id, wantXml = submitter === "iv-savexml"; inv = null; invoices = invoices.filter((x) => x.id !== id).concat([Object.assign({ id }, body)]);
       formOpen = null; const prev = stack.pop(); sel[tab] = prev ? prev.k : null; stack = []; if (tab !== "orders" && sel[tab]) stack.push({ tab, k: sel[tab] }); filter.orders = "inv"; flash = "Invoice saved" + (v.lines.some((x) => String(x.dkey).startsWith("e:")) ? ". New deliveries are waiting for Excel." : ".");
       sel.orders = "inv:" + id; if (tab !== "orders") go("orders"); else { render(); showDetail(); }
@@ -5449,6 +5467,36 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       <label>GST on freight / packing<select id="is-taxExtras"><option value="yes"${S.taxExtras !== "no" ? " selected" : ""}>Yes, at the goods' rate</option><option value="no"${S.taxExtras === "no" ? " selected" : ""}>No</option></select></label></div>
       ${ps.length ? `<h3 style="margin:8px 0 0">Remembered parties</h3><div class="tbl"><table><thead><tr><th>Customer</th><th>Tally party</th><th>GSTIN</th><th>State</th></tr></thead><tbody>${ps.map(([c, p]) => `<tr><td>${esc(c)}</td><td>${esc(p.party)}</td><td>${esc(p.gstin)}</td><td>${esc(p.state)}</td></tr>`).join("")}</tbody></table></div><p class="note" style="margin:0">Change a party on its next invoice; it is remembered again when saved.</p>` : ""}
       ${formEnd}</form>`; } };
+  // ---- Transporters page: add, change, delete (25-Nov-2026)
+  let trEd = null;
+  const trRowsNow = () => trEd || (trEd = invTransporters().map((x) => ({ k: x.saved ? UP(x.name) : "", name: x.name, id: x.id || "", vehicle: x.vehicle || "", mode: x.mode || "1 - Road", vehtype: x.vehtype || "R - Regular", saved: !!x.saved })));
+  FORMS.transporters = { title: "Transporters", html: () => { const R = trRowsNow(), sel = (i, f, list, cur) => `<select data-tr="${i}|${f}">${list.map(([k, n]) => `<option value="${k}"${cur === k ? " selected" : ""}>${n}</option>`).join("")}</select>`;
+    return `<form class="fm" id="fm-transporters"><p class="note" style="margin:0">Pick a transporter on an invoice and its ID, vehicle no and mode fill in by themselves. A new transporter typed on an invoice is added here when the invoice is saved. ${R.some((x) => !x.saved && !x.isNew) ? "Rows marked <i>from earlier invoices</i> are kept once you press Save." : ""}</p>
+      ${R.map((x, i) => `<div class="trrow"><div class="two"><label>Name${x.saved || x.isNew ? "" : ' <i class="note">from earlier invoices</i>'}<input data-tr="${i}|name" value="${esc(x.name)}" autocomplete="off"></label><label>Transporter ID (GSTIN / TRANSIN)<input data-tr="${i}|id" value="${esc(x.id)}" maxlength="15" autocomplete="off" style="text-transform:uppercase"></label>
+        <label>Vehicle no<input data-tr="${i}|vehicle" value="${esc(x.vehicle)}" autocomplete="off" style="text-transform:uppercase"></label><label>Mode${sel(i, "mode", TR_MODES, x.mode)}</label>
+        <label>Vehicle type${sel(i, "vehtype", [["R - Regular", "Regular"], ["O - ODC", "Over-dimensional cargo"]], x.vehtype)}</label></div>
+        <div class="acts" style="margin:4px 0 0"><button type="button" class="btn alt" data-trdel="${i}">Delete</button></div></div>`).join("") || `<p class="note">No transporters yet.</p>`}
+      <div class="acts"><button type="button" class="btn alt" data-tradd>+ Add transporter</button></div>${formEnd}</form>`; } };
+  document.addEventListener("input", (e) => { const t = e.target; if (!t.dataset || !t.dataset.tr || !trEd) return; const [i, f] = t.dataset.tr.split("|"); const r = trEd[Number(i)]; if (r) r[f] = t.value; });
+  document.addEventListener("change", (e) => { const t = e.target; if (!t.dataset || !t.dataset.tr || !trEd) return; const [i, f] = t.dataset.tr.split("|"); const r = trEd[Number(i)]; if (r) r[f] = t.value; });
+  document.addEventListener("click", (e) => { const a = e.target.closest("[data-tradd],[data-trdel]"); if (!a || !trEd) return; e.preventDefault();
+    if (a.dataset.tradd != null) trEd.push({ k: "", name: "", id: "", vehicle: "", mode: "1 - Road", vehtype: "R - Regular", saved: false, isNew: true }); else trEd.splice(Number(a.dataset.trdel), 1);
+    const d = $("#detail"), y = d.scrollTop; showDetail(); d.scrollTop = y; if (a.dataset.tradd != null) { const ins = d.querySelectorAll('[data-tr$="|name"]'); if (ins.length) ins[ins.length - 1].focus(); } });
+  async function trSave(f, msg, btn) {
+    const R = trEd || [], seen = new Set(), now = new Date().toISOString(), next = Object.assign({}, invSet), map = Object.assign({}, next.transporters || {});
+    for (const r of R) { const n = String(r.name || "").trim(), id = String(r.id || "").trim().toUpperCase();
+      if (!n) { if (id || r.vehicle) { msg.textContent = "A transporter has no name. Type it, or delete the row."; return; } continue; }
+      if (seen.has(UP(n))) { msg.textContent = n + " is in the list twice."; return; } seen.add(UP(n));
+      if (id && !/^[0-9A-Z]{15}$/.test(id)) { msg.textContent = n + ": the transporter ID should be 15 letters and numbers (GSTIN or TRANSIN)."; return; } }
+    // deleted rows and renamed ones leave a "deleted" mark so other phones drop them too
+    Object.keys(map).forEach((k) => { if (map[k] && !map[k].del && !seen.has(k)) map[k] = { del: true, at: now }; });
+    invTransporters().filter((x) => !x.saved && !seen.has(UP(x.name))).forEach((x) => { map[UP(x.name)] = { del: true, at: now }; });
+    R.filter((r) => String(r.name || "").trim()).forEach((r) => { const n = r.name.trim(), k = UP(n), o = map[k] && !map[k].del ? map[k] : {};
+      const row = { name: n, id: String(r.id || "").trim().toUpperCase(), vehicle: String(r.vehicle || "").replace(/\s+/g, "").toUpperCase(), mode: r.mode || "1 - Road", vehtype: r.vehtype || "R - Regular" };
+      map[k] = ["name", "id", "vehicle", "mode", "vehtype"].every((x) => (o[x] || "") === row[x]) ? o : Object.assign(row, { at: now }); });
+    next.transporters = map; btn.disabled = true;
+    try { await store.doc("invset/main").set(next); invSet = next; trEd = null; closeForm("Transporters saved: " + seen.size + "."); } catch (e) { btn.disabled = false; msg.textContent = saveError(e); }
+  }
   async function invSetSave(f, msg, btn) {
     const next = Object.assign({}, invSet);
     ["company", "vtype", "sales", "cgst", "sgst", "igst", "freight", "packing", "sampling", "vnoFmt", "lastNo", "discount", "round", "godown", "unit", "hsn", "gstin", "state", "taxExtras", "caddr", "iec", "cemail", "declare"].forEach((k) => { next[k] = $("#is-" + k).value.trim(); });
@@ -6039,6 +6087,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (f.id === "fm-update") return runUpdate(f);
     if (f.id === "fm-invoice") return invSave(f, msg, btn);
     if (f.id === "fm-invset") return invSetSave(f, msg, btn);
+    if (f.id === "fm-transporters") return trSave(f, msg, btn);
     if (f.id === "fm-invtally") return invTallySave(f, msg, btn);
     if (f.id === "fm-page") return submitPage(f, msg, btn);
     if (f.id === "fm-audit_start") {
@@ -7014,7 +7063,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     filter.orders = "inv"; pick = null; stack = []; formOpen = null; ed = null; sel.orders = null;
     if (tab !== "orders") route("orders"); else render();
     if (wasOpen) { hist[hIdx] = { d: navDepth(), h: "#orders" }; try { history.replaceState({ ssi: navDepth(), i: hIdx }, "", "#orders"); } catch (x) {} } else histPush(navDepth(), "#orders");
-    if (a === "invnew") { inv = invNew(); invShowAll = false; openForm("invoice:new"); } else openForm("invset:");
+    if (a === "invnew") { inv = invNew(); invShowAll = false; openForm("invoice:new"); } else if (a === "transporters") { trEd = null; openForm("transporters:"); } else openForm("invset:");
   }
   $("#menubtn").addEventListener("click", () => (sideOpen ? closeSide() : openSide()));
   document.addEventListener("click", (e) => { if (e.target.closest("[data-dmenu]")) { e.preventDefault(); openSide(); } });

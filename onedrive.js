@@ -37,7 +37,10 @@
   // shared invoice settings from two phones: every party and item either phone knows, the newer value for each, the higher last number
   function joinShared(a, b) {
     const n = String(a._at || "") >= String(b._at || "") ? a : b, o = n === a ? b : a, mapJ = (x, y) => Object.assign({}, y || {}, x || {});
-    return Object.assign({}, o, n, { parties: mapJ(n.parties, o.parties), items: mapJ(n.items, o.items), lastNo: Math.max(Number(a.lastNo) || 0, Number(b.lastNo) || 0) });
+    // transporters: each one the newer of the two copies (a delete is a {del, at} mark, so it wins only if it is newer); 25-Nov-2026
+    const ta = a.transporters || {}, tb = b.transporters || {}, tr = {};
+    [...new Set(Object.keys(ta).concat(Object.keys(tb)))].forEach((k) => { const x = ta[k], y = tb[k]; tr[k] = !x ? y : !y ? x : String(x.at || "") >= String(y.at || "") ? x : y; });
+    return Object.assign({}, o, n, { parties: mapJ(n.parties, o.parties), items: mapJ(n.items, o.items), transporters: tr, lastNo: Math.max(Number(a.lastNo) || 0, Number(b.lastNo) || 0) });
   }
   async function write(c, id, v, fromRemote) {
     if (v === undefined) delete col(c)[id]; else col(c)[id] = v;
