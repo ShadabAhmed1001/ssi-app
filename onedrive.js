@@ -449,6 +449,10 @@
       await setMeta("syncAt", new Date().toISOString());
       lastErr = "";
       setStatus("Synced " + hhmm(meta.syncAt) + " · " + waitingText() + (recIsOn() ? "records kept by the app · Tally stock " + (meta.dataAt ? hhmm(meta.dataAt) : "not read yet") + (meta.mirBehind ? " · Excel backup " + (meta.mirBehind.old ? meta.mirBehind.old + " entr" + (meta.mirBehind.old === 1 ? "y" : "ies") + " behind" : "up to date") : "") : "Excel data " + (meta.dataAt ? hhmm(meta.dataAt) : "not loaded yet") + xsText()), "ok");
+      // Excel's 5-minute import stopped (24-Nov-2026 16:40 to 25-Nov 11:48: invoices waited for Tally): say it loudly, and tell the app
+      { const x = meta.excelStatus, at = x && x.at ? new Date(String(x.at).replace(" ", "T")) : null, stale = at && !isNaN(at) && x.on !== false && Date.now() - at > Math.max(30, 3 * (x.every || 5)) * 60000;
+        if (stale) setStatus("Excel on the PC stopped at " + hhmm(at) + ": invoices and bills are not reaching Tally. On the PC close the production workbook and open it again.", "warn");
+        if (H && H.excelStale) H.excelStale(stale ? at.toISOString() : ""); }
     } catch (e) {
       lastErr = e && e.message ? e.message : String(e);
       setStatus("Sync problem: " + lastErr + " · entries are safe on this phone", "bad", needLogin ? "signin" : "retry");

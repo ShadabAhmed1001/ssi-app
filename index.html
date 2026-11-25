@@ -2152,7 +2152,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 199, at: "2026-11-25T11:34:33+05:30", notes: "costing calculator: finish yield %, finishing follows finished sqft, mixes keep their ratios" };
+  const APP_BUILD = { v: 200, at: "2026-11-25T11:59:28+05:30", notes: "warning on phones when Excel's 5-minute import has stopped" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -2342,6 +2342,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         Object.assign(v, { temp, vno }); showToast("Invoice " + d.no.split("/")[0] + " made on two phones at once: this one is now " + temp + ", Tally no " + vno + ".");
         (v.lines || []).forEach(() => {}); } } catch (e) { /* next sync */ } finally { invFixing = false; }
   }
+  let exStale = "";
+  function exStaleHtml() { if (!exStale) return ""; const w = 0;
+    return `<div class="alert" style="display:block;border-color:var(--bad);background:#fde8e8;color:#7a1010"><b>Excel on the PC stopped at ${esc(new Date(exStale).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }))}.</b> Invoices and purchase bills are not reaching Tally${w ? ` (${w} invoice${w === 1 ? "" : "s"} made in the app are not in Tally yet)` : ""}, and the Excel backup is not updating. On the PC: close the production workbook and open it again (or run AutoImportTick).</div>`; }
   function todayView() {
     const open = data.lots.filter((l) => l.grp === 1), bad = open.filter((l) => l.flag === "bad" && !isMuted(l.lot_no)), warn = open.filter((l) => l.flag === "warn" && !isMuted(l.lot_no));
     const toStart = data.orders.filter((o) => o.status === "NOT STARTED" || o.status === "PART IN PRODUCTION");
@@ -2381,7 +2384,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (data.empty && window.__ssiOD && /clientId/.test(lsGet("ssi-od-settings"))) return `<div class="alert" style="display:block"><b>Getting the data from OneDrive…</b> The first time takes about a minute; the line at the top says how far it has got. If nothing comes, open Menu › Settings › OneDrive.</div>`;
     if (data.empty) return `<div class="alert" style="display:block"><b>No data yet.</b> ${window.__ssiOD ? "Sign in to OneDrive (Menu › Settings › OneDrive) and the app reads the Excel files by itself, or load" : "Load"} the two Excel files (the .xlsm and the .db) from this phone.
       <div class="acts">${canAdmin ? `<button class="btn" data-new="update">Load the Excel files</button>` : `<span class="note">Ask the owner to share the data with you.</span>`}</div></div>`;
-    return `${todoHtml()}<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
+    return `${exStaleHtml()}${todoHtml()}<div class="tiles">${tiles.map(([t, f, c, n, lb]) => `<button class="tile ${c}" data-jump="${t}" data-f="${f}"><b>${n}</b><span>${lb}</span></button>`).join("")}</div>
       <div class="group">Lots by status</div><div class="bars">${statusRows().map((s) => bar("status", s, Math.max(1, ...statusRows().map((x) => x.n)))).join("")}</div>
       ${xNotesHtml()}
       ${top.length ? `<div class="group">Check first</div><div data-sec="lots">${top.map(lotCard).join("")}</div>` : ""}
@@ -3400,6 +3403,8 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
       } catch (e) { try { db.run("ROLLBACK"); } catch (e2) { /* none */ } return; }
       if (!formOpen) { const y = window.scrollY; render(); if (sel[tab]) showDetailKeep(); window.scrollTo(0, y); } },
     // Tally's party ledgers from Excel's small file app/tally-ledgers.json (22-Nov-2026)
+    // the standalone app tells when Excel's 5-minute import has stopped (25-Nov-2026)
+    excelStale: (at) => { const was = exStale; exStale = at || ""; if (was !== exStale && tab === "today") render(); },
     tallyLedgers: (o) => { if (!db || !plApply(o)) return;
       if (!formOpen) { const y = window.scrollY; render(); if (sel[tab]) showDetailKeep(); window.scrollTo(0, y); } },
     excelDone: (o) => { excelLast = o; const el = document.getElementById("askx-said"); if (el) { el.textContent = "Excel finished " + fmtST(String(o.at || "")) + ": " + String(o.result || "") + (o.tally === false ? " (Tally was not answering)" : ""); el.className = o.tally === false ? "note bad" : "note"; } },
