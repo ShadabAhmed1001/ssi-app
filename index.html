@@ -718,7 +718,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { invXml: (v) => invXml([v]), newInv: () => menuAct("invnew"), menu: (a) => menuAct(a), invset: () => invSet, trRem: (n, v) => trRemember(n, v), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
+    window.__ssi = { invXml: (v) => invXml([v]), newInv: () => menuAct("invnew"), menu: (a) => menuAct(a), costs: () => allCosts().map((x) => ({ lot: x.l.lot_no, rec: x.l.recKey, rlot: x.r.lot_no, wb: x.wb, inSq: x.inSq, miss: x.wbMiss })), invset: () => invSet, trRem: (n, v) => trRemember(n, v), pbXml: (b) => pbXml(b, "T"), costOf: (lot, proc) => costOf(getRecipe("rec:" + lot + "|" + proc)), recipes: () => one("SELECT COUNT(*) FROM lot_recipes"), q: (s) => rows(s), exec: (s) => db.run(s), data: () => data, fp: () => shFp(), reload: () => { load(); render(); }, enErr: () => engineErr, form: (k) => openForm(k), ef: () => enFp(), csv: () => exportCsv(), inv: () => invoices, invset: () => invSet, xnotes: () => xNotes() };
     open(SQL, bytes, "3-Nov");
   }
   function open(SQL, bytes, label) {
@@ -2184,7 +2184,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 205, at: "2026-11-25T19:02:48+05:30", notes: "Transporters: saved list (ID, vehicle, mode) filled in by picking the name on an invoice; new ones saved with the invoice; customer's usual transporter and distance remembered; Transporters page to add, change, delete" };
+  const APP_BUILD = { v: 206, at: "2026-11-26T09:41:01+05:30", notes: "Wet blue cost: skins coming back from a lot's own rework part or split (merged back) no longer reported as 'no rate' (L544); same lot sending skins twice no longer flagged" };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -2691,22 +2691,30 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   // wet blue rate of a lot: skins bought on a purchase are priced at its rate; skins moved in from another lot (also moves
   // still on phones) carry that lot's own rate, so merges and splits don't lose or change the value; skins sent on to another
   // lot leave the rate as it is. Sqft with no price (a purchase with no rate, a starting balance) is listed in miss.
-  function lotBlue(lot, miss, seen) {
-    lot = UP(lot); seen = seen || new Set(); if (!lot || seen.has(lot)) return 0; seen.add(lot);
+  // wet blue ₹/sqft of a lot: its purchases' rates, or the rate of the lot its skins came from, averaged by sqft
+  const lotBlue = (lot, miss) => Math.max(0, lotBlue0(lot, miss, new Set()));
+  // path = the lots already being worked out above this one. Skins that come back to one of them (a rework part or a split merged back
+  // into its parent) are that lot's own skins, already costed there: they are left out, not reported as "no rate" (26-Nov-2026, L544 + L544R1).
+  // Returns -1 when every skin of the lot came from a lot on the path.
+  function lotBlue0(lot, miss, path) {
+    lot = UP(lot); if (!lot) return 0; if (path.has(lot)) return -1; const here = new Set(path).add(lot);
     // the purchase as the app shows it (a rate typed on the phone counts at once), else Excel's row (21-Nov-2026)
     const pur = (k) => (data.purchases || []).find((x) => UP(x.purchase_no) === k) || rows("SELECT purchase_no, rate, rate_basis FROM purchases WHERE UPPER(purchase_no)=?", [k])[0];
     const mv = rows("SELECT from_key, to_key, pcs, sqft, entry_type FROM purchase_ledger WHERE (UPPER(to_key)=? OR UPPER(from_key)=?) AND status<>'VOID'", [lot, lot])
       .map((e) => ({ from: UP(e.from_key), to: UP(e.to_key), pcs: e.pcs, sqft: e.sqft, ty: e.entry_type }))
       .concat((data.pendMv || []).filter((m) => m.from === lot || m.to === lot));
-    let amt = 0, sq = 0;
+    let amt = 0, sq = 0, own = 0, other = 0;
     mv.forEach((m) => {
       const s = Number(m.sqft) || 0, g = m.to === lot ? 1 : -1, p = pur(g > 0 ? m.from : m.to); if (!s) return;
-      if (p) { if (!(Number(p.rate) > 0)) { if (g > 0 && miss) miss.add("wet blue rate of " + p.purchase_no); return; }
-        sq += g * s; amt += g * (UP(p.rate_basis) === "PC" ? (Number(m.pcs) || 0) : s) * Number(p.rate); return; }
+      if (p) { if (!(Number(p.rate) > 0)) { if (g > 0) { other++; if (miss) miss.add("wet blue rate of " + p.purchase_no); } return; }
+        sq += g * s; amt += g * (UP(p.rate_basis) === "PC" ? (Number(m.pcs) || 0) : s) * Number(p.rate); if (g > 0) other++; return; }
       if (g < 0) return;
-      const n0 = miss ? miss.size : 0, r = /^ADJ/.test(m.from) || m.ty === "ADJUSTMENT" ? 0 : lotBlue(m.from, miss, seen);
-      if (r > 0) { sq += s; amt += s * r; } else if (miss && miss.size === n0) miss.add(/^ADJ/.test(m.from) || m.ty === "ADJUSTMENT" ? "wet blue starting balance of " + lot : "wet blue rate of " + m.from);
+      const adj = /^ADJ/.test(m.from) || m.ty === "ADJUSTMENT", sub = new Set(), r = adj ? 0 : lotBlue0(m.from, sub, here);
+      if (r === -1) { own++; return; }
+      other++; if (miss) sub.forEach((x) => miss.add(x));
+      if (r > 0) { sq += s; amt += s * r; } else if (miss && !sub.size) miss.add(adj ? "wet blue starting balance of " + lot : "wet blue rate of " + m.from);
     });
+    if (own && !other) return -1;
     return sq > 0 && amt > 0 ? +(amt / sq).toFixed(2) : 0;
   }
   // finishing weights: Excel works most of them out from the first row of each batch (weight / ratio x ratio)
