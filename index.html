@@ -718,7 +718,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const bin = atob(b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     window.__SQL = SQL;
-    window.__ssi = { rec: (k) => getRecipe(k), openEd: (k) => openEditor(k), fromEd: () => recipeFromEditor(), rtTest: () => { const out = []; Object.keys(data.recipes).forEach((k) => { let r, a; try { r = getRecipe(k); if (!r) return; openEditor(k); a = recipeFromEditor(); } catch (e) { out.push(k + " | ERROR " + e.message); return; }
+    window.__ssi = { ents: (lot) => JSON.stringify(entries.filter((e) => e.lot_no === lot && e.type === "recipe").map((e) => ({ id: e.id, load_cur: e.load_cur, base_lot: e.base_lot, base_process: e.base_process, process: e.process, cells: e.cells }))), blank: (lot, page) => { startBlank(data.lotBy[lot], page, (t) => { throw new Error(t); }); return JSON.stringify({ ed: { key: ed.key, load_cur: ed.load_cur, base_lot: ed.base_lot, movePage: ed.movePage, head: ed.head }, got: recipeFromEditor() }); }, lotsNoRec: () => data.lots.filter((l) => l.process_page && !l.recKey).map((l) => l.lot_no + "|" + l.process_page).slice(0, 8), rec: (k) => getRecipe(k), openEd: (k) => openEditor(k), fromEd: () => recipeFromEditor(), rtTest: () => { const out = []; Object.keys(data.recipes).forEach((k) => { let r, a; try { r = getRecipe(k); if (!r) return; openEditor(k); a = recipeFromEditor(); } catch (e) { out.push(k + " | ERROR " + e.message); return; }
     const bad = []; const o2 = { process: r.process, finishing: a.finishing, crust: a.crust }, f0 = finRows(r), f1 = finRows(o2), i0 = finIds(r), i1 = finIds(o2), c0 = crustIds(r.crust.map((x) => ({ r: x.r, f: x.f }))), c1 = crustIds(a.crust.map((x) => ({ r: x.r, f: x.f, s: x.s })));
     if (a.finishing.length !== r.finishing.length) bad.push("fin rows " + r.finishing.length + "->" + a.finishing.length);
     else a.finishing.forEach((x, n) => { const y = r.finishing[n]; if (x.i !== y.i || String(x.r) !== String(y.r) || x.d !== String(y.d || "").trim() || String(x.n || "") !== String(y.n || "").trim()) bad.push("fin row " + y.i + " changed"); else if (Math.abs((Number(f0[n].w) || 0) - (Number(f1[n].w) || 0)) > 0.002) bad.push("fin weight " + y.i + " " + f0[n].w + "->" + f1[n].w); });
@@ -2192,7 +2192,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     return n ? `<div class="count"><span>${n} found</span></div>` + html : `<p class="empty">Nothing matches. Try fewer words.</p>`;
   }
   // set by stamp.py at every release
-  const APP_BUILD = { v: 208, at: "2026-11-28T13:20:00+05:30", notes: "Removing an item from a PO now reaches the Excel backup too. Delivered quantity shows exact pieces and sqft (327.5 stays 327.5). More skins than the lot: edit the lot, say they belong to another lot, or give a reason (adjustment ledger). Short count goes to a SHORT ADJUSTMENT line. Part-billed delivery shows hides left from the bills, not from sqft. Wet blue rate no longer 'missing' for a lot with a count correction. Recipe sections are saved with the rows; copying finishing keeps sections; recipes are checked in Health check." };
+  const APP_BUILD = { v: 209, at: "2026-11-28T17:45:00+05:30", notes: "A lot whose process page has no recipe can now start a new blank recipe (Process, Start a new recipe). Removing an item from a PO now reaches the Excel backup too. Delivered quantity shows exact pieces and sqft (327.5 stays 327.5). More skins than the lot: edit the lot, say they belong to another lot, or give a reason (adjustment ledger). Short count goes to a SHORT ADJUSTMENT line. Part-billed delivery shows hides left from the bills, not from sqft. Wet blue rate no longer 'missing' for a lot with a count correction. Recipe sections are saved with the rows; copying finishing keeps sections; recipes are checked in Health check." };
   const appVer = () => { const d = new Date(APP_BUILD.at); return `SSI Production ${window.SSI_STANDALONE ? "app" : "(Claude version)"} · Version ${APP_BUILD.v}` + (isNaN(d) ? "" : ` · released ${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`); };
   window.__ssiVersion = () => appVer();
   // ================================================================ easier app (23-Nov-2026): simple mode, + Add, lot cards with QR, scanner, to-do
@@ -4255,7 +4255,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   // this lot's latest version goes first and is picked by default; otherwise the newest on the page
   const ownFirst = (list, lot) => { const i = list.findIndex((x) => x.lot === lot && x.latest); return i > 0 ? [list[i]].concat(list.slice(0, i), list.slice(i + 1)) : list; };
-  const procSrcOpts = (page, lot, pick) => { const list = ownFirst(page ? pageRecipes(page) : [], lot), sel = pick && list.some((x) => x.key === pick) ? pick : list.length ? list[0].key : ""; return list.length ? list.map((x) => recOpt(x, x.key === sel ? x.key : "", lot)).join("") : `<option value="">No saved process on this page</option>`; };
+  const procSrcOpts = (page, lot, pick) => { const list = ownFirst(page ? pageRecipes(page) : [], lot), sel = pick && list.some((x) => x.key === pick) ? pick : list.length ? list[0].key : ""; return (list.length ? list.map((x) => recOpt(x, x.key === sel ? x.key : "", lot)).join("") : "") + `<option value="@blank"${list.length ? "" : " selected"}>Start a new recipe (blank)</option>`; };
   const procHint = (l, page) => normPage(page) === normPage(l.process_page || "") ? "" : "Saving will also move " + l.lot_no + " from " + (l.process_page || "no page") + " to " + page + ".";
   const recOpt = (x, sel0, own) => `<option value="${esc(x.key)}"${x.key === sel0 ? " selected" : ""}>${esc(x.lot)}${x.lot === own && x.latest ? " (this lot)" : ""} ${x.phone ? "phone, not in Excel yet" : "v" + x.ver}${x.multi ? " latest" : ""} · ${esc(fmtST(x.saved))} · ${esc(String(x.details || "").slice(0, 34))}</option>`;
   // ---- compare: lines are matched by chemical name, so it also works between pages
@@ -4356,9 +4356,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     const h = ed.head;
     const inp = (sec, i, f, x, ph, cls, extra) => `<input id="e-${sec}-${i}-${f}" data-f="${f}" value="${v(x)}" placeholder="${ph}" aria-label="${ph}" autocomplete="off"${cls ? ` class="${cls}"` : ""}${extra || ""}>`;
     const btns = `<button type="button" class="x" data-edadd aria-label="Add a line below">+</button><button type="button" class="x" data-eddel aria-label="Remove this line">×</button>`;
-    return `<form class="fm" id="fm-recipe" style="background:none;border:0;padding:0"><p class="sub" style="margin:0">${esc(ed.process)}${ed.base_lot && !rwOfPLot(ed.lot) ? " · loaded from " + esc(ed.base_lot) + (ed.load_cur !== undefined ? " v" + ed.base_ver : "") + ". Check it and save." : ""}</p>
+    return `<form class="fm" id="fm-recipe" style="background:none;border:0;padding:0"><p class="sub" style="margin:0">${esc(ed.process)}${ed.base_lot && !rwOfPLot(ed.lot) && ed.preview !== "a blank recipe" && !(ed.base_lot === ed.lot && !ed.base_ver) ? " · loaded from " + esc(ed.base_lot) + (ed.load_cur !== undefined ? " v" + ed.base_ver : "") + ". Check it and save." : ""}</p>
       ${ed.restored ? `<p class="okmsg" style="margin:0">Your unsaved changes from ${esc(new Date(ed.restored).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))} are back. <button type="button" class="link" data-eddiscard>Discard them</button></p>` : ""}
-      ${ed.preview ? `<p class="soon" style="margin:0">${ed.preview === "page" ? "Nothing is saved yet. Tap Save to move " + esc(ed.lot) + " to this page." : "This is " + esc(ed.preview) + ", loaded for you to look at. Nothing is saved: tap Save to make it " + esc(ed.lot) + "'s process, or go back to leave " + esc(ed.lot) + " as it is."}</p>` : ""}
+      ${ed.preview ? `<p class="soon" style="margin:0">${ed.preview === "page" ? "Nothing is saved yet. Tap Save to move " + esc(ed.lot) + " to this page." : (ed.preview === "a blank recipe" ? "This is a blank recipe for " + esc(ed.lot) + ". Add the crusting, machinery and finishing lines, then tap Save. Nothing is saved until you do." : "This is " + esc(ed.preview) + ", loaded for you to look at. Nothing is saved: tap Save to make it " + esc(ed.lot) + "'s process, or go back to leave " + esc(ed.lot) + " as it is.")}</p>` : ""}
       ${(() => { const rw = rwOfPLot(ed.lot); return rw ? `<p class="soon" style="margin:0">${esc(rwName(rw))} of ${esc(rw.parent)}: ${esc(rw.cause)}. Write what the rework takes: pcs, weight, crusting, machinery and finishing. After saving, use Check stock and adjust on the rework.</p>` : ""; })()}
       <p class="note" id="ed-chg" style="margin:0;display:none"></p>
       ${ed.movePage ? `<p class="note" style="margin:0"><span class="wait">Saving also moves ${esc(ed.lot)} to ${esc(ed.movePage)}.</span></p>` : ""}
@@ -5989,6 +5989,16 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
   }
   function lpParts() { const c = $("#lp-c"); if (!c) return undefined; const p = { crust: c.checked, mach: $("#lp-m").checked, fin: $("#lp-f").checked }; return !p.crust && !p.mach && !p.fin ? null : p.crust && p.mach && p.fin ? undefined : p; }
   const lpName = (p) => [p.crust && "crusting", p.mach && "machinery", p.fin && "finishing"].filter(Boolean).join(" and ");
+  // a process page with no recipe to copy: start the lot's recipe from nothing (28-Nov-2026). Saved like a loaded process, so Excel gets every cell.
+  function startBlank(l, page, bad) {
+    if (!page) return bad("Pick a process page first.");
+    if (getRecipe("rec:" + l.lot_no + "|" + page)) return bad(l.lot_no + " already has a recipe on " + page + ". Open it from the lot to edit it.");
+    const seed = { lot_no: l.lot_no, process: page, version: 0, from: l.lot_no, base_process: page, base_ver: 0, load_cur: curVersion(l.lot_no, page), animal: "", details: [l.customer, l.product].filter(Boolean).join(" "), substance: l.shaving || "", pcs: l.lot_pcs, shaved_wt: parseFloat(l.weight) || "", wb_sqft: l.lot_sqft, finish_sqft: l.delivered_est ?? null, process_note: "", remarks: "", crust: [], machinery: [], finishing: [] };
+    flash = ""; sel.lots = "rec:" + l.lot_no + "|" + page; openEditor(sel.lots, seed);
+    if (normPage(page) !== normPage(l.process_page || "")) ed.movePage = page;
+    ed.preview = "a blank recipe";
+    showDetail(); $("#detail").scrollTop = 0;
+  }
   function loadProcess(l, key, parts) {
     if (parts) return loadParts(l, key, parts);
     const m = key.split("@v"), a = m[0].slice(4).split("|"), lotS = a[0], process = a.slice(1).join("|"), live0 = data.liveRecipes[lotS + "|" + process];
@@ -6232,9 +6242,9 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (f.id === "fm-pb_drop") return saveNew({ type: "purchase_decision", lot_no: "", data: { entry: f.dataset.a, choice: "none", drop: "" } }, "Saved. Excel drops the bill.", msg, btn);
     if (f.id === "fm-tally_delete") { const t = pbTally().find((x) => x.guid === f.dataset.g); if (!t) return bad("This voucher is no longer in the data."); const why = need("#td-why"); if (!why) return bad("Say why."); if (warnOnce(f, "Purchase " + t.vno + " will be deleted in Tally. Save again to confirm.")) return; return saveNew({ type: "tally_delete", lot_no: t.party, doc_no: t.ref, data: { guid: t.guid, vno: t.vno, party: t.party, ref: t.ref, why } }, "Saved. Excel deletes it in Tally at its next run.", msg, btn); }
     if (f.id === "fm-chem_alias") { const c = data.chemBy[need("#fi-to").toUpperCase()]; if (!c) return bad("Pick a chemical from the list."); return saveNew({ type: "chem_alias", lot_no: f.dataset.name, data: { name: f.dataset.name, to: c.name } }, "Saved. It is waiting for Excel.", msg, btn); }
-    if (f.id === "fm-load" || f.id === "fm-process") { const parts = lpParts(); if (parts === null) return bad("Tick at least one part to bring.");
+    if (f.id === "fm-load" || f.id === "fm-process") { const parts = lpParts(); if (parts === null && !(f.id === "fm-process" && $("#fo-src").value === "@blank")) return bad("Tick at least one part to bring.");
       if (f.id === "fm-load") return loadProcess(data.lotBy[f.dataset.lot], need("#fo-src"), parts); }
-    if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("This page has no saved process. Use Change page only, then Edit recipe."); return loadProcess(data.lotBy[f.dataset.lot], src, lpParts()); }
+    if (f.id === "fm-process") { const src = $("#fo-src").value; if (!src) return bad("Pick where the recipe comes from, or Start a new recipe (blank)."); if (src === "@blank") return startBlank(data.lotBy[f.dataset.lot], $("#fo-page").value, bad); return loadProcess(data.lotBy[f.dataset.lot], src, lpParts()); }
     if (f.id === "fm-chem_adjust") {
       const l = data.lotBy[f.dataset.lot], p = chemPlan(l, f.dataset.what);
       if (p.secs.includes("CRUSTING") && !(Number(l.weight) > 0)) return bad(l.lot_no + " has no weight. Enter the shaved weight (Edit lot) before adjusting crusting chemicals.");
@@ -6840,6 +6850,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
     if (e.type === "po_share") { const po = (id) => (data.orders.find((o) => String(o.id) === String(id)) || {}).po_no || id; return fmtN(e.data.sqft, 2) + " sqft over 115% on PO " + po(e.data.line_id) + (e.data.to_line ? ", put on PO " + po(e.data.to_line) : "") + (e.data.reason ? ": " + e.data.reason : ""); }
     if (e.type === "po_link") return "Link to PO " + ((data.orders.find((o) => String(o.id) === String(e.line_id)) || {}).po_no || e.line_id);
     if (e.type === "chem") return `${d.kind.toLowerCase()} ${fmtN(d.qty, 3)}: ${d.reason}`;
+    if (e.type === "recipe" && e.load_cur !== undefined && e.base_lot === e.lot_no && !Number(e.base_version)) return `New recipe started · ${e.process}`;
     if (e.type === "recipe" && e.load_cur !== undefined) return `Process loaded from ${e.base_lot} v${e.base_version} · ${e.process}`;
     if (e.type === "recipe") return (e.base_process ? "Recipe copied from " + e.base_process : e.base_lot ? "New recipe from " + e.base_lot : "Recipe edit") + " · " + e.process + " · " + Object.keys(e.cells).length + " changes";
     return e.type === "stage" ? `${e.from_stage || "no stage"} → ${e.to_stage}` : `Delivery ${hsText(e.note, e.pcs)}, ${fmtN(e.sqft, 2) || 0} sqft${e.doc_no ? ", " + e.doc_no : ""}`;
@@ -6989,7 +7000,7 @@ button.bar.barlink:hover .lb { color: var(--accent); text-decoration: underline;
         return `<button class="hlink" data-go="orders" data-k="${x.line_id}"><span>Also on</span>PO ${esc(o.po_no || x.line_id)} · ${fmtN(x.sqft, 2)} sqft</button>`; }).join("")}</div>
       ${trackedLot(l.lot_no) && l.state === "OPEN" ? (() => { const src = rwSrc(l), sv = processSaved(src), pm = pdfMade(l), pg = String(l.process_page || "").trim();
         // say what is missing in plain words: no page linked, or a page linked but no recipe of this lot saved on it yet (25-Nov-2026)
-        return `<p class="note" style="margin:0">${sv ? "✓ Process saved" + (src !== l ? " (follows " + esc(src.lot_no) + ")" : "") : !pg ? `<span class="bad">No process page linked</span>` : `Linked to ${esc(pg)} · <span class="bad">no recipe saved for ${esc(l.lot_no)} yet</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>${!sv && store && canWrite && !formOpen ? `<div class="acts" style="margin:4px 0 0"><button class="btn alt" data-form="process:${esc(l.lot_no)}">${pg ? "Load a recipe for it" : "Link a process"}</button></div>` : ""}`; })() : ""}
+        return `<p class="note" style="margin:0">${sv ? "✓ Process saved" + (src !== l ? " (follows " + esc(src.lot_no) + ")" : "") : !pg ? `<span class="bad">No process page linked</span>` : `Linked to ${esc(pg)} · <span class="bad">no recipe saved for ${esc(l.lot_no)} yet</span>`}${pm.ok === true ? " · ✓ PDF " + esc(pm.how) : pm.ok === false ? ` · <span class="bad">${pm.stale ? "PDF out of date" : "no PDF yet"}</span>` : ""}</p>${!sv && store && canWrite && !formOpen ? `<div class="acts" style="margin:4px 0 0"><button class="btn alt" data-form="process:${esc(l.lot_no)}">${pg ? "Load or start a recipe" : "Link a process"}</button></div>` : ""}`; })() : ""}
       ${l.chem_check ? `<p class="missing" style="margin:8px 0 0">${esc(l.chem_check.replace(/^\W+/, ""))}</p>` : ""}</div>`;
   }
   // Excel remarks are one long line of dated notes: show them one under the other
